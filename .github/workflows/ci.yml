@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Show versions
+        run: node --version && npm --version
+
+      - name: Run platform-independent test suites
+        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts
+
+  # ps1 / sh hook 与回收站 D3 实测仅 Windows + 本机环境可跑，保持本地 test-all.ps1

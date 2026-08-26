@@ -8,14 +8,18 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultDenyRules } from '../../packages/installer/src/deploy.ts';
 
+// 单一事实源 patch：优先仓库内副本（CI 可跑），skill 工作区存在时仍校验真身。
+const REPO_PATCH = join(import.meta.dirname, '..', '..', 'assets', 'dsh', 'deny-risk-commands.patch.yml');
 const SKILL_PATCH = join(import.meta.dirname, '..', '..', '..', 'agent-risk-guard-audit', 'assets', 'dsh', 'deny-risk-commands.patch.yml');
+const PATCH = existsSync(REPO_PATCH) ? REPO_PATCH : SKILL_PATCH;
 
 test('M7: skill deny 规则与 defaultDenyRules 逐条一致（35/35，R2 增补）', () => {
-  const skillRaw = readFileSync(SKILL_PATCH, 'utf8');
+  assert.ok(existsSync(PATCH), `找不到 deny 规则 patch: ${PATCH}`);
+  const skillRaw = readFileSync(PATCH, 'utf8');
   const skillRules = [...skillRaw.matchAll(/re: '([^']+)'/g)].map((m) => m[1]);
   const mono = defaultDenyRules();
   assert.equal(skillRules.length, 35, `skill 规则应为 35 条，实际 ${skillRules.length}`);

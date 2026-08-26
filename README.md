@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows / macOS / Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
+[![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
 > 面向自主 AI Agent 的跨平台执行策略、硬拦截、能力限制与恢复层。
 > 设计文档：`../Universal Agent Risk Guard.md`（v3.0）
@@ -87,3 +88,4 @@ node -e "import('./packages/installer/src/discovery.ts').then(m=>console.log(m.d
 - **安全报告**：[SECURITY.md](SECURITY.md) —— 发现绕过向量请走私密渠道，**不要**公开 issue 演示利用
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 - **平台发布**：SkillHub `@user_d684b111/agent-risk-guard-audit@1.0.0`（审核通过）
+- **CI**：`.github/workflows/ci.yml`（Ubuntu + Node 22/24 矩阵跑平台无关测试组；hook/回收站实测依赖本机环境，见 `docs/deployment-status.md`）

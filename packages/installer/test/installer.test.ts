@@ -19,8 +19,9 @@ import { rollbackAgent } from '../src/rollback.ts';
 import { runDoctors } from '../src/doctor.ts';
 
 const isWin = process.platform === 'win32';
+const isCI = process.env.CI === 'true';
 
-test('M6 discovery: 14 个 agent 都有探测路径且不抛错（本机 D3）', async () => {
+test('M6 discovery: 14 个 agent 都有探测路径且不抛错（本机 D3）', { skip: isCI }, async () => {
   const agents = discoverAgents();
   assert.equal(agents.length, AGENT_REGISTRY.length);
   for (const a of agents) {

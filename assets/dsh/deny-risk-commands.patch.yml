@@ -1,0 +1,47 @@
+# deny-risk-commands —— DeepSeek Harness pre-execute 门禁规则（下发模板）
+# 来源：本机 ~/.dsh/profiles/web/cordis.patch.yml 实测版（2026-08-22），30 条规则。
+# 用法：把下面这个 insert 块合并进你的 profile 的 cordis.patch.yml（如 ~/.dsh/profiles/<profile>/cordis.patch.yml），
+#       在顶层数组末尾追加即可；改完热加载生效（2026-08 实测，无需重启 dsh web）。
+# 注意：规则为正则，忽略大小写；命中即在 pwsh/bash 工具派发前拒绝命令（tools/pre-execute 门禁），
+#       对全局所有会话/agent 生效。可自行增删规则。
+
+- insert:
+    - id: deny-risk-commands
+      name: 'deny-risk-commands'
+      config:
+        rules:
+          - { re: '\bRemove-Item\b', reason: '全局铁律：删除必须进回收站，禁止 Remove-Item' }
+          - { re: '\brm\s+-rf\b', reason: '全局铁律：禁止 rm -rf 递归强制删除' }
+          - { re: '\bdel\s+/[fqs]\b', reason: '全局铁律：禁止 del /f 强制删除' }
+          - { re: '\bFormat-(Volume|Partition|Drive)\b', reason: '高危：格式化磁盘/分区命令被全局拦截' }
+          - { re: '\bri\s+', reason: '全局铁律：禁止 ri（Remove-Item 别名）' }
+          - { re: '\berase\b', reason: '全局铁律：禁止 erase（del 别名）' }
+          - { re: '\brmdir\s+/s\b', reason: '全局铁律：禁止 rmdir /s 递归删除目录' }
+          - { re: '\brd\s+/s\b', reason: '全局铁律：禁止 rd /s 递归删除目录' }
+          - { re: '\[System\.IO\.(File|Directory)\]::Delete', reason: '全局铁律：禁止 .NET 直接删除文件/目录' }
+          - { re: '\bdiskpart\b', reason: '高危：磁盘分区操作被全局拦截' }
+          - { re: '\bClear-Disk\b', reason: '高危：磁盘清理（Clear-Disk）被全局拦截' }
+          - { re: '\bshutil\.rmtree\b', reason: '全局铁律：禁止 Python 永久删除（shutil.rmtree 不进回收站）' }
+          - { re: '\bos\.(remove|unlink|rmdir)\b', reason: '全局铁律：禁止 Python 永久删除（os.remove/unlink/rmdir 不进回收站）' }
+          - { re: '\bpathlib\b.*\.(unlink|rmdir)\b', reason: '全局铁律：禁止 Python pathlib 永久删除（不进回收站）' }
+          - { re: '\bfs\.(rmSync|unlinkSync|rmdirSync)\b', reason: '全局铁律：禁止 Node fs 永久删除（不进回收站）' }
+          - { re: '\brimraf\b', reason: '全局铁律：禁止 rimraf 永久删除（不进回收站）' }
+          - { re: '(^|[;&|])\s*rm\s+', reason: '全局铁律：禁止 rm 永久删除（不进回收站）' }
+          - { re: '\bdel\s+', reason: '全局铁律：禁止 del 永久删除（不进回收站）' }
+          - { re: '\b(unlink|shred)\s+', reason: '全局铁律：禁止 unlink/shred 永久删除（不进回收站）' }
+          - { re: '\brmdir\s+', reason: '全局铁律：禁止 rmdir 永久删除（不进回收站）' }
+          - { re: '\brd\s+', reason: '全局铁律：禁止 rd 永久删除（不进回收站）' }
+          - { re: '\bos\.removedirs\b', reason: '全局铁律：禁止 Python os.removedirs 永久删除（不进回收站）' }
+          - { re: '\bfs\.(rm|unlink|rmdir)\s*\(', reason: '全局铁律：禁止 Node fs 异步永久删除（不进回收站）' }
+          - { re: '\bfs\.remove\w*\s*\(', reason: '全局铁律：禁止 Node fs-extra remove 永久删除（不进回收站）' }
+          - { re: '\.Delete\s*\(', reason: '全局铁律：禁止 .NET 实例方法 Delete() 永久删除（不进回收站）' }
+          - { re: '\bClear-Content\b', reason: '全局铁律：禁止 Clear-Content 清空文件内容' }
+          - { re: '\bfind\b[^|;&\n]*\s-delete\b', reason: '全局铁律：禁止 find -delete 永久删除（不进回收站）' }
+          - { re: '\bfind\s+[^|;&]*\s-exec\b[^|;&]*\brm\b', reason: '全局铁律：禁止 find -exec rm 永久删除（不进回收站）' }
+          - { re: '\bgit\s+clean\b', reason: '高危：git clean 永久删除未跟踪文件' }
+          - { re: '\bgit\s+reset\b.*--hard', reason: '高危：git reset --hard 丢弃工作区改动' }
+          - { re: '\breg\s+delete\b', reason: '高危：reg delete 删除注册表项（R2 新增）' }
+          - { re: '\bcertutil\b[^|;&\n]*(-urlcache|-decode)', reason: '高危：certutil 下载/解码执行（R2 新增）' }
+          - { re: '\bdocker\s+(run|exec)\b', reason: '高危：docker 容器内执行（R2 新增，含挂载卷删除/逃逸面）' }
+          - { re: '\bgit\s+gc\b.*--prune', reason: '高危：git gc --prune 不可恢复清除对象（R2 新增）' }
+          - { re: '\bgit\s+reflog\s+expire\b', reason: '高危：git reflog expire 使丢失提交不可恢复（R2 新增）' }
