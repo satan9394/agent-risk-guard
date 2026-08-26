@@ -1,5 +1,9 @@
 # @riskguard — Universal Agent Risk Guard（Monorepo）
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: Windows / macOS / Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
+[![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
+
 > 面向自主 AI Agent 的跨平台执行策略、硬拦截、能力限制与恢复层。
 > 设计文档：`../Universal Agent Risk Guard.md`（v3.0）
 
@@ -74,3 +78,12 @@ node -e "import('./packages/installer/src/discovery.ts').then(m=>console.log(m.d
 | RG-I03 | ALLOW + DENY = DENY（guard 单调性） |
 | RG-I04 | 未知 mutation / 解析失败 → fail-closed deny |
 | RG-I05 | Pattern Policy ≠ Capability Policy（本项目不宣称正则即边界） |
+
+## 社区与协议
+
+- **License**：[MIT](LICENSE) — Copyright (c) 2026 satan9394
+- **贡献指南**：[CONTRIBUTING.md](CONTRIBUTING.md)
+- **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- **安全报告**：[SECURITY.md](SECURITY.md) —— 发现绕过向量请走私密渠道，**不要**公开 issue 演示利用
+- **版本历史**：[CHANGELOG.md](CHANGELOG.md)
+- **平台发布**：SkillHub `@user_d684b111/agent-risk-guard-audit@1.0.0`（审核通过）
