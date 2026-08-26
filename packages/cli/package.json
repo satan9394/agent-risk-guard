@@ -1,0 +1,12 @@
+{
+  "name": "@riskguard/cli",
+  "version": "0.1.0",
+  "description": "RiskGuard CLI runtime — stdin JSON to decision JSON (for command hooks)",
+  "type": "module",
+  "bin": {
+    "riskguard": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/index.ts"
+  }
+}

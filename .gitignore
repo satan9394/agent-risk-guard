@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# 本地运行/日志
+*.log
+.tmp/
+coverage/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本机敏感/临时（绝不入库）
+*.key
+.editorconfig.local

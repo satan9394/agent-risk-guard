@@ -1,0 +1,9 @@
+{
+  "agent": "codex",
+  "surface": "preToolUse",
+  "domain": "git",
+  "action": "git_clean",
+  "targetsRaw": ["C:\\proj"],
+  "cwd": "C:\\proj",
+  "workspaceRoot": "C:\\proj"
+}

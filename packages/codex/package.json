@@ -1,0 +1,7 @@
+{
+  "name": "@riskguard/codex",
+  "version": "0.1.0",
+  "description": "M5 Codex support: rules compiler (policy -> AGENTS.md/CLAUDE.md)",
+  "type": "module",
+  "exports": { ".": "./src/rules-compiler.ts" }
+}

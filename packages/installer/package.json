@@ -1,0 +1,9 @@
+{
+  "name": "@riskguard/installer",
+  "version": "0.1.0",
+  "description": "M6 installer: discovery / deploy / backup / rollback / uninstall / doctor",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@riskguard/core",
+  "version": "0.1.0",
+  "description": "Universal Agent Risk Guard — pure policy kernel (no side effects)",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

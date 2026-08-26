@@ -1,0 +1,7 @@
+{
+  "name": "@riskguard/dsh",
+  "version": "0.1.0",
+  "description": "DSH plugin wiring: tools/pre-execute listener + monotonic tools.guard() invariants (D2 verified API)",
+  "type": "module",
+  "exports": { ".": "./src/plugin.ts" }
+}

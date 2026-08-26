@@ -1,0 +1,11 @@
+{
+  "agent": "cursor",
+  "surface": "preToolUse",
+  "tool": "Bash",
+  "domain": "filesystem",
+  "action": "delete",
+  "targetsRaw": ["C:\\proj\\important"],
+  "commandRaw": "remove-item C:\\proj\\important -Recurse -Force",
+  "cwd": "C:\\proj",
+  "workspaceRoot": "C:\\proj"
+}

@@ -1,0 +1,11 @@
+{
+  "agent": "claude-code",
+  "surface": "PreToolUse",
+  "tool": "Bash",
+  "domain": "filesystem",
+  "action": "write",
+  "targetsRaw": ["C:\\proj\\a.txt"],
+  "commandRaw": "echo hello > C:\\proj\\a.txt",
+  "cwd": "C:\\proj",
+  "workspaceRoot": "C:\\proj"
+}

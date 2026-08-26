@@ -1,0 +1,9 @@
+{
+  "name": "@riskguard/trash",
+  "version": "0.1.0",
+  "description": "Unified trash capability (Windows Recycle Bin / macOS Trash / Linux freedesktop)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
