@@ -1,7 +1,7 @@
 /**
  * opencode-guard-extract.ts — 从插件源码提取纯检测核心（临时 TS 模块，Node 原生 type-stripping 执行）
  */
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,11 +15,13 @@ export interface PureCore {
   detectGit: (s: string) => { policy: string; reason: string } | null;
 }
 
+// 插件单一事实源：优先仓库内副本（CI 可跑），skill 工作区存在时仍校验真身（同 rule-alignment 策略）
+const REPO_PLUGIN = join(import.meta.dirname, '..', '..', 'assets', 'opencode', 'destructive-operation-guard.ts');
+const SKILL_PLUGIN = 'E:/DeepSeek_Harness/workspace/2026_08_21/agent-risk-guard-audit/scripts/opencode/destructive-operation-guard.ts';
+
 export async function extractPureCore(): Promise<PureCore> {
-  const src = readFileSync(
-    'E:/DeepSeek_Harness/workspace/2026_08_21/agent-risk-guard-audit/scripts/opencode/destructive-operation-guard.ts',
-    'utf8',
-  );
+  const pluginPath = existsSync(REPO_PLUGIN) ? REPO_PLUGIN : SKILL_PLUGIN;
+  const src = readFileSync(pluginPath, 'utf8');
   const start = src.indexOf('const HOME_RAW');
   const endMark = src.indexOf('// --- Trash tool');
   if (start === -1 || endMark === -1) throw new Error('extract: 切割标记未找到');
