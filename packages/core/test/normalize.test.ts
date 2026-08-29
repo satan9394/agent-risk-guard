@@ -9,19 +9,26 @@ import { classifyShellCommand, normalizeEvent, extractTargetsFromCommand, isRead
 import { defaultPolicy } from '../src/rules/default-policy.ts';
 import { evaluate } from '../src/policy-engine.ts';
 
+// 跨平台路径基元：Windows 语义仅在 win 分支断言，非 win 用 POSIX 等价路径（CI ubuntu 修复）
+const IS_WIN = process.platform === 'win32';
+const HOME = IS_WIN ? 'C:\\Users\\x' : '/home/x';
+const PROJ = IS_WIN ? 'C:\\proj' : '/proj';
+const PROJ_SRC = IS_WIN ? 'C:\\proj\\src' : '/proj/src';
+const RISKGUARD_ROOT = IS_WIN ? 'C:\\Users\\x\\.riskguard' : '/home/x/.riskguard';
+
 test('路径规范化: 相对路径 + .. 解析', () => {
-  const a = resolvePath('../foo/bar.txt', 'C:\\proj\\src', 'C:\\Users\\x');
-  assert.ok(a.canonical.startsWith('C:\\'));
-  assert.ok(a.canonical.endsWith('foo\\bar.txt'));
-  assert.ok(!a.canonical.includes('..\\'));
+  const a = resolvePath('../foo/bar.txt', PROJ_SRC, HOME);
+  assert.ok(a.canonical.startsWith(IS_WIN ? 'C:\\' : '/'));
+  assert.ok(a.canonical.endsWith('foo/bar.txt') || a.canonical.endsWith('foo\\bar.txt'));
+  assert.ok(!a.canonical.includes('..\\') && !a.canonical.includes('../'));
 });
 
 test('路径规范化: ~ 展开', () => {
-  const a = resolvePath('~/data', undefined, 'C:\\Users\\x');
-  assert.equal(a.canonical, 'C:\\Users\\x\\data');
+  const a = resolvePath('~/data', undefined, HOME);
+  assert.equal(a.canonical, IS_WIN ? 'C:\\Users\\x\\data' : '/home/x/data');
 });
 
-test('路径规范化: Windows 盘符大写', () => {
+test('路径规范化: Windows 盘符大写', { skip: !IS_WIN }, () => {
   const a = resolvePath('d:\\proj\\x', undefined, undefined);
   assert.ok(a.canonical.startsWith('D:\\'));
 });
@@ -29,14 +36,14 @@ test('路径规范化: Windows 盘符大写', () => {
 test('路径规范化: 大小写不敏感比较', () => {
   const a = resolvePath('C:\\Proj\\X', undefined, undefined);
   const b = resolvePath('c:\\proj\\x', undefined, undefined);
-  assert.equal(pathsEqual(a, b), process.platform === 'win32');
+  assert.equal(pathsEqual(a, b), IS_WIN);
 });
 
 test('isWithin: 受保护根判定', () => {
-  const a = resolvePath('C:\\Users\\x\\.riskguard\\policy.yml', undefined, undefined);
-  assert.equal(isWithin(a, ['C:\\Users\\x\\.riskguard']), true);
-  const b = resolvePath('C:\\Users\\x\\.riskguard2\\f', undefined, undefined);
-  assert.equal(isWithin(b, ['C:\\Users\\x\\.riskguard']), false); // 前缀必须是完整段
+  const a = resolvePath(RISKGUARD_ROOT + (IS_WIN ? '\\policy.yml' : '/policy.yml'), undefined, undefined);
+  assert.equal(isWithin(a, [RISKGUARD_ROOT]), true);
+  const b = resolvePath(RISKGUARD_ROOT + (IS_WIN ? '2\\f' : '2/f'), undefined, undefined);
+  assert.equal(isWithin(b, [RISKGUARD_ROOT]), false); // 前缀必须是完整段
 });
 
 test('isEscapeAttempt: .. 穿越识别', () => {
@@ -80,8 +87,8 @@ test('classifyShellCommand: 白名单命令 null', () => {
 test('normalizeEvent: 基础归一化', () => {
   const out = normalizeEvent({
     agent: 'cursor', surface: 'preToolUse', domain: 'filesystem', action: 'delete',
-    targetsRaw: ['C:\\proj\\important'], cwd: 'C:\\proj', home: 'C:\\Users\\x',
-    workspaceRoot: 'C:\\proj',
+    targetsRaw: [PROJ + (IS_WIN ? '\\important' : '/important')], cwd: PROJ, home: HOME,
+    workspaceRoot: PROJ,
   });
   assert.equal(out.ok, true);
   if (out.ok) {
@@ -99,7 +106,7 @@ test('normalizeEvent: 缺失字段失败', () => {
 });
 
 test('extractTargetsFromCommand: rm -rf 路径提取', () => {
-  const targets = extractTargetsFromCommand('rm -rf C:\\proj\\build', 'C:\\proj', 'C:\\Users\\x');
+  const targets = extractTargetsFromCommand('rm -rf ' + PROJ + (IS_WIN ? '\\build' : '/build'), PROJ, HOME);
   assert.ok(targets.length > 0);
   assert.ok(targets[0].canonical!.includes('build'));
 });
@@ -107,7 +114,7 @@ test('extractTargetsFromCommand: rm -rf 路径提取', () => {
 test('端到端: normalize + evaluate 链路（删除 → deny）', () => {
   const out = normalizeEvent({
     agent: 'codex', surface: 'preToolUse', domain: 'filesystem', action: 'delete',
-    targetsRaw: ['C:\\proj\\data'], cwd: 'C:\\proj', workspaceRoot: 'C:\\proj',
+    targetsRaw: [PROJ + (IS_WIN ? '\\data' : '/data')], cwd: PROJ, workspaceRoot: PROJ,
   });
   assert.equal(out.ok, true);
   if (out.ok) {
@@ -120,7 +127,7 @@ test('端到端: normalize + evaluate 链路（删除 → deny）', () => {
 test('端到端: 普通 write 放行', () => {
   const out = normalizeEvent({
     agent: 'claude', surface: 'preToolUse', domain: 'filesystem', action: 'write',
-    targetsRaw: ['C:\\proj\\a.txt'], cwd: 'C:\\proj', workspaceRoot: 'C:\\proj',
+    targetsRaw: [PROJ + (IS_WIN ? '\\a.txt' : '/a.txt')], cwd: PROJ, workspaceRoot: PROJ,
   });
   assert.equal(out.ok, true);
   if (out.ok) {
