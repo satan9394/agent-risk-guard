@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
+          # 零依赖 monorepo（纯 TS 原生运行，无 node_modules / lock 文件）→ 不启用 npm cache
 
       - name: Show versions
         run: node --version && npm --version
