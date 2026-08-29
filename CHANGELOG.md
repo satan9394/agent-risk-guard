@@ -2,6 +2,25 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [SemVer](https://semver.org/lang/zh-CN/)。所有日期均为 UTC。
 
+## [Unreleased] - R3 生态融合
+
+对标 GitHub 同类项目（allowlister / CC Safety Net / claude-guardrails / agent-safety-pack / Relay / SecureVector）后的经验融合，详见 `docs/ecosystem-benchmark.md`。
+
+### Added
+
+- **解释器 one-liner 检测**：`python -c 'os.system("rm -rf /")'`、`node -e fs.rmSync`（含 `require("fs")` 形态）、`perl -e unlink`、`ruby -e File.delete` 内嵌删除识别（core `classifyShellCommand` + 规则集）
+- **shell wrapper 递归解包**：`unwrapShellWrapper()`（bash/sh/zsh/dash/pwsh/powershell `-c`、`cmd /c`、`pwsh -Command`，深度上限 5）；`bash -c 'git reset --hard'` 等包裹形式不再漏拦，安全包裹（`bash -c 'echo hi'`）不误伤
+- **Secret Redaction**：`redact.ts`（`redactSecrets` / `redactJsonValue`），审计序列化 `auditToJson` 出口自动脱敏 token/API key/私钥/口令
+- **敏感路径分类**：`classifySensitivePath()`（.ssh / .env / .aws / .kube / .npmrc / .git-credentials / 私钥 / .pem / credentials），供 read/write 门控
+- **规则集 35 → 47 条**：补全 git 破坏命令清单（`push --force`（`(?!-)` 排除 `--force-with-lease` 误伤）、`branch -D`、`checkout --`、`restore`、`stash drop/clear`、`switch --discard-changes`、`worktree remove --force`）+ 解释器 one-liner + Windows wrapper（`cmd /c`、`pwsh -Command`）规则
+- **规则自带测试用例**：`tests/adversarial/rule-self-test.test.ts`（每条 R3 新增规则 positive/negative 样例 + classifyShellCommand 联动断言）
+- **核心单元测试**：`packages/core/test/ecosystem-fusion.test.ts`（redact / sensitive-path / unwrap）
+
+### Security
+
+- 规则 patch 与 `defaultDenyRules()` 单一事实源同步（rule-alignment 动态计数，YAML `''` 转义提取支持）
+- 全量测试 18 文件 134/134 通过（本机；Windows trash/junction 真实执行 0 skipped）
+
 ## [1.0.0] - 2026-08-26
 
 首个公开版本。同日完成 SkillHub 平台发布（`@user_d684b111/agent-risk-guard-audit@1.0.0`，审核通过、TRACE 评测通过）与 GitHub 开源。

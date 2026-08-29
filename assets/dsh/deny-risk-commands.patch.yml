@@ -45,3 +45,16 @@
           - { re: '\bdocker\s+(run|exec)\b', reason: '高危：docker 容器内执行（R2 新增，含挂载卷删除/逃逸面）' }
           - { re: '\bgit\s+gc\b.*--prune', reason: '高危：git gc --prune 不可恢复清除对象（R2 新增）' }
           - { re: '\bgit\s+reflog\s+expire\b', reason: '高危：git reflog expire 使丢失提交不可恢复（R2 新增）' }
+          # ---- R3 生态融合（对标 CC Safety Net 完整 git 破坏清单 + 解释器 one-liner + Windows wrapper）----
+          - { re: '\bgit\s+push\b[^|;&\n]*\s(?:--force(?!-)|-[f]\b)', reason: '高危：git push --force 破坏远端历史（R3）' }
+          - { re: '\bgit\s+branch\s+-[dD]\b', reason: '高危：git branch -D 强制删除分支（R3）' }
+          - { re: '\bgit\s+checkout\s+--', reason: '高危：git checkout -- 丢弃工作区改动（R3）' }
+          - { re: '\bgit\s+restore\b', reason: '高危：git restore 丢弃工作区改动（R3）' }
+          - { re: '\bgit\s+stash\s+(drop|clear)\b', reason: '高危：git stash drop/clear 永久删除暂存记录（R3）' }
+          - { re: '\bgit\s+switch\s+[^|;&\n]*--discard-changes', reason: '高危：git switch --discard-changes 丢弃改动（R3）' }
+          - { re: '\bgit\s+worktree\s+remove\s+--force', reason: '高危：git worktree remove --force 强制删除工作树（R3）' }
+          - { re: '\bpython(?:3(?:\.\d+)?)?\s+-c\s+[''"][\s\S]*?\b(?:os\.system|os\.remove|os\.unlink|shutil\.rmtree)\b', reason: '高危：解释器 one-liner 内嵌删除（python -c，R3）' }
+          - { re: '\bnode\s+-e\s+[''"][\s\S]*?\b(?:(?:fs|require\([''"]fs[''"]\))\.(?:rmSync|rm|unlinkSync|unlink|rmdirSync|rmdir))\b', reason: '高危：解释器 one-liner 内嵌删除（node -e，R3）' }
+          - { re: '\bperl\s+-e\s+[''"][\s\S]*?\b(?:unlink|rmdir)\b', reason: '高危：解释器 one-liner 内嵌删除（perl -e，R3）' }
+          - { re: '\bcmd(?:\.exe)?\s+\/c\b[^|;&]*\b(del\s|rmdir\b|rd\s|erase\b)', reason: '高危：cmd /c 内嵌删除（R3）' }
+          - { re: '\b(pwsh|powershell)\s+-(?:command|c)\b[^|;&]*[''"][\s\S]*?\b(?:remove-item|rm\s+-rf|del\s|rmdir\s*\/s)\b', reason: '高危：pwsh/powershell -Command 内嵌删除（R3）' }

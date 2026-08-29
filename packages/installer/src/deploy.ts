@@ -40,6 +40,21 @@ export function defaultDenyRules(): GuardRules {
     // R2 新向量（ADVERSARIAL-AUDIT-ROUND2.md 新-1~新-5）
     '\\breg\\s+delete\\b', '\\bcertutil\\b[^|;&\\n]*(-urlcache|-decode)',
     '\\bdocker\\s+(run|exec)\\b', '\\bgit\\s+gc\\b.*--prune', '\\bgit\\s+reflog\\s+expire\\b',
+    // R3 生态融合（对标 CC Safety Net 完整 git 破坏清单，补齐 rules-compiler 已声明但 deny 缺失项）
+    '\\bgit\\s+push\\b[^|;&\\n]*\\s(?:--force(?!-)|-[f]\\b)',
+    '\\bgit\\s+branch\\s+-[dD]\\b',
+    '\\bgit\\s+checkout\\s+--',
+    '\\bgit\\s+restore\\b',
+    '\\bgit\\s+stash\\s+(drop|clear)\\b',
+    '\\bgit\\s+switch\\s+[^|;&\\n]*--discard-changes',
+    '\\bgit\\s+worktree\\s+remove\\s+--force',
+    // R3 生态融合：解释器 one-liner 内嵌删除（对标 CC Safety Net python -c 'os.system("rm -rf /")' 检测）
+    '\\bpython(?:3(?:\\.\\d+)?)?\\s+-c\\s+[\'\"][\\s\\S]*?\\b(?:os\\.system|os\\.remove|os\\.unlink|shutil\\.rmtree)\\b',
+    '\\bnode\\s+-e\\s+[\'\"][\\s\\S]*?\\b(?:(?:fs|require\\([\'\"]fs[\'\"]\\))\\.(?:rmSync|rm|unlinkSync|unlink|rmdirSync|rmdir))\\b',
+    '\\bperl\\s+-e\\s+[\'\"][\\s\\S]*?\\b(?:unlink|rmdir)\\b',
+    // R3 生态融合：Windows wrapper 内嵌删除（对标 CC Safety Net shell wrapper 检测的 Windows 版）
+    '\\bcmd(?:\\.exe)?\\s+\\/c\\b[^|;&]*\\b(del\\s|rmdir\\b|rd\\s|erase\\b)',
+    '\\b(pwsh|powershell)\\s+-(?:command|c)\\b[^|;&]*[\'\"][\\s\\S]*?\\b(?:remove-item|rm\\s+-rf|del\\s|rmdir\\s*\\/s)\\b',
   ];
 }
 

@@ -34,6 +34,31 @@ export function normalizeFullWidth(cmd: string): string {
     .replace(/\u3000/g, ' '); // 全角空格 → ASCII 空格
 }
 
+/**
+ * 敏感路径模式（生态对标：agent-safety-pack sensitive-paths / claude-guardrails deny 规则）。
+ * 供 adapter/hook 对 read/write/edit 工具做路径门控：SSH 私钥、.env、云凭据、kubeconfig 等。
+ */
+export const SENSITIVE_PATH_PATTERNS: Array<{ re: RegExp; category: string }> = [
+  { re: /(^|[\\/])\.ssh([\\/]|$)/, category: 'ssh' },
+  { re: /(^|[\\/])\.env(\.[a-z0-9_-]+)?$/i, category: 'env' },
+  { re: /(^|[\\/])\.aws([\\/]|$)/, category: 'aws' },
+  { re: /(^|[\\/])\.kube([\\/]|$)/, category: 'kube' },
+  { re: /(^|[\\/])\.npmrc$/, category: 'npmrc' },
+  { re: /(^|[\\/])\.git-credentials$/, category: 'git-credentials' },
+  { re: /(^|[\\/])id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/i, category: 'ssh-key' },
+  { re: /\.pem$/i, category: 'pem' },
+  { re: /(^|[\\/])credentials(\.json|\.toml|\.ini)?$/i, category: 'credentials' },
+];
+
+/** 判定路径是否命中敏感资源（供 read/write 门控；命中即建议 deny/ask） */
+export function classifySensitivePath(p: string): { sensitive: boolean; category?: string } {
+  const norm = String(p).replace(/\\/g, '/');
+  for (const { re, category } of SENSITIVE_PATH_PATTERNS) {
+    if (re.test(norm)) return { sensitive: true, category };
+  }
+  return { sensitive: false };
+}
+
 /** 判断命令是否为明确只读/无害的开发命令（白名单初筛，非能力边界） */
 export function isReadOnlyCommand(cmd: string): boolean {
   const c = normalizeFullWidth(cmd).toLowerCase().trim();
@@ -62,9 +87,39 @@ export interface ShellClassified {
   destructive?: boolean; // 显式标记破坏性（如远程管道执行）
 }
 
+/** wrapper 递归解包深度上限（生态对标：CC Safety Net 递归分析，防恶意深嵌套） */
+export const WRAPPER_MAX_DEPTH = 5;
+
+/** 提取 shell wrapper（bash -c / sh -c / pwsh -Command / cmd /c）的内层命令；无 wrapper 返回 null */
+export function unwrapShellWrapper(cmd: string): string | null {
+  // 保持原文大小写返回内层；匹配本身大小写不敏感（i）。
+  // POSIX: bash -c '...' / sh -c "..."（含多参数形式 bash -c 'cmd' name arg0 ...）
+  let m = cmd.match(/\b(?:bash|sh|zsh|dash|pwsh|powershell)\s+(?:-[a-z]{1,2}\s+)*-c\s+["']([\s\S]*?)["'](?:\s+\S+)*\s*$/i);
+  if (m) return m[1];
+  // Windows: cmd /c "..." / cmd.exe /c ...
+  m = cmd.match(/\bcmd(?:\.exe)?\s+\/c\s+["']([\s\S]*?)["']\s*$/i);
+  if (m) return m[1];
+  // PowerShell 显式 -Command（-c 别名已覆盖；此处兜底长格式）
+  m = cmd.match(/\b(?:pwsh|powershell)\s+-command\s+["']([\s\S]*?)["']\s*$/i);
+  if (m) return m[1];
+  return null;
+}
+
 /** 判断命令是否落入某个已知破坏性模式（供 fast-path/telemetry；不是能力边界） */
-export function classifyShellCommand(cmd: string): ShellClassified | null {
+export function classifyShellCommand(cmd: string, depth = 0): ShellClassified | null {
   const c = normalizeFullWidth(cmd).toLowerCase().trim();
+
+  // 递归解包 wrapper（生态对标：CC Safety Net wrapper 检测）。内层命中破坏性才拦，
+  // bash -c 'echo hi' 这类安全包裹放行（wrapper 本身不是危险，危险的是内容）。
+  if (depth < WRAPPER_MAX_DEPTH) {
+    const inner = unwrapShellWrapper(c);
+    if (inner) {
+      const nested = classifyShellCommand(inner, depth + 1);
+      if (nested && nested.destructive) {
+        return { ...nested, confidence: Math.max(nested.confidence, 0.9), destructive: true };
+      }
+    }
+  }
   // RM_SEG：命令/分隔符边界后的 rm（含 /bin/ 完整路径、换行分隔符，P0-1/P2-2）
   const RM_SEG = '(?:^|[;&|/\\n\\r])\\s*rm\\s+';
   // HELP_OK：rm --help / rm -h / rm --version → 无害，排除（P1-1）
@@ -152,6 +207,18 @@ export function classifyShellCommand(cmd: string): ShellClassified | null {
   if (/\beval\s+.*\b(rm\b|remove-item|del\s|rmdir|shutil|fs\.rm)/.test(c) ||
       /\b(bash|sh|pwsh|powershell)\s+-c\s+['"].*\b(rm\s+-rf|remove-item|rmdir\s*\/s|shutil\.rmtree|fs\.rmSync|eval\b)/.test(c)) {
     return { domain: 'process', action: 'execute', confidence: 0.9, destructive: true };
+  }
+  // Windows wrapper 内嵌删除：cmd /c、pwsh/powershell -Command（生态对标：CC Safety Net wrapper 检测）
+  if (/\bcmd(?:\.exe)?\s+\/c\b[^|;&]*\b(del\s|rmdir\b|rd\s|erase\b)/.test(c) ||
+      /\b(pwsh|powershell)\s+-(command|c)\b[^|;&]*['"][\s\S]*?\b(remove-item|rm\s+-rf|del\s|rmdir\s*\/s|\[io\.file\]::delete|clear-content)\b/.test(c)) {
+    return { domain: 'process', action: 'execute', confidence: 0.9, destructive: true };
+  }
+  // 解释器 one-liner 内嵌删除（生态对标：CC Safety Net python -c 'os.system(...)' 检测；c 已 toLowerCase）
+  if (/\bpython(?:3(?:\.\d+)?)?\s+-c\s+['"][\s\S]*?\b(?:os\.system|os\.remove|os\.unlink|os\.rmdir|shutil\.rmtree|pathlib[^'"]*\.unlink|subprocess[^'"]*\.(?:run|call|popen))\b/.test(c) ||
+      /\bnode\s+-e\s+['"][\s\S]*?\b(?:(?:fs|require\(['"]fs['"]\))\.(?:rmsync|rm|unlinksync|unlink|rmdirsync|rmdir))\b/.test(c) ||
+      /\bperl\s+-e\s+['"][\s\S]*?\b(?:unlink|rmdir)\b/.test(c) ||
+      /\bruby\s+-e\s+['"][\s\S]*?\b(?:File\.(?:delete|unlink)|Dir\.delete|rm_rf)\b/.test(c)) {
+    return { domain: 'process', action: 'execute', confidence: 0.92, destructive: true };
   }
   // 两阶段写+执行（P0-4：echo ... > x.sh && bash x.sh / printf | bash）
   if (/>(?:\s*["']?)[^&|;<>]+\.(sh|bash|ps1|bat|cmd)\b.*&&\s*(bash|sh|pwsh|powershell)/.test(c) ||

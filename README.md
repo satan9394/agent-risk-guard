@@ -89,3 +89,4 @@ node -e "import('./packages/installer/src/discovery.ts').then(m=>console.log(m.d
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 - **平台发布**：SkillHub `@user_d684b111/agent-risk-guard-audit@1.0.0`（审核通过）
 - **CI**：`.github/workflows/ci.yml`（Ubuntu + Node 22/24 矩阵跑平台无关测试组；hook/回收站实测依赖本机环境，见 `docs/deployment-status.md`）
+- **生态对标（R3）**：[docs/ecosystem-benchmark.md](docs/ecosystem-benchmark.md) —— 吸收 allowlister / CC Safety Net / claude-guardrails / agent-safety-pack / Relay / SecureVector 经验：解释器 one-liner（`python -c` / `node -e` / `perl -e`）与 shell wrapper（`cmd /c` / `pwsh -Command`）递归检测、Secret Redaction 脱敏、敏感路径分类、git 破坏命令完整清单（规则集 35 → 47 条）、规则自带测试用例（`rule-self-test`）；未采用的 fail-open/defer/Docker 沙箱及 roadmap 详见文档

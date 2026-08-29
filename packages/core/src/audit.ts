@@ -6,6 +6,7 @@
 
 import type { RiskEvent } from './event.ts';
 import type { Decision } from './decision.ts';
+import { redactSecrets } from './redact.ts';
 
 export interface AuditRecord {
   timestamp: string;
@@ -35,7 +36,11 @@ export function toAuditRecord(event: RiskEvent, decision: Decision): AuditRecord
   };
 }
 
-/** 审计记录序列化（Local First，不含敏感原文） */
+/**
+ * 审计记录序列化（Local First，不含敏感原文）。
+ * 生态对标：CC Safety Net 的 JSONL 审计日志自动脱敏 —— 出口处统一 redact，
+ * 防止 token/API key/私钥经 target/reason 泄露进日志。
+ */
 export function auditToJson(record: AuditRecord): string {
-  return JSON.stringify(record);
+  return redactSecrets(JSON.stringify(record));
 }
