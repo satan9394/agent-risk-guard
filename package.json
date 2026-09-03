@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Universal Agent Risk Guard monorepo (workspace dev)",
+  "description": "Universal Agent Risk Guard monorepo — v0.1.0 Developer Preview",
   "type": "module",
   "scripts": {
-    "test": "node --test packages/core/test tests/e2e"
+    "test": "node --test packages/core/test tests/e2e",
+    "riskguard": "node packages/cli/src/index.ts"
   }
 }

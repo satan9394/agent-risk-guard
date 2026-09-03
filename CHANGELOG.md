@@ -2,11 +2,26 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [SemVer](https://semver.org/lang/zh-CN/)。所有日期均为 UTC。
 
-## [Unreleased] - R3 生态融合
+## 版本语义说明
 
-对标 GitHub 同类项目（allowlister / CC Safety Net / claude-guardrails / agent-safety-pack / Relay / SecureVector）后的经验融合，详见 `docs/ecosystem-benchmark.md`。
+当前统一产品版本为 **`v0.1.0 Developer Preview`**（`package.json` = `0.1.0`）。
+
+- 历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- 之所以当前不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
+- 历史 `[1.0.0]` 条目与表格中的 `[0.1.0]` 链接保留为历史记录（`v0.1.0` 未打 tag），不删除、不重写历史。
+
+## [Unreleased] - v0.1.0 Developer Preview（产品化推进）
+
+向「可安装、可验证、可卸载」安全产品推进：
 
 ### Added
+
+- 统一版本体系为 `v0.1.0 Developer Preview`（package.json / README / SECURITY / CHANGELOG）。
+- 用户级 RiskGuard CLI：`detect` / `install` / `status` / `doctor` / `uninstall`（`node packages/cli/src/index.ts <cmd>` 或 `npm run riskguard -- <cmd>`）。
+- 非破坏性安装：写入前备份、配置 merge（而非 replace）、安装 manifest、幂等安装/卸载、`--dry-run`、`--verbose`。
+- 兼容性单一事实源：`packages/installer/compatibility.json`（Agent × 集成 × 硬/软 × D0–D4 等级），README 支持矩阵以它为准。
+
+### Added（R3 生态融合，前一轮未发布内容）
 
 - **解释器 one-liner 检测**：`python -c 'os.system("rm -rf /")'`、`node -e fs.rmSync`（含 `require("fs")` 形态）、`perl -e unlink`、`ruby -e File.delete` 内嵌删除识别（core `classifyShellCommand` + 规则集）
 - **shell wrapper 递归解包**：`unwrapShellWrapper()`（bash/sh/zsh/dash/pwsh/powershell `-c`、`cmd /c`、`pwsh -Command`，深度上限 5）；`bash -c 'git reset --hard'` 等包裹形式不再漏拦，安全包裹（`bash -c 'echo hi'`）不误伤

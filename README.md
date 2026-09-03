@@ -8,8 +8,8 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：Developer Preview**。核心策略引擎、CLI、DSH 插件与大部分适配器已实现并通过自动化测试；
-> 一键安装器仍在完善中。生产接线只在本机单点验证，macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
+> **状态：`v0.1.0 Developer Preview`**。核心策略引擎、CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
+> 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
 
 ---
 
@@ -210,4 +210,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：CHANGELOG 以 `1.0.0` 为首个公开版本（对应 Git tag `v1.0.0`，GitHub Release 页待补），仓库 `package.json` 当前版本为 `0.1.0`（内部开发基线）。`0.x` 为 monorepo 初版。详见 `docs/TODO.md`。
+> **版本说明**：当前统一产品版本为 **`v0.1.0 Developer Preview`**（`package.json` = `0.1.0`）。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
