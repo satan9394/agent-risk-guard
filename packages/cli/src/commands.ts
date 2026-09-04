@@ -25,15 +25,21 @@ import { readConfig, describeReadFailure, type ConfigReadResult } from '../../in
 import { sha256File } from '../../installer/src/hash.ts';
 import { InstallTransaction } from '../../installer/src/transaction.ts';
 import { probeAgentRuntime } from '../../installer/src/runtime-probe.ts';
+import { installRuntime, verifyRuntime, runtimeVersionDir, isRuntimeInstalled } from './runtime-install.ts';
 import { PRODUCT_VERSION } from '../../core/src/version.ts';
 
 const VERSION = PRODUCT_VERSION;
-/** 仓库根目录（packages/cli/src/commands.ts → 上溯 4 层）
- *  file:///E:/... → /E:/... ，需去掉首斜杠得到 Windows 绝对路径 */
+/** 仓库根目录（packages/cli/src/commands.ts → 上溯 3 层 = repo root）
+ *
+ * v0.1.2 Phase B：若 portable runtime（~/.riskguard/runtime/<version>）已安装，
+ * 优先用它作为运行时根——这样 install 写入的 hook/plugin 指向 runtime，
+ * 用户删除/移动源码仓库后 RiskGuard 仍工作。否则退回当前 repo。
+ */
 const REPO_ROOT: string = (() => {
   try {
     const here = dirname(fileURLToPath(import.meta.url)); // packages/cli/src
-    return dirname(dirname(dirname(here)));                // repo root
+    const repoRoot = dirname(dirname(dirname(here)));     // repo root
+    return repoRoot;
   } catch { return process.cwd(); }
 })();
 
@@ -124,12 +130,12 @@ const installers: Record<string, AgentInstaller> = {
   'claude-code': {
     id: 'claude-code', display: 'Claude Code',
     planConfigPath: (h) => join(h, '.claude', 'settings.json'),
-    buildInjection: () => ({
+    buildInjection: (root) => ({
       _riskguard: true, id: CLAUDE_HOOK_ID,
       matcher: 'Bash|PowerShell',
       hooks: [{
         type: 'command',
-        command: `node "${join(REPO_ROOT, 'packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts')}" --agent claude`,
+        command: `node "${join(root, 'packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts')}" --agent claude`,
         statusMessage: 'RiskGuard: checking dangerous commands',
         timeout: 10,
       }],
@@ -138,12 +144,12 @@ const installers: Record<string, AgentInstaller> = {
   codex: {
     id: 'codex', display: 'Codex CLI',
     planConfigPath: (h) => join(h, '.codex', 'hooks.json'),
-    buildInjection: () => ({
+    buildInjection: (root) => ({
       _riskguard: true, id: CODEX_HOOK_ID,
       matcher: 'Bash',
       hooks: [{
         type: 'command',
-        command: `node "${join(REPO_ROOT, 'packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts')}" --agent codex`,
+        command: `node "${join(root, 'packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts')}" --agent codex`,
         statusMessage: 'RiskGuard: checking dangerous commands',
         timeout: 10,
       }],
@@ -166,6 +172,19 @@ const installers: Record<string, AgentInstaller> = {
   },
 };
 
+/**
+ * 解析 install 实际使用的运行时根（v0.1.2 Phase B）：
+ *  portable runtime 已装（~/.riskguard/runtime/<ver>/runtime-manifest.json 存在且完整）→ 用 runtime，
+ *  使 hook 指向 runtime；否则退回当前仓库。这样用户删除源码仓库后 RiskGuard 仍工作。
+ */
+async function resolveActiveRoot(home: string): Promise<{ root: string; source: 'runtime' | 'repo' }> {
+  if (isRuntimeInstalled(home)) {
+    const v = await verifyRuntime({ home });
+    if (v.ok) return { root: runtimeVersionDir(home), source: 'runtime' };
+  }
+  return { root: REPO_ROOT, source: 'repo' };
+}
+
 export function mergeForAgent(id: string, repoRoot: string, existing: Record<string, unknown> | null | undefined, home: string): { config: Record<string, unknown>; changed: boolean } {
   if (id === 'claude-code') return mergeClaudeSettings(existing, installers['claude-code'].buildInjection(repoRoot));
   if (id === 'codex') return mergeCodexHooks(existing, installers.codex.buildInjection(repoRoot));
@@ -176,7 +195,7 @@ export function mergeForAgent(id: string, repoRoot: string, existing: Record<str
 export interface InstallOutcome {
   agent: string;
   display: string;
-  state: 'installed' | 'skipped' | 'error' | 'already' | 'aborted';
+  state: 'installed' | 'repaired' | 'skipped' | 'error' | 'already' | 'aborted';
   backupDir?: string;
   manifestFile?: string;
   message: string;
@@ -262,10 +281,14 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   }
   const existingRaw = read.state === 'valid' ? read.data : null;
 
+  // —— Phase B：解析实际运行时根（runtime 已装则 hook 指向 runtime，不绑 git clone） ——
+  const active = await resolveActiveRoot(home);
+  const activeRoot = active.root;
+
   const merged = (() => {
-    if (inst.id === 'claude-code') return mergeClaudeSettings(existingRaw, inst.buildInjection(REPO_ROOT));
-    if (inst.id === 'codex') return mergeCodexHooks(existingRaw, inst.buildInjection(REPO_ROOT));
-    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(REPO_ROOT));
+    if (inst.id === 'claude-code') return mergeClaudeSettings(existingRaw, inst.buildInjection(activeRoot));
+    if (inst.id === 'codex') return mergeCodexHooks(existingRaw, inst.buildInjection(activeRoot));
+    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(activeRoot));
     return { config: (existingRaw ?? {}), changed: false };
   })();
 
@@ -273,7 +296,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   let artifactDst: string | null = null;
   let artifactSrc: string | null = null;
   const artifactExistsBefore = inst.copyArtifacts && inst.id === 'opencode' && (() => {
-    artifactSrc = join(REPO_ROOT, 'assets', 'opencode', `${OPENCODE_PLUGIN_ID}.ts`);
+    artifactSrc = join(activeRoot, 'assets', 'opencode', `${OPENCODE_PLUGIN_ID}.ts`);
     artifactDst = join(home, '.config', 'opencode', 'plugins', `${OPENCODE_PLUGIN_ID}.ts`);
     return existsSync(artifactDst);
   })();
@@ -288,19 +311,24 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
     }
   }
 
+  // —— 已装状态判定（fresh / repair / already） ——
+  // v0.1.2：manifest 存在但 wiring 损坏 → install 是 repair，绝不短路成 already。
+  const manifestExistedBefore = await hasManifest(inst.id, home);
+  const healthProbe = manifestExistedBefore ? await probeAgentRuntime(inst.id, { home, deep: true }) : null;
+  const healthyAlready = manifestExistedBefore && healthProbe?.state === 'ACTIVE';
+  const isRepair = manifestExistedBefore && !healthyAlready;
+
   // —— dry-run：只输出将修改，不落盘 ——
   if (dry) {
     const wouldLines = ['Would modify:', `  ${configPath}`];
     if (inst.copyArtifacts && !artifactExistsBefore) wouldLines.push('Would create:', `  ${artifactDst ?? `<opencode plugins>/${OPENCODE_PLUGIN_ID}.ts`}`);
-    return { agent: inst.id, display: inst.display, state: merged.changed ? 'installed' : 'already', message: [inst.display, ...wouldLines, '  (dry-run, no files changed)', ''].join('\n'), dryRun: true };
+    const dryState = isRepair ? 'repaired' : (merged.changed || (inst.copyArtifacts && !artifactExistsBefore)) ? 'installed' : 'already';
+    return { agent: inst.id, display: inst.display, state: dryState, message: [inst.display, ...wouldLines, '  (dry-run, no files changed)', ''].join('\n'), dryRun: true };
   }
 
-  // —— 幂等短路：无改动且已装 ——
-  if (!merged.changed && !(inst.copyArtifacts && !artifactExistsBefore)) {
-    const alreadyManifest = await hasManifest(inst.id, home);
-    if (alreadyManifest) {
-      return { agent: inst.id, display: inst.display, state: 'already', backupDir: join(backupRoot(home), inst.id), manifestFile: manifestPath, message: `${inst.display}: already installed (idempotent, no change)`, dryRun: dry };
-    }
+  // —— 幂等短路：仅当「无改动 AND 已装 AND 健康(ACTIVE)」才算 already ——
+  if (!merged.changed && !(inst.copyArtifacts && !artifactExistsBefore) && healthyAlready) {
+    return { agent: inst.id, display: inst.display, state: 'already', backupDir: join(backupRoot(home), inst.id), manifestFile: manifestPath, message: `${inst.display}: already installed (idempotent, no change)`, dryRun: dry };
   }
 
   // ============ 事务体 ============
@@ -331,6 +359,9 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
     if (opts._test?.failAt === 'artifact-write') throw new Error('INJECTED: artifact-write failure');
 
     // —— provisional manifest（含 transactionId；VERIFY 通过后再 finalize） ——
+    // v0.1.2：manifest 是普通 TransactionTarget——writeJsonAtomic 写前自动 snapshot：
+    //   旧 manifest 存在 → backup exact + beforeSha256（rollback 会 restore）
+    //   manifest 不存在 → existedBefore=false（rollback 会 trash 移除新建的）
     const provisional: AgentManifest = {
       schemaVersion: 2, product: 'riskguard', version: VERSION, agent: inst.id,
       transactionId: tx.id, installedAt: new Date().toISOString(),
@@ -341,8 +372,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
       artifacts: artifactRecords,
       runtimeVerification: { verifiedAt: new Date().toISOString(), result: 'FAIL', detail: 'pending verification' },
     };
-    await saveManifest(provisional, home);
-    tx.noteProvisionalManifest(manifestPath);
+    await tx.writeJsonAtomic(manifestPath, provisional);
     if (opts._test?.failAt === 'manifest-save') throw new Error('INJECTED: manifest-save failure');
 
     // —— VERIFY：runtime self-test（真实验证运行链路，非字符串） ——
@@ -350,22 +380,23 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
     const verifyPass = opts._test?.failVerify === true ? false : (probe.state === 'ACTIVE' || (probe.selfTestPassed && probe.configValid && probe.wired && (inst.id === 'opencode' ? probe.artifactIntegrity !== false : probe.hookTargetExists)));
     if (!verifyPass) {
       const rollback = await tx.rollback('verification FAIL');
-      const state = rollback.state === 'rolled-back' ? 'error' : 'error';
       return {
-        agent: inst.id, display: inst.display, state, dryRun: dry,
-        message: `${inst.display}: install verification FAILED and was ${rollback.state === 'rolled-back' ? 'rolled back' : 'NOT fully rolled back'}.\n  Reason: runtime self-test failed.\n  Evidence: ${(probe.evidence ?? []).join(' | ')}\n  ${rollback.state === 'rolled-back' ? 'Rollback complete: system restored to pre-install state.' : 'ROLLBACK_INCOMPLETE: manual review required.'}`,
+        agent: inst.id, display: inst.display, state: 'error', dryRun: dry,
+        message: `${inst.display}: install verification FAILED and was ${rollback.state === 'rolled-back' ? 'rolled back' : 'NOT fully rolled back'}.\n  Reason: runtime self-test failed.\n  Evidence: ${(probe.evidence ?? []).join(' | ')}\n  ${rollback.state === 'rolled-back' ? 'Rollback complete: system restored to pre-install state.' : `ROLLBACK_INCOMPLETE: ${rollback.message}. Manual review required.`}`,
       };
     }
 
-    // —— FINALIZE：runtimeVerification=PASS 后 commit ——
+    // —— FINALIZE：runtimeVerification=PASS 后 commit（仍是事务内原子写，manifest target 已 snapshot） ——
     const final: AgentManifest = { ...provisional, runtimeVerification: { verifiedAt: new Date().toISOString(), result: 'PASS', detail: probe.selfTestDetail } };
-    await saveManifest(final, home);
+    await tx.writeJsonAtomic(manifestPath, final);
     tx.commit();
 
+    const finalState = isRepair ? 'repaired' : 'installed';
+    const verb = isRepair ? 'repaired successfully (was BROKEN/INSTALLED)' : 'installed (merge-preserving)';
     return {
-      agent: inst.id, display: inst.display, state: 'installed',
+      agent: inst.id, display: inst.display, state: finalState,
       backupDir: join(backupRoot(home), inst.id), manifestFile: manifestPath,
-      message: `${inst.display}: installed (merge-preserving)${createdFiles.length ? `; installed ${createdFiles.length} artifact(s)` : ''}; runtime self-test ${verifyPass ? 'PASS' : 'FAIL'}${verbose ? `\n  modified: ${configPath}\n  self-test: ${probe.selfTestDetail ?? ''}` : ''}`,
+      message: `${inst.display}: ${verb}${createdFiles.length ? `; installed ${createdFiles.length} artifact(s)` : ''}; runtime self-test ${verifyPass ? 'PASS' : 'FAIL'}${verbose ? `\n  modified: ${configPath}\n  self-test: ${probe.selfTestDetail ?? ''}` : ''}`,
       dryRun: dry,
     };
   } catch (e) {
@@ -399,7 +430,9 @@ export async function cmdStatus(opts: { home?: string }): Promise<string> {
     lines.push(`Integration: ${c?.integration ?? '—'}`);
     lines.push(`Capability: ${lvl ?? 'D0'} (${c?.enforcement === 'hard' ? 'hard blocking' : c?.enforcement === 'soft' ? 'soft only' : 'none'})`);
     lines.push(`Runtime: ${probe.state}${describeRuntime(probe.state)}`);
-    if (probe.selfTestDetail) lines.push(`  self-test: ${probe.selfTestDetail}`);
+    lines.push(`Verification: ${probe.verificationMode}${probe.verificationMode === 'dynamic' ? ' (real interception runtime self-test)' : probe.verificationMode === 'static' ? ' (wiring + artifact + integrity)' : ''}`);
+    if (probe.verificationMode === 'dynamic' && probe.selfTestDetail) lines.push(`  self-test: ${probe.selfTestDetail}`);
+    if (probe.verificationMode === 'static' && probe.artifactIntegrity === false) lines.push(`  integrity: MISMATCH`);
     lines.push('');
   }
   return lines.join('\n');
@@ -451,6 +484,7 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean }): Pro
       if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} deny-risk-commands patch 缺失`); }
       else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); }
     }
+    lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
   }
   // 其它 registry agent（未纳入 probe 的）→ SKIP（未装）或按 doctor 旧逻辑
@@ -589,6 +623,30 @@ function removeInjection(id: string, cfg: Record<string, unknown>): { config: Re
 // 会话级 import for trash 保持顶层 import 不循环；doctor/status 已在上面
 // ============================================================================
 
+// ============================================================================
+// bootstrap（Phase B：portable runtime 安装）
+// ============================================================================
+
+export async function cmdBootstrap(opts: { home?: string; force?: boolean }): Promise<string> {
+  const home = HOMES.get(opts.home);
+  const installed = isRuntimeInstalled(home);
+  if (installed && opts.force !== true) {
+    // 已装：校验完整性
+    const v = await verifyRuntime({ home });
+    const dir = runtimeVersionDir(home);
+    if (v.ok) return `RiskGuard runtime already installed and verified.\n  Runtime: ${dir}\n  Version: ${PRODUCT_VERSION}\n\nUse --force to reinstall.`;
+    return `RiskGuard runtime exists but is INCOMPLETE (${v.issues.length} issue(s)):\n${v.issues.slice(0, 10).map((i) => `  - ${i}`).join('\n')}\n\nRun 'riskguard bootstrap --force' to repair.`;
+  }
+  try {
+    const r = await installRuntime({ home, force: opts.force });
+    const v = await verifyRuntime({ home });
+    const integrity = v.ok ? 'OK' : `ISSUES: ${v.issues.join('; ')}`;
+    return `RiskGuard runtime installed.\n  Runtime: ${r.dir}\n  Version: ${PRODUCT_VERSION}\n  Files: ${r.files}\n  Integrity: ${integrity}`;
+  } catch (e) {
+    return `RiskGuard bootstrap failed.\n  Reason: ${(e as Error).message}\nNo changes to agent configs were made.`;
+  }
+}
+
 export function cmdVersion(): string {
   return `RiskGuard ${VERSION} (Developer Preview)`;
 }
@@ -597,7 +655,8 @@ export function cmdHelp(): string {
   return [
     'RiskGuard — deterministic safety guardrails for AI coding agents.',
     '',
-    'Usage:  node packages/cli/src/index.ts <command> [options]',
+    'Usage:  node bin/riskguard.mjs <command> [options]',
+    '        (or: node packages/cli/src/index.ts <command> [options])',
     '        (or: npm run riskguard -- <command> [options])',
     '',
     'Commands:',
@@ -613,6 +672,8 @@ export function cmdHelp(): string {
     '  uninstall         Remove RiskGuard entries based on manifest (precise inverse op, keeps user changes)',
     '    --agent <id>    only uninstall one agent',
     '    --dry-run       show changes without writing',
+    '  bootstrap         Install portable RiskGuard runtime to ~/.riskguard/runtime/<version>',
+    '    --force         reinstall even if already installed',
     '  version           Show version',
     '  help              Show this help',
   ].join('\n');

@@ -66,8 +66,6 @@ export class InstallTransaction {
   private backupImpl: NonNullable<TransactionOptions['backupImpl']>;
   state: InstallTransactionState = 'precheck';
   private targets = new Map<string, TransactionTarget>();
-  /** 事务期间已产生的 manifest 路径（若 commit 前失败需删除） */
-  private provisionalManifestPath: string | null = null;
 
   constructor(agent: string, home: string, opts: TransactionOptions = {}) {
     this.agent = agent;
@@ -84,10 +82,12 @@ export class InstallTransaction {
     return this.targets.get(path);
   }
 
-  /** SNAPSHOT+BACKUP：记录每个即将写入目标的本轮状态。已存在文件必须备份成功，否则抛错（ABORT）。 */
+  /** SNAPSHOT+BACKUP：记录每个即将写入目标的本轮状态。已存在文件必须备份成功，否则抛错（ABORT）。
+   *  幂等：已 snapshot 的路径跳过（不重复 backup）。 */
   async snapshot(paths: string[]): Promise<void> {
     this.state = 'snapshot';
     for (const p of paths) {
+      if (this.targets.has(p)) continue; // 已 snapshot，不重复
       const existed = existsSync(p);
       const t: TransactionTarget = { path: p, existedBefore: existed, createdByTransaction: false };
       if (existed) {
@@ -111,15 +111,16 @@ export class InstallTransaction {
     }
   }
 
-  /** 原子写 JSON（temp → rename），并标记 createdByTransaction / 变更 */
+  /** 原子写 JSON（temp → rename）。目标若未被 snapshot（如 manifest），写前自动 snapshot+backup。 */
   async writeJsonAtomic(path: string, data: unknown): Promise<void> {
     this.state = 'writing';
+    if (!this.targets.has(path)) {
+      await this.snapshot([path]); // 已存在→backup exact；不存在→existedBefore=false
+    }
     await mkdir(dirname(path), { recursive: true });
     await this.atomicWrite(path, JSON.stringify(data, null, 2));
     const t = this.targets.get(path);
-    if (t) {
-      if (!t.existedBefore) t.createdByTransaction = true;
-    }
+    if (t && !t.existedBefore) t.createdByTransaction = true;
   }
 
   /** 原子写文件内容（temp → rename；Windows rename 覆盖已存在文件 OK） */
@@ -145,11 +146,6 @@ export class InstallTransaction {
       else this.targets.set(dst, { path: dst, existedBefore: false, createdByTransaction: true });
     }
     // 已存在且 hash 相同（幂等场景由调用方跳过）；这里只处理新建
-  }
-
-  /** VERIFY 通过后记录 provisional manifest 路径（commit 前的产物，失败要删） */
-  noteProvisionalManifest(path: string): void {
-    this.provisionalManifestPath = path;
   }
 
   commit(): void {
@@ -190,13 +186,6 @@ export class InstallTransaction {
           msgs.push(`REMOVE-FAILED: ${t.path} (${(e as Error).message})`);
         }
       }
-    }
-    // 删除 provisional manifest（若已写且未 commit）
-    if (this.provisionalManifestPath && existsSync(this.provisionalManifestPath)) {
-      try {
-        await import('../../trash/src/index.ts').then(({ trash }) => trash(this.provisionalManifestPath!));
-        msgs.push(`removed provisional manifest: ${this.provisionalManifestPath}`);
-      } catch { /* ignore */ }
     }
     const allVerified = perTarget.every((x) => x.verified);
     this.state = allVerified ? 'rolled-back' : 'failed';
