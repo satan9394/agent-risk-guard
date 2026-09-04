@@ -128,11 +128,13 @@ node packages/cli/src/index.ts detect          # 人类可读
 node packages/cli/src/index.ts detect --json   # {claude-code, codex, opencode, dsh} 布尔表
 ```
 
-**2. 查看每个 Agent 的集成 / 硬阻断 / 验证等级 / 状态**：
+**2. 查看每个 Agent 的 Runtime 状态与产品能力等级**：
 
 ```bash
 node packages/cli/src/index.ts status
 ```
+
+status 区分两个概念：**Capability**（RiskGuard 对该 Agent 理论/实测支持到 D0–D4，来自单一事实源 `compatibility.json`）与 **Runtime**（这台机器当前实际状态）。Runtime 取值 `NOT_DETECTED`（Agent 不存在）/ `DETECTED`（Agent 在，RiskGuard 未装）/ `INSTALLED`（已装待确认）/ `ACTIVE`（接线健全，真的在拦截）/ `BROKEN`（manifest 在但接线缺失损坏）。**检测到 Agent + 能力非 D0 ≠ ACTIVE**——只有 wiring 真的在位且健康才算 ACTIVE。
 
 **3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
 
@@ -140,21 +142,24 @@ node packages/cli/src/index.ts status
 node packages/cli/src/index.ts doctor
 ```
 
-**4. 安装**（写前备份 + merge 保留用户配置 + 记 manifest；`--dry-run` 先预览）：
+**4. 安装**（事务式：类型化读取 → backup → merge → manifest → doctor；`--dry-run` 先预览；支持 `--agent` alias）：
 
 ```bash
-node packages/cli/src/index.ts install --dry-run   # 只显示将改什么，不落盘
-node packages/cli/src/index.ts install             # 应用到检测到的 Agent
+node packages/cli/src/index.ts install --dry-run            # 只显示将改什么，不落盘
+node packages/cli/src/index.ts install                      # 应用到检测到的 Agent
+node packages/cli/src/index.ts install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
 ```
 
-安装是**非破坏性**的：只往每个 Agent 的配置里「加入」RiskGuard 自己的 hook / 插件条目，保留用户已有字段（例如 Claude Code 的 `permissions`、Setup hooks；OpenCode 已有插件；Codex 已有 hook）。`--dry-run` 仅打印 `Would modify: <path>` 与 `No files changed (dry-run)`。
+安装是**非破坏性**的：只往每个 Agent 的配置里「加入」RiskGuard 自己的 hook / 插件条目，保留用户已有字段（例如 Claude Code 的 `permissions`、Setup hooks；OpenCode 已有插件；Codex 已有 hook）。若某配置文件是**损坏 JSON / 无权限 / IO 错误**，install 会立即终止且零写入（不覆盖用户无法确认内容的配置）。OpenCode 插件以 namespace 名 `agent-risk-guard.ts` 部署：目标已存在但内容不是我方文件（SHA256 不符）时**拒绝安装、绝不覆盖**。任一步失败会回滚到安装前，不留下半成品。`--dry-run` 仅打印 `Would modify/create` 与 `No files changed (dry-run)`。
 
-**5. 卸载**（仅依据 manifest 精确移除 RiskGuard 条目，恢复用户原始配置）：
+**5. 卸载**（精确逆操作：只移除 RiskGuard 自己注入的条目，保留用户 install 之后新增的配置）：
 
 ```bash
 node packages/cli/src/index.ts uninstall --dry-run
 node packages/cli/src/index.ts uninstall
 ```
+
+卸载依据 manifest 精确移除 RiskGuard 条目与文件；被用户修改过的 RiskGuard 文件不会被自动删除（提示人工检查）。manifest 缺失时提示「nothing to do」，不会误删。
 
 > Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 

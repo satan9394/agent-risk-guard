@@ -22,6 +22,15 @@
 - 兼容性单一事实源：`packages/installer/compatibility.json`（Agent × 集成 × 硬/软 × D0–D4 等级），README 支持矩阵以它为准。
 - 真实 D3 硬阻断实测（Windows，v0.1.0）：Claude Code `--permission-mode bypassPermissions` 与 OpenCode `run` 会话中，`git reset --hard` 均在工具执行前被 RiskGuard 拒绝（Claude Code 侧 `permission-rule` / OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活；`precious.txt` 与 `sentinel` 实锤未被改动。
 - 兼容性等级据实测对齐（compatibility.json 为唯一事实源）：claude-code/opencode=Windows D3，codex=Windows D2（本机未装 CLI，真实会话待补），dsh=Windows D3。
+- **发布前整改（v0.1.0 Release Gate）**：
+  - `status` 拆分 **Capability（D0–D4）** 与 **Runtime state（NOT_DETECTED / DETECTED / INSTALLED / ACTIVE / BROKEN）**：检测到 Agent + 能力非 D0 不再误报 ACTIVE；只有 manifest + wiring 在位且 doctor 关键项健康才 ACTIVE（P0-1）。
+  - 类型化配置读取 `config-read.ts`（missing / valid / invalid-json / permission-denied / io-error）：损坏/无权限/IO 错误的配置 → install 立即终止且零写入，绝不覆盖无法确认内容的用户配置（P0-2）。
+  - OpenCode 插件改用 namespace 名 `agent-risk-guard.ts`（旧名 `destructive-operation-guard` 仍兼容识别）：目标同名但内容非我方文件（SHA256 不符）→ 拒绝安装、零覆盖（P0-3）。
+  - 事务式安装：preflight → backup → write → manifest → doctor，任一步失败回滚到安装前，不留下半成品（P0-4）。
+  - `normalizeAgentId()` 统一 alias：`claude`/`cc`/`claude-code`、`oc`/`opencode`、`codex`（P1-1）。
+  - manifest 增加 `schemaVersion` 与 `artifacts[{path, sha256}]`；卸载前校验 hash，被用户改过的 RiskGuard 文件不自动删除（P1-3）。
+  - 卸载改为精确逆操作（当前配置 − RiskGuard 注入条目），保留用户 install 之后新增的配置；旧 manifest 兼容（P1-4）。
+  - 新增 `tests/release-hardening/`：17 项单测 + 7 项完整生命周期 E2E（fresh fake HOME → detect → install → status ACTIVE → doctor PASS → 二次 install 幂等 → 用户新增配置 → uninstall → 全部保留；invalid JSON 拒装零写入；同名异内容插件拒装；人为删 hook → BROKEN）。全量 177/177 通过。
 
 ### Fixed
 
