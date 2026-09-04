@@ -90,10 +90,10 @@ AI Coding Agent
 
 | Agent | 集成（Integration） | 执行前硬拦截 | 验证等级 | 状态 |
 |---|---|---|---|---|
-| **DeepSeek Harness (DSH)** | `pre-execute` 瀑布 + `guard()` 单调不变量 | ✅ 是 | D2 源码实证 + D3 真实会话拦截记录（`Error: 全局铁律…`） | ✅ Verified |
-| **Claude Code** | `PreToolUse` adapter + CLAUDE.md 规则 | 🟢 已实现（生产 hook 已接线） | D1 文档 + 单元测试；D3 会话以模型层约束为主 | 🟢 Implemented |
-| **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook | 🟢 是（生产 hook 曾实测 DENY `rm -rf`） | D1/D2 + 生产 hook 日志；D3 删除会话待补 | 🟢 Implemented |
-| **OpenCode** | `tool.before` TS 插件 + AGENTS.md | 🟢 是（生产插件已注册） | D1 + 单元测试 + D3 会话（以模型层 + 插件 trash 为主） | 🟢 Implemented |
+| **DeepSeek Harness (DSH)** | `pre-execute` 瀑布 + `guard()` 单调不变量 | ✅ 是 | Windows D3（真实会话拦截记录 `Error: 全局铁律…`）；macOS/Linux D1 | ✅ Verified |
+| **Claude Code** | `PreToolUse` hook（`riskguard-pre-tool-hook`）+ CLAUDE.md 规则 | ✅ 是（机器层硬门禁；bypassPermissions 下仍拦截） | Windows D3（真实会话 permission-rule 阻断）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
+| **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook | ✅ 是（hook 已接线；DENY exit 2 实测） | Windows D2（hook 机器层实测；本机未装 CLI，D3 会话待补）；macOS/Linux D1 | 🟢 Implemented |
+| **OpenCode** | `tool.execute.before` TS 插件 + AGENTS.md | ✅ 是（生产插件已注册；bash allow 仍拦截） | Windows D3（真实会话 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **Cursor** | `preToolUse` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
 | **Windsurf** | `pre_run_command` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
 | **Grok** | `PreToolUse` adapter | 🟡 弱（Grok hook 默认为 fail-open） | D1 + 单元测试；边界依赖 Rules/Sandbox | 🟡 Experimental（软约束为主） |
