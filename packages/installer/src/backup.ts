@@ -12,7 +12,9 @@ export interface BackupResult {
   ok: boolean;
   backupRoot: string;
   agent: string;
+  /** 本次备份的精确条目（rollback 只允许使用这些 dst，禁止扫描历史目录） */
   entries: { src: string; dst: string }[];
+  transactionId?: string;
   error?: string;
 }
 
@@ -25,14 +27,16 @@ export function relPath(p: string): string {
   return p.replace(/^([A-Za-z]):/, '$1_').replace(/[\\/]+/g, '_').replace(/^[._]+/, '');
 }
 
-function ts(): string {
-  return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
-/** 备份一组文件/目录 → <backupRoot>/<agent>/<ts>/（P1-4 修复：保留相对结构防同名覆盖） */
+/** 备份一组文件/目录 → <backupRoot>/<agent>/<ts>/（P1-4 修复：保留相对结构防同名覆盖）
+ *
+ * v0.1.1 语义：任一「已存在」目标备份失败 → 整体 ok:false（install 必须 ABORT）。
+ * 返回 entries[{src,dst}] 精确映射，rollback 只使用这些 dst。
+ */
 export async function backupPaths(agent: string, paths: string[], opts: { home?: string } = {}): Promise<BackupResult> {
   const root = backupRoot(opts.home);
-  const dstDir = join(root, agent, ts());
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const dstDir = join(root, agent, ts);
+  const transactionId = `${ts}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
   const entries: BackupResult['entries'] = [];
   try {
     await mkdir(dstDir, { recursive: true });
@@ -50,12 +54,13 @@ export async function backupPaths(agent: string, paths: string[], opts: { home?:
         }
         entries.push({ src: p, dst });
       } catch (e) {
-        // 单个文件失败不中断整体（可能已移动/不存在）
+        // 已存在但备份失败 → 整体失败（安全优先，禁止 best-effort）
+        return { ok: false, backupRoot: root, agent, entries, transactionId, error: `backup failed for ${p}: ${(e as Error).message}` };
       }
     }
-    return { ok: true, backupRoot: root, agent, entries };
+    return { ok: true, backupRoot: root, agent, entries, transactionId };
   } catch (e) {
-    return { ok: false, backupRoot: root, agent, entries, error: (e as Error).message };
+    return { ok: false, backupRoot: root, agent, entries, transactionId, error: (e as Error).message };
   }
 }
 

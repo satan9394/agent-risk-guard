@@ -11,20 +11,30 @@
  * 铁律：uninstall 只依据 manifest 精确恢复，绝不触碰用户其他配置。
  */
 
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 export interface ManifestArtifact {
   path: string;   // 部署到用户目录的文件（绝对路径）
   sha256: string; // 安装时该文件内容的 SHA256（卸载前校验是否仍是我方文件）
+  /** 该文件是否由本次 install 创建（true）还是仅引用既有文件（false） */
+  createdByInstall?: boolean;
+}
+
+export interface RuntimeVerificationRecord {
+  verifiedAt: string; // ISO
+  result: 'PASS' | 'FAIL';
+  detail?: string;
 }
 
 export interface AgentManifest {
-  /** manifest schema 版本；缺省视为 1（v0.1.0 前无 schemaVersion 字段的旧 manifest） */
+  /** manifest schema：2 = v0.1.1+（含 transactionId / createdByInstall / runtimeVerification）；缺省/1 = 旧 */
   schemaVersion?: number;
   product: string;          // 'riskguard'
-  version: string;          // '0.1.0'
+  version: string;          // 产品版本（0.1.1）
   agent: string;            // 'claude-code' | 'opencode' | 'codex' | ...
+  /** v0.1.1+：install 事务 id（rollback 只使用本事务 backup） */
+  transactionId?: string;
   installedAt: string;      // ISO timestamp
   installedFiles: string[]; // 部署到用户目录的文件（绝对路径；兼容旧 manifest）
   modifiedConfig: string[]; // 被修改的配置文件（绝对路径）
@@ -32,6 +42,8 @@ export interface AgentManifest {
   backupDir: string;        // 写入前备份目录（绝对路径）
   /** 安装物逐文件 hash（v0.1.0 起写入） */
   artifacts?: ManifestArtifact[];
+  /** v0.1.1+：install 后的 runtime verification 记录 */
+  runtimeVerification?: RuntimeVerificationRecord;
 }
 
 export function manifestDir(home?: string): string {
@@ -43,10 +55,13 @@ export function manifestPathFor(agent: string, home?: string): string {
   return join(manifestDir(home), `${agent}.json`);
 }
 
+/** 原子写：temp → rename，避免进程中断留下半个 JSON */
 export async function saveManifest(m: AgentManifest, home?: string): Promise<void> {
   const p = manifestPathFor(m.agent, home);
   await mkdir(dirname(p), { recursive: true });
-  await writeFile(p, JSON.stringify(m, null, 2), 'utf8');
+  const tmp = `${p}.${process.pid}.tmp`;
+  await writeFile(tmp, JSON.stringify(m, null, 2), 'utf8');
+  await rename(tmp, p);
 }
 
 export async function loadManifest(agent: string, home?: string): Promise<AgentManifest | null> {
