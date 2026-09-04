@@ -8,7 +8,7 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.1.1 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
+> **状态：`v0.1.2 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
 
 ---
@@ -113,53 +113,62 @@ AI Coding Agent
 
 ## 快速开始（Developer Preview）
 
-RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。
+RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。仓库内统一入口：`node bin/riskguard.mjs`（等价 `node packages/cli/src/index.ts`，用户无需面对内部源码路径）。
 
 ```bash
 cd agent-risk-guard
 # 查看 CLI 用法
-node packages/cli/src/index.ts help
+node bin/riskguard.mjs help
 ```
+
+**0.（推荐）安装 portable runtime**——把运行所需最小文件集装入 `~/.riskguard/runtime/<version>/`，此后 Agent hook 指向 runtime 而非 git clone 路径；删除 / 移动源码仓库后 RiskGuard 仍工作：
+
+```bash
+node bin/riskguard.mjs bootstrap          # 首次安装 portable runtime
+node bin/riskguard.mjs bootstrap --force  # runtime 损坏时修复重装
+```
+
+> 分发/自包含模式：`node scripts/build-release.ts` 生成 `dist/agent-risk-guard-v<version>/`（含 `bin/riskguard.mjs` launcher、`runtime-manifest.json`、`SHA256SUMS.txt`）。artifact 可在 fake HOME 独立完成 detect / install / doctor / uninstall，不依赖源码仓库。
 
 **1. 先只读检测本机装了哪些 Agent**（不会改动任何配置）：
 
 ```bash
-node packages/cli/src/index.ts detect          # 人类可读
-node packages/cli/src/index.ts detect --json   # {claude-code, codex, opencode, dsh} 布尔表
+node bin/riskguard.mjs detect          # 人类可读
+node bin/riskguard.mjs detect --json   # {claude-code, codex, opencode, dsh} 布尔表
 ```
 
 **2. 查看每个 Agent 的 Runtime 状态与产品能力等级**：
 
 ```bash
-node packages/cli/src/index.ts status
+node bin/riskguard.mjs status
 ```
 
-status 区分两个概念：**Capability**（RiskGuard 对该 Agent 理论/实测支持到 D0–D4，来自单一事实源 `compatibility.json`）与 **Runtime**（这台机器当前实际状态）。Runtime 取值 `NOT_DETECTED`（Agent 不存在）/ `DETECTED`（Agent 在，RiskGuard 未装）/ `INSTALLED`（已装待确认）/ `ACTIVE`（接线健全，真的在拦截）/ `BROKEN`（manifest 在但接线缺失损坏）。**检测到 Agent + 能力非 D0 ≠ ACTIVE**——只有 wiring 真的在位且健康才算 ACTIVE。
+status 区分两个概念：**Capability**（RiskGuard 对该 Agent 理论/实测支持到 D0–D4，来自单一事实源 `compatibility.json`）与 **Runtime**（这台机器当前实际状态）。Runtime 取值 `NOT_DETECTED`（Agent 不存在）/ `DETECTED`（Agent 在，RiskGuard 未装）/ `INSTALLED`（已装待确认）/ `ACTIVE`（完整 runtime self-test 通过，真的在拦截）/ `BROKEN`（manifest 在但接线缺失损坏）。另显示 **Verification** 模式：`dynamic`（Claude Code / Codex——真实执行 interception runtime self-test）/ `static`（OpenCode / DSH——wiring + artifact + integrity），两种不混同。
 
 **3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
 
 ```bash
-node packages/cli/src/index.ts doctor
+node bin/riskguard.mjs doctor
 ```
 
-**4. 安装**（事务式：类型化读取 → backup → merge → manifest → doctor；`--dry-run` 先预览；支持 `--agent` alias）：
+**4. 安装 / 修复**（事务式：类型化读取 → backup → merge → manifest → runtime self-test → commit；`--dry-run` 先预览；支持 `--agent` alias）：
 
 ```bash
-node packages/cli/src/index.ts install --dry-run            # 只显示将改什么，不落盘
-node packages/cli/src/index.ts install                      # 应用到检测到的 Agent
-node packages/cli/src/index.ts install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
+node bin/riskguard.mjs install --dry-run            # 只显示将改什么，不落盘
+node bin/riskguard.mjs install                      # 应用到检测到的 Agent
+node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
 ```
 
-安装是**非破坏性**的：只往每个 Agent 的配置里「加入」RiskGuard 自己的 hook / 插件条目，保留用户已有字段（例如 Claude Code 的 `permissions`、Setup hooks；OpenCode 已有插件；Codex 已有 hook）。若某配置文件是**损坏 JSON / 无权限 / IO 错误**，install 会立即终止且零写入（不覆盖用户无法确认内容的配置）。OpenCode 插件以 namespace 名 `agent-risk-guard.ts` 部署：目标已存在但内容不是我方文件（SHA256 不符）时**拒绝安装、绝不覆盖**。任一步失败会回滚到安装前，不留下半成品。`--dry-run` 仅打印 `Would modify/create` 与 `No files changed (dry-run)`。
+已安装但 wiring 损坏（BROKEN）时，install 会识别为 **repair**（输出 `repaired successfully`），成功恢复后 ACTIVE；仅「无改动 + 健康 ACTIVE」才报 `already installed`。安装**非破坏性**：merge 保留用户字段；损坏 JSON / 无权限 / IO 错误立即终止零写入；OpenCode 插件目标同名异内容（SHA256 不符）拒绝安装；任一步失败回滚到安装前（含旧 manifest 恢复），不留下半成品。
 
-**5. 卸载**（精确逆操作：只移除 RiskGuard 自己注入的条目，保留用户 install 之后新增的配置）：
+**5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
 
 ```bash
-node packages/cli/src/index.ts uninstall --dry-run
-node packages/cli/src/index.ts uninstall
+node bin/riskguard.mjs uninstall --dry-run
+node bin/riskguard.mjs uninstall
 ```
 
-卸载依据 manifest 精确移除 RiskGuard 条目与文件；被用户修改过的 RiskGuard 文件不会被自动删除（提示人工检查）。manifest 缺失时提示「nothing to do」，不会误删。
+卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
 
 > Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 
@@ -229,5 +238,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：当前统一产品版本为 **`v0.1.1 Developer Preview`**（`package.json` = `0.1.1`，单一版本源见 `packages/core/src/version.ts`）。
+> **版本说明**：当前统一产品版本为 **`v0.1.2 Developer Preview`**（`package.json` = `0.1.2`，单一版本源见 `packages/core/src/version.ts`）。
 > 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。

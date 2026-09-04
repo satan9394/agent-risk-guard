@@ -4,13 +4,26 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.1.1 Developer Preview`**（`package.json` = `0.1.1`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.1.2 Developer Preview`**（`package.json` = `0.1.2`；单一版本源 `packages/core/src/version.ts`）。
 
-- `v0.1.0`（2026-09-04）已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- `v0.1.0` / `v0.1.1`（2026-09-04）已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
-- 历史 `[1.0.0]` / `[0.1.0]` 条目保留为历史记录，不删除、不重写历史。
+- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.1.1 Release Hardening（事务闭环）
+## [Unreleased] - v0.1.2 Installer Finalization + Portable Runtime
+
+### Added（Phase A：installer 收尾）
+
+- **Manifest 纳入 transaction snapshot**：manifest 与 config/artifact 统一为 `TransactionTarget`，不再特殊处理 provisional manifest——安装前旧 manifest 存在则 backup exact（rollback restore 并 sha256 校验）；不存在则 existedBefore=false（rollback 移除新建的）。repair-install 失败也能完整恢复到 repair 前。
+- **repair-install 识别**：manifest 存在但 wiring 损坏（BROKEN/INSTALLED）→ install 是 repair（成功报 `repaired successfully`），不再误报 `already installed`；仅「无改动 + 健康 ACTIVE」才 already。
+- **verificationMode**：RuntimeProbeResult 增加 `dynamic`（Claude Code/Codex：真实执行 interception runtime self-test）/ `static`（OpenCode/DSH：wiring + artifact + integrity）/ `none`；status 与 doctor 如实展示，不再把所有 ACTIVE 都写成一视同仁。
+- `package.json` description 去掉版本号（`Deterministic safety guardrails for AI coding agents`），后续升版不再需要同步改 description。
+
+### Changed
+
+- `package.json` version → `0.1.2`。
+
+## [0.1.1] - 2026-09-04（v0.1.1 Release Hardening，已发布）
 
 把安装/回滚/健康检查/状态判定做成真正闭环，消除「表面成功但实际残留或失效」。
 
