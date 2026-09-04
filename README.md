@@ -8,7 +8,7 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.1.0 Developer Preview`**。核心策略引擎、CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
+> **状态：`v0.1.1 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
 
 ---
@@ -99,7 +99,7 @@ AI Coding Agent
 | **Grok** | `PreToolUse` adapter | 🟡 弱（Grok hook 默认为 fail-open） | D1 + 单元测试；边界依赖 Rules/Sandbox | 🟡 Experimental（软约束为主） |
 | **Pi** | — | ❌ 无实现 | — | ⚪ Unsupported |
 
-验证等级说明（`docs/adapter-contract.md`）：**D1**＝官方文档确认 API 存在；**D2**＝源码/工程实证；**D3**＝真实 Agent 会话验证；**D4**＝对抗语料加固。
+验证等级单一事实源为 `packages/installer/compatibility.json`：**D0**＝Unsupported；**D1**＝Implementation exists；**D2**＝Automated test verified；**D3**＝Real agent execution verified；**D4**＝Repeated / production verified。D3/D4 是产品能力等级，不代表某台机器当前 `ACTIVE`（机器状态看 `riskguard status` 的 Runtime）。本表各 Agent 的等级来自该文件（CI 有 `check-compatibility-docs` 防漂移）。
 
 > 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。
 
@@ -229,5 +229,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：当前统一产品版本为 **`v0.1.0 Developer Preview`**（`package.json` = `0.1.0`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> **版本说明**：当前统一产品版本为 **`v0.1.1 Developer Preview`**（`package.json` = `0.1.1`，单一版本源见 `packages/core/src/version.ts`）。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。

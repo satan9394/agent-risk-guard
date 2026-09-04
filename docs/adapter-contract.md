@@ -75,9 +75,16 @@ interface Decision {
 | Decision → Vendor deny 形状 | Adapter |
 | fail-closed 兜底 | Adapter + CLI（无效 JSON/空输入 → deny+degraded） |
 
-## 验证等级（文档 §18）
+## 验证等级（单一事实源：packages/installer/compatibility.json）
 
-- D1 Docs Confirmed — 官方文档确认 API 存在
-- D2 Payload Tested — 本项目 tests/* 模拟 Vendor JSON
-- D3 Live Agent Tested — 真实 Agent 会话 + sentinel 文件
-- D4 Adversarial Hardened — 绕过语料测试，唯一可显示 HARDENED
+D0–D4 的权威定义在 `packages/installer/compatibility.json`（`levels` 字段）。本文件与 README / CHANGELOG / Release notes 一律引用该定义，禁止各自维护另一套（CI 通过 `scripts/check-compatibility-docs.ts` 校验不漂移）。
+
+```text
+D0 = Unsupported — 无有效实现
+D1 = Implementation exists — 代码实现存在
+D2 = Automated test verified — 自动化测试验证
+D3 = Real agent execution verified — 真实 Agent 会话中完成执行前阻断验证
+D4 = Repeated / production verified — 持续/生产级重复验证
+```
+
+重要区分：D3/D4 是**产品能力验证等级**（RiskGuard 对该 Agent 支持到什么程度），不代表某台机器当前 `ACTIVE`。机器当前状态由 `runtime-probe.ts` 的 Runtime state（NOT_DETECTED / DETECTED / INSTALLED / ACTIVE / BROKEN）描述——ACTIVE 必须通过完整 runtime self-test。

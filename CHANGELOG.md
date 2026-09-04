@@ -4,13 +4,34 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.1.0 Developer Preview`**（`package.json` = `0.1.0`）。
+当前统一产品版本为 **`v0.1.1 Developer Preview`**（`package.json` = `0.1.1`；单一版本源 `packages/core/src/version.ts`）。
 
-- 历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
-- 之所以当前不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
-- 历史 `[1.0.0]` 条目与表格中的 `[0.1.0]` 链接保留为历史记录（`v0.1.0` 未打 tag），不删除、不重写历史。
+- `v0.1.0`（2026-09-04）已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
+- 历史 `[1.0.0]` / `[0.1.0]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.1.0 Developer Preview（产品化推进）
+## [Unreleased] - v0.1.1 Release Hardening（事务闭环）
+
+把安装/回滚/健康检查/状态判定做成真正闭环，消除「表面成功但实际残留或失效」。
+
+### Added
+
+- **真事务安装**（`packages/installer/src/transaction.ts`）：`InstallTransaction` 状态机 PRECHECK → SNAPSHOT/BACKUP → WRITE → VERIFY → COMMIT；每个目标记录 `TransactionTarget{path, existedBefore, backupPath, createdByTransaction}`。
+- **Backup 失败即 ABORT**：任一「已存在」目标备份失败 → 立即终止零写入（`backupPaths()` 返回 `ok:false`，禁止 best-effort）；rollback 只使用本轮事务产生的精确备份，**禁止扫描历史 backup 目录**。
+- **Created-file rollback**：原文件不存在 → rollback 用 trash 移除本轮创建文件；原文件存在 → restore 精确备份。rollback 后自验证（sha256 比对 / 目标不存在），不满足报 `ROLLBACK_INCOMPLETE`，绝不谎报成功。
+- **Install 后 runtime self-test**（VERIFY）：provisional manifest → 调用统一 `probeAgentRuntime(deep:true)` 真实 spawn hook（无害 payload→ALLOW、危险 payload→DENY）→ PASS 才 finalize manifest + COMMIT；FAIL 自动 rollback。
+- **统一 runtime probe**（`packages/installer/src/runtime-probe.ts`）：status / doctor / install-verification 共用同一判定；**ACTIVE = 完整 runtime self-test 通过**；hook 目标缺失 / OpenCode artifact hash 改变 / node 不可用 → BROKEN。
+- **Manifest schemaVersion 2**：`transactionId`、`artifacts[].createdByInstall`、`runtimeVerification{verifiedAt, result}`；manifest 与配置写入均原子化（write temp → rename）。
+- **故障注入测试** `tests/transaction/`（8 cases）：manifest 保存失败、created-file verify 失败、backup 失败、config-write 失败、artifact 失败、hook target 丢失、artifact hash 改变、runtime 不可用。
+- **D0–D4 单一事实源防护**：`scripts/check-compatibility-docs.ts`（CI 跑）扫描 README/docs/CHANGELOG 防旧定义漂移；`docs/adapter-contract.md` 旧定义（Docs Confirmed/Payload Tested/Adversarial Hardened）已清除。
+- **版本单一源**：`packages/core/src/version.ts` 从 `package.json` 读取；CLI/manifest 不再各自硬编码 `0.1.1`。
+- GitHub `v0.1.0` Release 标记为 **Pre-release**（历史 tag 保留）。
+
+### Changed
+
+- `package.json` version → `0.1.1`（Developer Preview 继续，release gate 未完不宣稳定）。
+
+## [0.1.0] - 2026-09-04（v0.1.0 Developer Preview，已发布）
 
 向「可安装、可验证、可卸载」安全产品推进：
 
