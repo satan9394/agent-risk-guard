@@ -101,7 +101,7 @@ AI Coding Agent
 
 验证等级说明（`docs/adapter-contract.md`）：**D1**＝官方文档确认 API 存在；**D2**＝源码/工程实证；**D3**＝真实 Agent 会话验证；**D4**＝对抗语料加固。
 
-> 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具，而非机器层门禁；DSH 则有机器级 `pre-execute` 门禁的拦截实锤。机器层硬拦截的完整复核（尤其 Cursor / Windsurf / Grok）仍是持续工作。
+> 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。
 
 ## 操作系统支持
 
@@ -113,36 +113,50 @@ AI Coding Agent
 
 ## 快速开始（Developer Preview）
 
-当前没有一键 `riskguard install` 命令，一键安装器正在完善。以下是最短的真实可用路径：
-
-**a. 跑通测试，确认策略内核可运行**（需要 Node >= 22.18，零构建）：
+RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。
 
 ```bash
 cd agent-risk-guard
-node --version                  # 要求 >= 22.18
-node --test packages/core/test  # 平台无关测试，本仓库 CI 同款
+# 查看 CLI 用法
+node packages/cli/src/index.ts help
 ```
 
-**b. 用 CLI 体验策略判定**（stdin JSON → Decision JSON）：
+**1. 先只读检测本机装了哪些 Agent**（不会改动任何配置）：
 
 ```bash
-# 删除 → deny + 回收站建议
-cat tests/e2e/payload-delete.json | node packages/cli/src/index.ts
-# 写文件 → allow
-cat tests/e2e/payload-write.json  | node packages/cli/src/index.ts
-# git clean → deny
-cat tests/e2e/payload-git-clean.json | node packages/cli/src/index.ts
+node packages/cli/src/index.ts detect          # 人类可读
+node packages/cli/src/index.ts detect --json   # {claude-code, codex, opencode, dsh} 布尔表
 ```
 
-> Windows PowerShell 下用 `Get-Content … -Raw | node packages/cli/src/index.ts` 等价。
-
-**c. 检测本机已安装的 Agent**（只读发现，不会改动任何配置）：
+**2. 查看每个 Agent 的集成 / 硬阻断 / 验证等级 / 状态**：
 
 ```bash
-node -e "import('./packages/installer/src/discovery.ts').then(m=>console.log(m.discoveryToJson(m.discoverAgents())))"
+node packages/cli/src/index.ts status
 ```
 
-**d. 接入某个 Agent**：把对应 adapter / hook 接入你的 Agent（DSH 插件接线见 `docs/dsh-live-wiring-guide.md`，各 Agent 的 payload 形状见 `packages/adapters/<agent>/src`，生产接线现状见 `docs/deployment-status.md`）。
+**3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
+
+```bash
+node packages/cli/src/index.ts doctor
+```
+
+**4. 安装**（写前备份 + merge 保留用户配置 + 记 manifest；`--dry-run` 先预览）：
+
+```bash
+node packages/cli/src/index.ts install --dry-run   # 只显示将改什么，不落盘
+node packages/cli/src/index.ts install             # 应用到检测到的 Agent
+```
+
+安装是**非破坏性**的：只往每个 Agent 的配置里「加入」RiskGuard 自己的 hook / 插件条目，保留用户已有字段（例如 Claude Code 的 `permissions`、Setup hooks；OpenCode 已有插件；Codex 已有 hook）。`--dry-run` 仅打印 `Would modify: <path>` 与 `No files changed (dry-run)`。
+
+**5. 卸载**（仅依据 manifest 精确移除 RiskGuard 条目，恢复用户原始配置）：
+
+```bash
+node packages/cli/src/index.ts uninstall --dry-run
+node packages/cli/src/index.ts uninstall
+```
+
+> Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 
 ### 效果演示
 

@@ -20,6 +20,14 @@
 - 用户级 RiskGuard CLI：`detect` / `install` / `status` / `doctor` / `uninstall`（`node packages/cli/src/index.ts <cmd>` 或 `npm run riskguard -- <cmd>`）。
 - 非破坏性安装：写入前备份、配置 merge（而非 replace）、安装 manifest、幂等安装/卸载、`--dry-run`、`--verbose`。
 - 兼容性单一事实源：`packages/installer/compatibility.json`（Agent × 集成 × 硬/软 × D0–D4 等级），README 支持矩阵以它为准。
+- 真实 D3 硬阻断实测（Windows，v0.1.0）：Claude Code `--permission-mode bypassPermissions` 与 OpenCode `run` 会话中，`git reset --hard` 均在工具执行前被 RiskGuard 拒绝（Claude Code 侧 `permission-rule` / OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活；`precious.txt` 与 `sentinel` 实锤未被改动。
+- 兼容性等级据实测对齐（compatibility.json 为唯一事实源）：claude-code/opencode=Windows D3，codex=Windows D2（本机未装 CLI，真实会话待补），dsh=Windows D3。
+
+### Fixed
+
+- **hook 相对导入路径错误**（真实 D3 兼修的回归）：`pre-tool-hook.ts` 的 `../../adapters` 在安装路径下解析到 `packages/cli/adapters`（不存在），导致本机生产 hook 一执行即 `ERR_MODULE_NOT_FOUND` 崩溃、Claude Code 将 hook 视为非阻断错误而放行命令。修正为 `../../../adapters` 与 `../../../core`。
+- **PreToolUse hook 输出缺 `hookEventName`**（Claude Code 当前 schema 要求）：hook 输出 `{hookSpecificOutput:{permissionDecision:'deny',...}}` 被 Claude Code 判为「不合法 JSON」并当非阻断错误放行。现 DENY 输出补 `hookEventName:'PreToolUse'`，真实会话验证后能以 `permission-rule` 方式硬阻断工具调用。
+- **doctor 漏识我方新 hook**（对真实安装会误报 FAIL）：识别逻辑曾只认 `dangerous-commands` 旧字符串；现 `hasRiskGuardHook()` 同时识别 `_riskguard` / `riskguard-*-hook` / `pre-tool-hook.ts`，真实安装后 doctor 对齐为 4 PASS。
 
 ### Added（R3 生态融合，前一轮未发布内容）
 
@@ -34,7 +42,7 @@
 ### Security
 
 - 规则 patch 与 `defaultDenyRules()` 单一事实源同步（rule-alignment 动态计数，YAML `''` 转义提取支持）
-- 全量测试 18 文件 134/134 通过（本机；Windows trash/junction 真实执行 0 skipped）
+- 全量测试 18 文件 134/134 通过（本机；Windows trash/junction 真实执行 0 skipped）；v0.1.0 新增 `tests/product/*.test.ts`（merge/manifest/compatibility/hook schema 19 例）后共 153/153 通过。
 
 ## [1.0.0] - 2026-08-26
 
