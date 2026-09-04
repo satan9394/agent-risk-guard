@@ -19,14 +19,15 @@ import {
   mergeClaudeSettings, mergeCodexHooks, mergeOpencodePlugins, isRiskGuardPluginRef,
   CLAUDE_HOOK_ID, CODEX_HOOK_ID, OPENCODE_PLUGIN_ID, OPENCODE_PLUGIN_LEGACY_ID,
 } from '../../installer/src/merge.ts';
-import { backupPaths, backupRoot } from '../../installer/src/backup.ts';
+import { backupRoot } from '../../installer/src/backup.ts';
 import { saveManifest, loadManifest, removeManifest, hasManifest, type AgentManifest, type ManifestArtifact } from '../../installer/src/manifest.ts';
-import { runDoctors } from '../../installer/src/doctor.ts';
-import { readConfig, isWritableState, describeReadFailure, type ConfigReadResult } from '../../installer/src/config-read.ts';
-import { runtimeState } from '../../installer/src/runtime-state.ts';
+import { readConfig, describeReadFailure, type ConfigReadResult } from '../../installer/src/config-read.ts';
 import { sha256File } from '../../installer/src/hash.ts';
+import { InstallTransaction } from '../../installer/src/transaction.ts';
+import { probeAgentRuntime } from '../../installer/src/runtime-probe.ts';
+import { PRODUCT_VERSION } from '../../core/src/version.ts';
 
-const VERSION = '0.1.0';
+const VERSION = PRODUCT_VERSION;
 /** 仓库根目录（packages/cli/src/commands.ts → 上溯 4 层）
  *  file:///E:/... → /E:/... ，需去掉首斜杠得到 Windows 绝对路径 */
 const REPO_ROOT: string = (() => {
@@ -41,6 +42,8 @@ export interface InstallAgentOpts {
   dryRun?: boolean;
   verbose?: boolean;
   only?: string;             // 只安装指定 agent（可选）
+  /** 测试专用故障注入（仅 tests/transaction 使用；生产 CLI 不产生该字段） */
+  _test?: { failAt?: 'config-write' | 'manifest-save' | 'verify'; failVerify?: boolean };
 }
 
 const HOMES = {
@@ -222,10 +225,24 @@ export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
  * 任一步失败 → 尽力回滚到安装前（恢复已备份配置、删除已复制文件）。
  * 铁律：install 要么完整成功，要么恢复安装前，不留下「装了一半」。
  */
+/**
+ * 事务式单 Agent 安装（v0.1.1 真事务状态机）：
+ *   PRECHECK → SNAPSHOT/BACKUP → WRITE → (provisional manifest) → VERIFY(runtime self-test)
+ *   → PASS → FINALIZE manifest + COMMIT
+ *   任一步失败 → ROLLBACK（restore 精确备份 / trash 移除本轮创建文件），随后自验证。
+ *
+ * 铁律：
+ *   - backup 任一已存在目标失败 → 立即 ABORT（禁止 best-effort）。
+ *   - rollback 只使用本轮事务产生的 backup，禁止扫描历史目录。
+ *   - 原配置不存在 → rollback 移除本轮创建文件（trash）。
+ *   - VERIFY FAIL → 自动 rollback，绝不留下「表面成功」。
+ */
 async function installOne(inst: AgentInstaller, home: string, opts: InstallAgentOpts): Promise<InstallOutcome> {
   const dry = opts.dryRun === true;
   const verbose = opts.verbose === true;
+  const manifestPath = join(home, '.riskguard', 'manifests', `${inst.id}.json`);
 
+  // —— PRECHECK：Agent 已装？——
   const installed = detectAgent(
     AGENT_REGISTRY.find((d) => d.id === inst.id) ?? { id: inst.id, display: inst.display, mechanisms: [], probePaths: [] },
     { home: HOMES.get(home) },
@@ -235,7 +252,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   }
 
   const configPath = inst.planConfigPath(home);
-  // —— P0-2：类型化读取；任何无法确定原配置内容的情况都禁止写入 ——
+  // —— PRECHECK：类型化读取；任何无法确定原配置内容的情况都禁止写入 ——
   const read = await readConfig(configPath);
   if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
     return {
@@ -252,124 +269,114 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
     return { config: (existingRaw ?? {}), changed: false };
   })();
 
-  // —— OpenCode artifact 预检（P0-3）：目标存在且非我方文件 → ABORT（不覆盖未知文件） ——
+  // —— PRECHECK：OpenCode artifact 预检（目标存在且非我方文件 → ABORT，绝不覆盖） ——
   let artifactDst: string | null = null;
   let artifactSrc: string | null = null;
-  if (inst.copyArtifacts && inst.id === 'opencode') {
+  const artifactExistsBefore = inst.copyArtifacts && inst.id === 'opencode' && (() => {
     artifactSrc = join(REPO_ROOT, 'assets', 'opencode', `${OPENCODE_PLUGIN_ID}.ts`);
     artifactDst = join(home, '.config', 'opencode', 'plugins', `${OPENCODE_PLUGIN_ID}.ts`);
-    if (existsSync(artifactDst)) {
-      const dstHash = await sha256File(artifactDst);
-      const srcHash = await sha256File(artifactSrc);
-      if (dstHash !== srcHash) {
-        return {
-          agent: inst.id, display: inst.display, state: 'aborted', dryRun: dry,
-          message: `${inst.display} plugin installation aborted.\n\nTarget already exists:\n${artifactDst}\n\nThe existing file is not owned by this RiskGuard installation (SHA256 mismatch).\nNo files were overwritten.\nPlease inspect or remove it, then retry.`,
-        };
-      }
-      // hash 相同 = 已装我方文件 → 幂等（仍可能只需补 config 引用）
+    return existsSync(artifactDst);
+  })();
+  if (inst.copyArtifacts && inst.id === 'opencode' && artifactExistsBefore) {
+    const dstHash = await sha256File(artifactDst!);
+    const srcHash = await sha256File(artifactSrc!);
+    if (dstHash !== srcHash) {
+      return {
+        agent: inst.id, display: inst.display, state: 'aborted', dryRun: dry,
+        message: `${inst.display} plugin installation aborted.\n\nTarget already exists:\n${artifactDst}\n\nThe existing file is not owned by this RiskGuard installation (SHA256 mismatch).\nNo files were overwritten.\nPlease inspect or remove it, then retry.`,
+      };
     }
   }
 
   // —— dry-run：只输出将修改，不落盘 ——
   if (dry) {
     const wouldLines = ['Would modify:', `  ${configPath}`];
-    if (inst.copyArtifacts) wouldLines.push('Would create:', `  ${artifactDst ?? `<opencode plugins>/${OPENCODE_PLUGIN_ID}.ts`}`);
+    if (inst.copyArtifacts && !artifactExistsBefore) wouldLines.push('Would create:', `  ${artifactDst ?? `<opencode plugins>/${OPENCODE_PLUGIN_ID}.ts`}`);
     return { agent: inst.id, display: inst.display, state: merged.changed ? 'installed' : 'already', message: [inst.display, ...wouldLines, '  (dry-run, no files changed)', ''].join('\n'), dryRun: true };
   }
 
-  let backupDir = '';
-  const artifacts: string[] = [];
-  const writtenConfig = merged.changed;
+  // —— 幂等短路：无改动且已装 ——
+  if (!merged.changed && !(inst.copyArtifacts && !artifactExistsBefore)) {
+    const alreadyManifest = await hasManifest(inst.id, home);
+    if (alreadyManifest) {
+      return { agent: inst.id, display: inst.display, state: 'already', backupDir: join(backupRoot(home), inst.id), manifestFile: manifestPath, message: `${inst.display}: already installed (idempotent, no change)`, dryRun: dry };
+    }
+  }
+
+  // ============ 事务体 ============
+  const tx = new InstallTransaction(inst.id, home);
+  const artifactRecords: ManifestArtifact[] = [];
+  const createdFiles: string[] = [];
   try {
-    // 1. 备份（写前铁律）
-    const pathsToBackup = [configPath];
-    if (artifactDst && existsSync(artifactDst) === false && writtenConfig) pathsToBackup.push(artifactDst); // 新文件无需备份，但若已存在同 hash 会在下面幂等跳过
-    const bk = await backupPaths(inst.id, pathsToBackup.filter((p) => existsSync(p)), { home: HOMES.get(home) });
-    backupDir = bk.ok ? join(backupRoot(home), inst.id) : '';
+    // —— SNAPSHOT + BACKUP：记录每个目标的本轮状态（已存在文件必须备份成功） ——
+    const snapshotPaths = [configPath];
+    if (inst.copyArtifacts && inst.id === 'opencode' && artifactDst && existsSync(artifactDst)) snapshotPaths.push(artifactDst);
+    await tx.snapshot(snapshotPaths);
 
-    // 2. 复制安装物（opencode 插件；copyArtifacts 内部已 mkdir）
-    if (inst.copyArtifacts && inst.id === 'opencode' && artifactSrc && artifactDst) {
-      // 目标已存在且 hash 相同（幂等）→ 不重复写；否则创建/覆盖我方同 hash 文件
-      if (!existsSync(artifactDst)) {
-        await mkdir(dirname(artifactDst), { recursive: true });
-        await copyFile(artifactSrc, artifactDst);
-        artifacts.push(artifactDst);
-      }
-      // 已存在同 hash → 什么都不做（幂等）
+    // —— WRITE：config + artifact（原子写） ——
+    if (merged.changed) {
+      await tx.writeJsonAtomic(configPath, merged.config);
     }
+    if (opts._test?.failAt === 'config-write') throw new Error('INJECTED: config-write failure');
 
-    // 3. merge 后写回（只改配置本体）
-    if (writtenConfig) {
-      await mkdir(dirname(configPath), { recursive: true });
-      await writeFile(configPath, JSON.stringify(merged.config, null, 2), 'utf8');
+    if (inst.copyArtifacts && inst.id === 'opencode' && artifactSrc && artifactDst && !artifactExistsBefore) {
+      await tx.writeArtifactAtomic(artifactSrc, artifactDst);
+      createdFiles.push(artifactDst);
+      const h = await sha256File(artifactDst);
+      if (h) artifactRecords.push({ path: artifactDst, sha256: h, createdByInstall: true });
+    } else if (inst.copyArtifacts && inst.id === 'opencode' && artifactDst && artifactExistsBefore) {
+      const h = await sha256File(artifactDst);
+      if (h) artifactRecords.push({ path: artifactDst, sha256: h, createdByInstall: false });
     }
+    if (opts._test?.failAt === 'artifact-write') throw new Error('INJECTED: artifact-write failure');
 
-    // 4. 记录 manifest（含 artifacts[{path,sha256}]）
-    const artifactRecords: ManifestArtifact[] = [];
-    for (const f of artifacts) {
-      const h = await sha256File(f);
-      if (h) artifactRecords.push({ path: f, sha256: h });
-    }
-    const manifest: AgentManifest = {
-      schemaVersion: 1, product: 'riskguard', version: VERSION, agent: inst.id,
-      installedAt: new Date().toISOString(),
-      installedFiles: artifacts,
-      modifiedConfig: writtenConfig ? [configPath] : [],
+    // —— provisional manifest（含 transactionId；VERIFY 通过后再 finalize） ——
+    const provisional: AgentManifest = {
+      schemaVersion: 2, product: 'riskguard', version: VERSION, agent: inst.id,
+      transactionId: tx.id, installedAt: new Date().toISOString(),
+      installedFiles: createdFiles,
+      modifiedConfig: merged.changed ? [configPath] : [],
       riskguardEntryId: inst.id === 'claude-code' ? CLAUDE_HOOK_ID : inst.id === 'codex' ? CODEX_HOOK_ID : OPENCODE_PLUGIN_ID,
-      backupDir,
+      backupDir: join(backupRoot(home), inst.id),
       artifacts: artifactRecords,
+      runtimeVerification: { verifiedAt: new Date().toISOString(), result: 'FAIL', detail: 'pending verification' },
     };
-    await saveManifest(manifest, HOMES.get(home));
+    await saveManifest(provisional, home);
+    tx.noteProvisionalManifest(manifestPath);
+    if (opts._test?.failAt === 'manifest-save') throw new Error('INJECTED: manifest-save failure');
 
-    const already = !writtenConfig && (await hasManifest(inst.id, HOMES.get(home)));
-    const state = already ? 'already' : 'installed';
+    // —— VERIFY：runtime self-test（真实验证运行链路，非字符串） ——
+    const probe = await probeAgentRuntime(inst.id, { home, deep: true });
+    const verifyPass = opts._test?.failVerify === true ? false : (probe.state === 'ACTIVE' || (probe.selfTestPassed && probe.configValid && probe.wired && (inst.id === 'opencode' ? probe.artifactIntegrity !== false : probe.hookTargetExists)));
+    if (!verifyPass) {
+      const rollback = await tx.rollback('verification FAIL');
+      const state = rollback.state === 'rolled-back' ? 'error' : 'error';
+      return {
+        agent: inst.id, display: inst.display, state, dryRun: dry,
+        message: `${inst.display}: install verification FAILED and was ${rollback.state === 'rolled-back' ? 'rolled back' : 'NOT fully rolled back'}.\n  Reason: runtime self-test failed.\n  Evidence: ${(probe.evidence ?? []).join(' | ')}\n  ${rollback.state === 'rolled-back' ? 'Rollback complete: system restored to pre-install state.' : 'ROLLBACK_INCOMPLETE: manual review required.'}`,
+      };
+    }
+
+    // —— FINALIZE：runtimeVerification=PASS 后 commit ——
+    const final: AgentManifest = { ...provisional, runtimeVerification: { verifiedAt: new Date().toISOString(), result: 'PASS', detail: probe.selfTestDetail } };
+    await saveManifest(final, home);
+    tx.commit();
+
     return {
-      agent: inst.id, display: inst.display, state,
-      backupDir, manifestFile: join(HOMES.get(home), '.riskguard', 'manifests', `${inst.id}.json`),
-      message: `${inst.display}: ${state === 'already' ? 'already installed (idempotent, no change)' : 'installed (merge-preserving)'}${artifacts.length ? `; installed ${artifacts.length} artifact(s)` : ''}${verbose ? `\n  modified: ${configPath}` : ''}`,
+      agent: inst.id, display: inst.display, state: 'installed',
+      backupDir: join(backupRoot(home), inst.id), manifestFile: manifestPath,
+      message: `${inst.display}: installed (merge-preserving)${createdFiles.length ? `; installed ${createdFiles.length} artifact(s)` : ''}; runtime self-test ${verifyPass ? 'PASS' : 'FAIL'}${verbose ? `\n  modified: ${configPath}\n  self-test: ${probe.selfTestDetail ?? ''}` : ''}`,
       dryRun: dry,
     };
   } catch (e) {
-    // —— ROLLBACK（P0-4）：尽力恢复安装前状态 ——
-    let rollbackMsg = '';
-    try {
-      if (writtenConfig) {
-        // 从备份恢复原配置
-        const bkList = await listBackupsLatest(inst.id, home, configPath);
-        if (bkList) { await copyFile(bkList, configPath); rollbackMsg = 'Rolled back config from backup. '; }
-      }
-      for (const f of artifacts) {
-        try { await import('../../trash/src/index.ts').then(({ trash }) => trash(f)); rollbackMsg += `Removed artifact ${f}. `; } catch { /* ignore */ }
-      }
-    } catch (rb) { rollbackMsg = `Rollback incomplete: ${(rb as Error).message}`; }
+    // —— ROLLBACK：任何 BACKUP/WRITE/VERIFY/COMMIT 阶段失败 ——
+    const rollback = await tx.rollback((e as Error).message).catch(() => ({ state: 'rollback-incomplete' as const, message: `rollback threw: ${(e as Error).message}`, perTarget: [] }));
+    const clean = rollback.state === 'rolled-back';
     return {
       agent: inst.id, display: inst.display, state: 'error', dryRun: dry,
-      message: `${inst.display}: install failed and was rolled back.\n  Reason: ${(e as Error).message}\n  ${rollbackMsg}RiskGuard restored the pre-install state.`,
+      message: `${inst.display}: install failed and was ${clean ? 'rolled back' : 'NOT fully rolled back'}.\n  Reason: ${(e as Error).message}\n  ${clean ? 'Rollback complete: system restored to pre-install state.' : `ROLLBACK_INCOMPLETE: ${rollback.message}. Manual review required.`}`,
     };
   }
-}
-
-/** 取某 agent 最近一次备份中与目标路径对应的备份文件（rollback 用） */
-async function listBackupsLatest(agent: string, home: string, targetPath: string): Promise<string | null> {
-  const { readdir } = await import('node:fs/promises');
-  const root = join(backupRoot(home), agent);
-  try {
-    const dirs = (await readdir(root)).sort().reverse(); // 新→旧
-    const want = relName(targetPath);
-    for (const d of dirs) {
-      try {
-        const files = await readdir(join(root, d));
-        const hit = files.find((f) => f === want);
-        if (hit) return join(root, d, hit);
-      } catch { /* ignore */ }
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-function relName(p: string): string {
-  return p.replace(/^([A-Za-z]):/, '$1_').replace(/[\\/]+/g, '_').replace(/^[._]+/, '');
 }
 
 // ============================================================================
@@ -385,86 +392,27 @@ export async function cmdStatus(opts: { home?: string }): Promise<string> {
   const order = ['claude-code', 'opencode', 'codex', 'dsh'];
   for (const id of order) {
     const c = compat.agents[id];
-    const probe = await probeRuntime(id, home);
-    const state = runtimeState(id, probe, home, { manifestManaged: id !== 'dsh' });
+    // ACTIVE 必须经完整 runtime self-test（deep）
+    const probe = await probeAgentRuntime(id, { home, deep: true });
     const lvl = c?.verification[platform];
     lines.push(`${c?.display ?? id}`);
     lines.push(`Integration: ${c?.integration ?? '—'}`);
     lines.push(`Capability: ${lvl ?? 'D0'} (${c?.enforcement === 'hard' ? 'hard blocking' : c?.enforcement === 'soft' ? 'soft only' : 'none'})`);
-    lines.push(`Runtime: ${state}${state === 'ACTIVE' ? ' — RiskGuard is wired and healthy' : state === 'BROKEN' ? ' — manifest present but wiring missing/broken' : state === 'DETECTED' ? ' — agent present, RiskGuard not installed' : state === 'INSTALLED' ? ' — manifest + wiring present' : ' — agent not detected'}`);
+    lines.push(`Runtime: ${probe.state}${describeRuntime(probe.state)}`);
+    if (probe.selfTestDetail) lines.push(`  self-test: ${probe.selfTestDetail}`);
     lines.push('');
   }
   return lines.join('\n');
 }
 
-/** 判定某 agent 的 runtime probe（detected + wired + healthy）；doctor 关键项作为 healthy 依据 */
-async function probeRuntime(id: string, home: string): Promise<{ detected: boolean; wired: boolean; healthy: boolean }> {
-  const compat = loadCompatibility();
-  // 1. detected
-  let detected = false;
-  if (id === 'dsh') detected = detectDsh(home);
-  else {
-    const inst = detectAgent(
-      AGENT_REGISTRY.find((d) => d.id === id) ?? { id, display: compat.agents[id]?.display ?? id, mechanisms: [], probePaths: [] },
-      { home },
-    );
-    detected = inst.installed;
+function describeRuntime(state: string): string {
+  switch (state) {
+    case 'ACTIVE': return ' — full runtime self-test PASS';
+    case 'BROKEN': return ' — manifest present but wiring/artifact defective';
+    case 'DETECTED': return ' — agent present, RiskGuard not installed';
+    case 'INSTALLED': return ' — manifest + wiring present, self-test not fully verified';
+    default: return ' — agent not detected';
   }
-  if (!detected) return { detected: false, wired: false, healthy: false };
-
-  // 3. wiring + healthy：逐 agent 读配置（与 doctor 同源）
-  let wired = false;
-  let healthy = false;
-  try {
-    if (id === 'claude-code') {
-      const p = join(home, '.claude', 'settings.json');
-      const read = await readConfig(p);
-      if (read.state === 'valid') {
-        const raw = JSON.stringify(read.data);
-        const hasHook = Array.isArray((read.data['hooks'] as any)?.['PreToolUse']) &&
-          JSON.stringify((read.data['hooks'] as any)['PreToolUse']).includes('_riskguard');
-        const hasRisk = raw.includes('riskguard-pre-tool-hook') || raw.includes('pre-tool-hook.ts') || raw.includes('_riskguard');
-        wired = hasHook && hasRisk;
-        healthy = wired; // doctor 关键项：PreToolUse + RiskGuard hook 在位
-      } else if (read.state === 'invalid-json' || read.state === 'permission-denied') {
-        wired = false; healthy = false; // 配置损坏 → BROKEN（若 manifest 在）
-      }
-    } else if (id === 'codex') {
-      const p = join(home, '.codex', 'hooks.json');
-      const read = await readConfig(p);
-      if (read.state === 'valid') {
-        const raw = JSON.stringify(read.data);
-        const hasRisk = raw.includes('riskguard-codex-hook') || raw.includes('pre-tool-hook.ts') || raw.includes('_riskguard');
-        wired = hasRisk;
-        healthy = wired;
-      } else if (read.state === 'invalid-json' || read.state === 'permission-denied') {
-        wired = false; healthy = false;
-      }
-    } else if (id === 'opencode') {
-      const p = join(home, '.config', 'opencode', 'opencode.json');
-      const read = await readConfig(p);
-      if (read.state === 'valid') {
-        const pluginArr = (read.data['plugin'] as unknown[]) ?? [];
-        const hitNew = JSON.stringify(pluginArr).includes('agent-risk-guard');
-        const hitLegacy = JSON.stringify(pluginArr).includes('destructive-operation-guard');
-        // 插件文件须真的在（引用 + 文件都齐才算 healthy）
-        const plugFile = join(home, '.config', 'opencode', 'plugins', 'agent-risk-guard.ts');
-        const legacyFile = join(home, '.config', 'opencode', 'plugins', 'destructive-operation-guard.ts');
-        const fileOk = existsSync(plugFile) || existsSync(legacyFile);
-        wired = (hitNew || hitLegacy) && fileOk;
-        healthy = wired;
-      } else if (read.state === 'invalid-json' || read.state === 'permission-denied') {
-        wired = false; healthy = false;
-      }
-    } else if (id === 'dsh') {
-      // dsh 无 manifest 管理；接线 = deny-risk-commands patch 在位
-      const { checkDshPatch } = await import('../../installer/src/doctor.ts');
-      const chk = await checkDshPatch(home);
-      wired = chk.state === 'ok';
-      healthy = chk.state === 'ok';
-    }
-  } catch { wired = false; healthy = false; }
-  return { detected, wired, healthy };
 }
 
 // ============================================================================
@@ -472,20 +420,47 @@ async function probeRuntime(id: string, home: string): Promise<{ detected: boole
 // ============================================================================
 
 export async function cmdDoctor(opts: { home?: string; verbose?: boolean }): Promise<string> {
-  const report = await runDoctors({ home: HOMES.get(opts.home) });
+  const home = HOMES.get(opts.home);
   const lines = ['RiskGuard Doctor:', ''];
-  for (const c of report.checks) {
-    const status = c.state === 'ok' ? 'PASS' : c.state === 'stale' ? 'WARN' : c.state === 'absent-agent' ? 'SKIP' : 'FAIL';
-    lines.push(`${status.padEnd(5)} ${c.agent.padEnd(14)} ${c.check}`);
-    if (opts.verbose) lines.push(`        → ${c.detail}`);
+  // 统一 probe：status / doctor / install-verification 共用同一 runtime 判定
+  const order = ['claude-code', 'codex', 'opencode', 'dsh'];
+  const counts = { pass: 0, warn: 0, fail: 0, skip: 0 };
+  for (const id of order) {
+    const probe = await probeAgentRuntime(id, { home, deep: true });
+    const display = loadCompatibility().agents[id]?.display ?? id;
+    if (!probe.detected) {
+      counts.skip++;
+      lines.push(`SKIP  ${id.padEnd(14)} agent 未安装`);
+      continue;
+    }
+    // claude/codex：核心检查是 wiring + hook target + self-test
+    if (id === 'claude-code' || id === 'codex') {
+      if (!probe.configValid) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 配置损坏`); }
+      else if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} RiskGuard hook 注入缺失`); }
+      else if (!probe.hookTargetExists) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} hook 目标文件缺失`); }
+      else if (!probe.runtimeAvailable) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} node 运行时不可用`); }
+      else if (!probe.selfTestPassed) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} runtime self-test 未通过`); }
+      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + runtime self-test`); }
+    } else if (id === 'opencode') {
+      if (!probe.configValid) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 配置损坏`); }
+      else if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} plugin 引用缺失`); }
+      else if (!probe.artifactPresent) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 插件文件缺失`); }
+      else if (probe.artifactIntegrity === false) { counts.warn++; lines.push(`WARN  ${id.padEnd(14)} 插件文件 hash 与仓库不符（可能被改）`); }
+      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} plugin 注册 + artifact 完整性`); }
+    } else if (id === 'dsh') {
+      if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} deny-risk-commands patch 缺失`); }
+      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); }
+    }
+    if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
+  }
+  // 其它 registry agent（未纳入 probe 的）→ SKIP（未装）或按 doctor 旧逻辑
+  for (const desc of AGENT_REGISTRY) {
+    if (['claude-code', 'codex', 'opencode', 'dsh'].includes(desc.id)) continue;
+    const inst = detectAgent(desc, { home });
+    if (!inst.installed) { counts.skip++; lines.push(`SKIP  ${desc.id.padEnd(14)} agent 未安装`); }
   }
   lines.push('');
-  // 汇总
-  const pass = report.checks.filter((c) => c.state === 'ok').length;
-  const warn = report.checks.filter((c) => c.state === 'stale').length;
-  const fail = report.checks.filter((c) => c.state === 'missing').length;
-  const skip = report.checks.filter((c) => c.state === 'absent-agent').length;
-  lines.push(`Summary: ${pass} PASS / ${warn} WARN / ${fail} FAIL / ${skip} SKIP`);
+  lines.push(`Summary: ${counts.pass} PASS / ${counts.warn} WARN / ${counts.fail} FAIL / ${counts.skip} SKIP`);
   return lines.join('\n');
 }
 
