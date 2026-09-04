@@ -36,6 +36,9 @@ jobs:
         run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts
 
       - name: Verify release artifact checksums
-        run: cd dist/agent-risk-guard-* && sha256sum -c SHA256SUMS.txt
+        run: |
+          ART="$(ls -d dist/agent-risk-guard-v* 2>/dev/null | head -1)"
+          if [ -z "$ART" ] || [ ! -d "$ART" ]; then echo "artifact dir not found"; exit 1; fi
+          cd "$ART" && sha256sum -c SHA256SUMS.txt
 
   # ps1 / sh hook 与回收站 D3 实测仅 Windows + 本机环境可跑，保持本地 test-all.ps1
