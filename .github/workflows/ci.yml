@@ -29,7 +29,13 @@ jobs:
       - name: Check D0-D4 compatibility docs have not drifted
         run: node scripts/check-compatibility-docs.ts
 
+      - name: Build release artifact (portable runtime)
+        run: node scripts/build-release.ts
+
       - name: Run platform-independent test suites
-        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts
+        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts
+
+      - name: Verify release artifact checksums
+        run: cd dist/agent-risk-guard-* && sha256sum -c SHA256SUMS.txt
 
   # ps1 / sh hook 与回收站 D3 实测仅 Windows + 本机环境可跑，保持本地 test-all.ps1

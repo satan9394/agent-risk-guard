@@ -11,7 +11,7 @@
 
 import { run } from './cli.ts';
 import type { CliInput } from './cli.ts';
-import { cmdDetect, cmdInstall, cmdStatus, cmdDoctor, cmdUninstall, cmdVersion, cmdHelp } from './commands.ts';
+import { cmdDetect, cmdInstall, cmdStatus, cmdDoctor, cmdUninstall, cmdBootstrap, cmdVersion, cmdHelp } from './commands.ts';
 
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
@@ -28,7 +28,7 @@ function parseArgs(argv: string[]): { cmd?: string; opts: Record<string, string 
   const args = argv.slice(2);
   if (!args.length) return { opts: {} };
   const first = args[0];
-  const known = new Set(['detect', 'install', 'status', 'doctor', 'uninstall', 'version', 'help']);
+  const known = new Set(['detect', 'install', 'status', 'doctor', 'uninstall', 'bootstrap', 'version', 'help']);
   if (!known.has(first)) return { opts: {} }; // 非子命令 → hook 运行时
   const cmd = first;
   const opts: Record<string, string | boolean> = {};
@@ -67,6 +67,9 @@ async function runSubcommand(): Promise<boolean> {
       return true;
     case 'uninstall':
       process.stdout.write(await cmdUninstall({ only, dryRun, home }) + '\n');
+      return true;
+    case 'bootstrap':
+      process.stdout.write(await cmdBootstrap({ home, force: opts['force'] === true }) + '\n');
       return true;
     case 'version':
       process.stdout.write(cmdVersion() + '\n');
