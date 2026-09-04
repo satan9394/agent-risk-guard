@@ -179,3 +179,65 @@ test('Case8: runtime 不可用 → BROKEN（注入 runtimeAvailableOverride）',
     assert.equal(p.state, 'BROKEN', 'runtime unavailable must be BROKEN');
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+test('Case9: repair-install 失败 → 旧 manifest 被恢复（hash == 安装前）', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'rg-tx-'));
+  try {
+    // 1. 正常安装（产生 manifest）
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ permissions: { defaultMode: 'bypassPermissions' }, model: 'opus' }, null, 2), 'utf8');
+    const cc = join(home, '.claude', 'settings.json');
+    const out1 = await cmdInstall({ only: 'claude', home });
+    assert.match(out1, /installed/, out1);
+    const mf = manifestPathFor('claude-code', home);
+    assert.equal(existsSync(mf), true);
+    const manifestHashA = await sha256File(mf);
+
+    // 2. 人为制造 BROKEN：删除 hook 引用（config 里拿掉 RiskGuard hook entry）
+    const cfg = JSON.parse(readFileSync(cc, 'utf8'));
+    cfg.hooks.PreToolUse = cfg.hooks.PreToolUse.filter((h: any) => !(h._riskguard === true));
+    writeFileSync(cc, JSON.stringify(cfg, null, 2), 'utf8');
+    const brokenProbe = await probeAgentRuntime('claude-code', { home, deep: true });
+    assert.equal(brokenProbe.state, 'BROKEN', 'precondition: wiring removed → BROKEN');
+    const cfgHashBeforeRepair = await sha256File(cc);
+
+    // 3. 执行 repair install 但注入 verification 失败 → rollback
+    const out2 = await cmdInstall({ only: 'claude', home, _test: { failVerify: true } });
+    assert.match(out2, /verification FAILED/, out2);
+
+    // 4. 验收：manifest hash == A（旧 manifest 恢复），config hash == 安装前（repair 前），状态仍是 BROKEN
+    const manifestHashAfter = await sha256File(mf);
+    assert.equal(manifestHashAfter, manifestHashA, 'pre-existing manifest must be restored after failed repair');
+    const cfgHashAfter = await sha256File(cc);
+    assert.equal(cfgHashAfter, cfgHashBeforeRepair, 'config must be restored to repair-before state');
+    const p = await probeAgentRuntime('claude-code', { home, deep: true });
+    assert.equal(p.state, 'BROKEN', 'state after failed repair == state before repair');
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('Case10: repair-install 成功 → BROKEN 恢复 ACTIVE，doctor PASS', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'rg-tx-'));
+  try {
+    // 1. 正常安装
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ permissions: { defaultMode: 'bypassPermissions' }, model: 'opus' }, null, 2), 'utf8');
+    const cc = join(home, '.claude', 'settings.json');
+    const out1 = await cmdInstall({ only: 'claude', home });
+    assert.match(out1, /installed/, out1);
+
+    // 2. 人为删除 hook → BROKEN
+    const cfg = JSON.parse(readFileSync(cc, 'utf8'));
+    cfg.hooks.PreToolUse = cfg.hooks.PreToolUse.filter((h: any) => !(h._riskguard === true));
+    writeFileSync(cc, JSON.stringify(cfg, null, 2), 'utf8');
+    const bp = await probeAgentRuntime('claude-code', { home, deep: true });
+    assert.equal(bp.state, 'BROKEN');
+
+    // 3. 重新 install → 应识别为 repair（不是 already），成功恢复 ACTIVE
+    const out2 = await cmdInstall({ only: 'claude', home, verbose: true });
+    assert.match(out2, /repaired successfully/, `expected repair, got: ${out2}`);
+    const p = await probeAgentRuntime('claude-code', { home, deep: true });
+    assert.equal(p.state, 'ACTIVE', 'after repair install the agent must be ACTIVE');
+    assert.equal(p.selfTestPassed, true);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
