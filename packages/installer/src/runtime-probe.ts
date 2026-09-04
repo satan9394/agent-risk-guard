@@ -36,10 +36,15 @@ export interface RuntimeProbeResult {
   runtimeAvailable: boolean;    // node 运行时可用
   selfTestPassed: boolean;      // hook self-test（无害→ALLOW，危险→DENY）
   selfTestDetail?: string;
+  /** v0.1.2: 验证模式——dynamic=真实执行拦截 runtime self-test；static=仅 wiring/artifact/integrity；none=无足够验证 */
+  verificationMode: VerificationMode;
   state: RuntimeState;
   /** 人类可读证据行 */
   evidence: string[];
 }
+
+/** v0.1.2: ACTIVE 的验证模式（dynamic 比 static 更强，二者不应混成相同含义） */
+export type VerificationMode = 'dynamic' | 'static' | 'none';
 
 /** hook 无害 self-test payload（必须被 ALLOW / 空允许） */
 const HARMLESS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo riskguard-self-test' } });
@@ -112,16 +117,19 @@ export async function probeAgentRuntime(
   let hookTargetExists = false;
   let selfTestPassed = false;
   let selfTestDetail: string | undefined;
+  let verificationMode: VerificationMode = 'none';
 
   if (!detected) {
     ev.push('agent not detected');
-    return { agent, home: base, detected: false, manifestPresent, configValid: false, wired: false, artifactPresent: false, artifactIntegrity: null, runtimeAvailable, selfTestPassed: false, state: 'NOT_DETECTED', evidence: ev };
+    return { agent, home: base, detected: false, manifestPresent, configValid: false, wired: false, artifactPresent: false, artifactIntegrity: null, runtimeAvailable, selfTestPassed: false, verificationMode: 'none' as const, state: 'NOT_DETECTED', evidence: ev };
   }
   ev.push('agent detected');
 
   // ---- wiring / artifact / self-test 按 agent ----
   try {
     if (agent === 'claude-code' || agent === 'codex') {
+      // claude/codex：可真实 spawn hook → dynamic
+      verificationMode = 'dynamic';
       const p = agent === 'claude-code' ? join(base, '.claude', 'settings.json') : join(base, '.codex', 'hooks.json');
       const read = await readConfig(p);
       if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
@@ -176,6 +184,8 @@ export async function probeAgentRuntime(
         ev.push(selfTestDetail);
       }
     } else if (agent === 'opencode') {
+      // opencode：验证 wiring/artifact/integrity（不 spawn 真实 interception）→ static
+      verificationMode = 'static';
       const p = join(base, '.config', 'opencode', 'opencode.json');
       const read = await readConfig(p);
       if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
@@ -214,6 +224,8 @@ export async function probeAgentRuntime(
       selfTestDetail = selfTestPassed ? 'opencode wiring verified (reference + artifact + integrity)' : 'opencode verification incomplete';
       if (wired && artifactPresent) ev.push(selfTestDetail);
     } else if (agent === 'dsh') {
+      // dsh：验证 patch 存在（不 spawn）→ static
+      verificationMode = 'static';
       const { checkDshPatch } = await import('./doctor.ts');
       const chk = await checkDshPatch(base);
       wired = chk.state === 'ok';
@@ -290,7 +302,7 @@ export async function probeAgentRuntime(
   return {
     agent, home: base, detected, manifestPresent, configValid, wired,
     hookCommand, hookTargetExists, artifactPresent, artifactIntegrity,
-    runtimeAvailable, selfTestPassed, selfTestDetail, state, evidence: ev,
+    runtimeAvailable, selfTestPassed, selfTestDetail, verificationMode, state, evidence: ev,
   };
 }
 
