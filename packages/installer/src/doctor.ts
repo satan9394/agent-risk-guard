@@ -85,17 +85,19 @@ export async function checkCodexHook(home?: string): Promise<DoctorCheck> {
   }
 }
 
-/** OpenCode：检查 opencode.json 的 plugin 数组是否注册 RiskGuard 插件（R25：R17 实测仅放 plugins/ 不生效） */
+/** OpenCode：检查 opencode.json 的 plugin 数组是否注册 RiskGuard 插件（R25：R17 实测仅放 plugins/ 不生效；v0.1.0 认 agent-risk-guard 新名 + 兼容旧名） */
 export async function checkOpencodePlugin(home?: string): Promise<DoctorCheck> {
   const base = home ?? process.env.USERPROFILE ?? process.env.HOME ?? '.';
   const p = join(base, '.config', 'opencode', 'opencode.json');
   try {
     const raw = await readFile(p, 'utf8');
-    const hit = raw.includes('destructive-operation-guard');
+    const hitNew = raw.includes('agent-risk-guard');
+    const hitLegacy = raw.includes('destructive-operation-guard');
+    const hit = hitNew || hitLegacy;
     return {
       agent: 'opencode', check: 'plugin 注册（opencode.json）',
       state: hit ? 'ok' : 'missing',
-      detail: hit ? '发现 destructive-operation-guard 插件注册' : 'opencode.json plugin 未注册 RiskGuard',
+      detail: hitNew ? '发现 agent-risk-guard 插件注册' : hitLegacy ? '发现旧名 destructive-operation-guard 插件注册（建议重装升级到 agent-risk-guard）' : 'opencode.json plugin 未注册 RiskGuard',
     };
   } catch {
     return { agent: 'opencode', check: 'plugin 注册（opencode.json）', state: 'missing', detail: `未找到 ${p}` };

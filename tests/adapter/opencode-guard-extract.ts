@@ -16,8 +16,8 @@ export interface PureCore {
 }
 
 // 插件单一事实源：优先仓库内副本（CI 可跑），skill 工作区存在时仍校验真身（同 rule-alignment 策略）
-const REPO_PLUGIN = join(import.meta.dirname, '..', '..', 'assets', 'opencode', 'destructive-operation-guard.ts');
-const SKILL_PLUGIN = 'E:/DeepSeek_Harness/workspace/2026_08_21/agent-risk-guard-audit/scripts/opencode/destructive-operation-guard.ts';
+const REPO_PLUGIN = join(import.meta.dirname, '..', '..', 'assets', 'opencode', 'agent-risk-guard.ts');
+const SKILL_PLUGIN = 'E:/DeepSeek_Harness/workspace/2026_08_21/agent-risk-guard-audit/scripts/opencode/agent-risk-guard.ts';
 
 export async function extractPureCore(): Promise<PureCore> {
   const pluginPath = existsSync(REPO_PLUGIN) ? REPO_PLUGIN : SKILL_PLUGIN;

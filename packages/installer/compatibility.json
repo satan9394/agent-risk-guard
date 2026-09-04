@@ -21,7 +21,7 @@
       "integration": "tool.before / tool.execute.before plugin",
       "enforcement": "hard",
       "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
-      "notes": "plugins/destructive-operation-guard.ts 在 bash 执行前硬拦截（bash 已 allow 仍拦截）。v0.1.0 D3 实测：真实 opencode run 调 bash `git reset --hard`，工具态 status=error、抛出 BLOCKED_BY_GLOBAL_SAFETY_GUARD（Policy: GIT_RESET_HARD），命令未执行、未提交改动存活。本机生产已接线。"
+      "notes": "plugins/agent-risk-guard.ts（v0.1.0 namespace 名；1.0.0 旧名 destructive-operation-guard 仍兼容识别）在 bash 执行前硬拦截（bash 已 allow 仍拦截）。v0.1.0 D3 实测：真实 opencode run 会话中 bash 硬重置命令被拒（工具态 status=error、抛出 BLOCKED_BY_GLOBAL_SAFETY_GUARD），命令未执行、未提交改动存活。本机生产已接线。"
     },
     "codex": {
       "display": "Codex CLI",

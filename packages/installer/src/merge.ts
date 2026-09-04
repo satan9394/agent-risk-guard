@@ -13,7 +13,10 @@
 /** 每个 agent 注入的标识符（README/status/uninstall 共用） */
 export const CLAUDE_HOOK_ID = 'riskguard-pre-tool-hook';
 export const CODEX_HOOK_ID = 'riskguard-codex-hook';
-export const OPENCODE_PLUGIN_ID = 'destructive-operation-guard';
+/** OpenCode 插件 namespace（v0.1.0 整改 P0-3：不再用通用名，避免覆盖用户同名文件） */
+export const OPENCODE_PLUGIN_ID = 'agent-risk-guard';
+/** 旧插件名（1.0.0 时代部署）；识别用兼容，不再作为新部署名 */
+export const OPENCODE_PLUGIN_LEGACY_ID = 'destructive-operation-guard';
 
 export interface MergeResult<T> {
   config: T;        // merge 后的配置
@@ -66,7 +69,18 @@ export function mergeCodexHooks(
   return { config: { ...cfg, hooks: { ...hooks, PreToolUse: pretool } }, changed: true };
 }
 
-/** OpenCode opencode.json merge：把 RiskGuard 插件加入 plugin 数组（保留已有插件） */
+/** 判断 plugin 引用是否命中 RiskGuard（精确匹配 basename：agent-risk-guard 或旧名 destructive-operation-guard） */
+export function isRiskGuardPluginRef(p: unknown, pluginPath?: string): boolean {
+  const s = String(p ?? '').replace(/\\/g, '/').trim();
+  // 取路径最后一段文件名（去 .ts/.js 后缀）
+  const base = s.split('/').pop() ?? '';
+  const name = base.replace(/\.(ts|js|mjs|cjs)$/i, '');
+  if (name === OPENCODE_PLUGIN_ID || name === OPENCODE_PLUGIN_LEGACY_ID) return true;
+  if (pluginPath && s === String(pluginPath).replace(/\\/g, '/')) return true;
+  return false;
+}
+
+/** OpenCode opencode.json merge：把 RiskGuard 插件加入 plugin 数组（保留已有插件；旧名引用视为已装，不重复注入） */
 export function mergeOpencodePlugins(
   existing: Record<string, unknown> | null | undefined,
   pluginPath: string,
@@ -75,9 +89,7 @@ export function mergeOpencodePlugins(
     ? { ...existing }
     : {};
   const plugins = Array.isArray(cfg['plugin']) ? [...cfg['plugin']] : [];
-  const norm = (p: unknown): string => String(p ?? '').replace(/\\/g, '/');
-  const already = plugins.some((p) => norm(p).includes(OPENCODE_PLUGIN_ID) || norm(p).includes(norm(pluginPath)));
-  if (already) return { config: cfg, changed: false };
+  if (plugins.some((p) => isRiskGuardPluginRef(p, pluginPath))) return { config: cfg, changed: false };
   plugins.push(pluginPath);
   return { config: { ...cfg, plugin: plugins }, changed: true };
 }

@@ -1,4 +1,4 @@
-// Global Destructive Operation Guard for OpenCode
+// Agent Risk Guard plugin for OpenCode (v0.1.0 namespace: agent-risk-guard)
 // Deterministic pre-execution safety - no LLM, no network, no subprocess
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
@@ -12,10 +12,10 @@ const CFG = path.join(HOME_RAW, ".config", "opencode")
 const CFG_NORM = CFG.toLowerCase().replace(/\\/g, "/")
 const PLUGDIR = path.join(CFG, "plugins")
 const PLUGDIR_NORM = PLUGDIR.toLowerCase().replace(/\\/g, "/")
-const PLUGFILE = path.join(PLUGDIR, "destructive-operation-guard.ts")
+const PLUGFILE = path.join(PLUGDIR, "agent-risk-guard.ts")
 const PLUGFILE_NORM = PLUGFILE.toLowerCase().replace(/\\/g, "/")
 const LOGDIR = path.join(CFG, "logs")
-const LOGFILE = path.join(LOGDIR, "destructive-operation-guard.log")
+const LOGFILE = path.join(LOGDIR, "agent-risk-guard.log")
 
 const P = {
   PERMANENT_DELETE_POSIX: "PERMANENT_DELETE_POSIX",
@@ -390,8 +390,10 @@ function analyzeCommand(command: string): AR {
 
     // Guard plugin protection (run BEFORE detectors)
     const lo = t.toLowerCase()
-    if (lo.includes("destructive-operation-guard") && /\b(?:rm|del|erase|rmdir|rd|remove-item|unlink|move|mv|ren|rename)\b/.test(lo))
+    if (lo.includes("agent-risk-guard") && /\b(?:rm|del|erase|rmdir|rd|remove-item|unlink|move|mv|ren|rename)\b/.test(lo))
       return { blocked: true, policy: P.PROTECTED_GUARD_MUTATION, reason: "Attempt to delete/move the safety guard plugin.", command }
+    if (lo.includes("destructive-operation-guard") && /\b(?:rm|del|erase|rmdir|rd|remove-item|unlink|move|mv|ren|rename)\b/.test(lo))
+      return { blocked: true, policy: P.PROTECTED_GUARD_MUTATION, reason: "Attempt to delete/move the safety guard plugin (legacy name).", command }
 
     // Shell redirect to protected path
     const rd = detectRedirect(t)
@@ -514,7 +516,7 @@ const Guard: Plugin = async (ctx) => {
 }
 
 // V1 plugin shape: id + server
-export default { id: "destructive-operation-guard", server: Guard }
+export default { id: "agent-risk-guard", server: Guard }
 
 // Export internals for testing (not loaded by V1 plugin loader)
 export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectPipe, P }
