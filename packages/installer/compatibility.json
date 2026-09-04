@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "productVersion": "0.1.1",
+  "productVersion": "0.1.2",
   "levels": {
     "D0": "Unsupported",
     "D1": "Implementation exists",

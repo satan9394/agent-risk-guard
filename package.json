@@ -1,12 +1,17 @@
 {
   "name": "agent-risk-guard-monorepo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "license": "MIT",
-  "description": "Universal Agent Risk Guard monorepo — v0.1.0 Developer Preview",
+  "description": "Deterministic safety guardrails for AI coding agents",
   "type": "module",
+  "bin": {
+    "riskguard": "./bin/riskguard.mjs"
+  },
   "scripts": {
     "test": "node --test packages/core/test tests/e2e",
-    "riskguard": "node packages/cli/src/index.ts"
+    "riskguard": "node bin/riskguard.mjs",
+    "bootstrap": "node bin/riskguard.mjs bootstrap",
+    "build-release": "node scripts/build-release.ts"
   }
 }

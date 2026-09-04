@@ -94,7 +94,7 @@ test('manifest: save→load 往返 + 移除 + hasManifest', async () => {
   const home = mkdtempSync(join(tmpdir(), 'rg-manifest-'));
   try {
     const m: AgentManifest = {
-      product: 'riskguard', version: '0.1.1', agent: 'claude-code',
+      product: 'riskguard', version: '0.1.2', agent: 'claude-code',
       installedAt: new Date().toISOString(), installedFiles: [join(home, 'x.ts')],
       modifiedConfig: [join(home, '.claude', 'settings.json')],
       riskguardEntryId: CLAUDE_HOOK_ID, backupDir: join(home, 'bk'),
@@ -104,7 +104,7 @@ test('manifest: save→load 往返 + 移除 + hasManifest', async () => {
     const loaded = await loadManifest('claude-code', home);
     assert.equal(loaded?.agent, 'claude-code');
     assert.equal(loaded?.riskguardEntryId, CLAUDE_HOOK_ID);
-    assert.equal(loaded?.version, '0.1.1');
+    assert.equal(loaded?.version, '0.1.2');
     await removeManifest('claude-code', home);
     assert.equal(await hasManifest('claude-code', home), false);
     assert.equal(await loadManifest('missing-agent', home), null);
@@ -125,7 +125,7 @@ test('manifest: manifestDir 定位到 <home>/.riskguard/manifests', () => {
 test('compatibility: schema 版本与产品版本一致', () => {
   const c = loadCompatibility();
   assert.equal(c.schemaVersion, '1.0');
-  assert.equal(c.productVersion, '0.1.1');
+  assert.equal(c.productVersion, '0.1.2');
   assert.equal(typeof c.levels.D3, 'string');
 });
 
