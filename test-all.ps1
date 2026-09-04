@@ -25,6 +25,8 @@ Run-Test "core/path-junction (M7 D3 real)" @("$ROOT\packages\core\test\path-junc
 Run-Test "core/classify-fuzz (M7)" @("$ROOT\packages\core\test\classify-fuzz.test.ts")
 Run-Test "e2e/cli" @("$ROOT\tests\e2e\cli.e2e.test.ts")
 Run-Test "product (merge/manifest/compat/hook schema)" @("$ROOT\tests\product\product.test.ts")
+Run-Test "release-hardening (config-read/runtime-state/alias/merge)" @("$ROOT\tests\release-hardening\release-hardening.test.ts")
+Run-Test "release-hardening lifecycle E2E" @("$ROOT\tests\release-hardening\lifecycle.e2e.test.ts")
 Run-Test "adapters M3 (claude/cursor/grok/windsurf/dsh)" @("$ROOT\tests\adapter\adapters.test.ts")
 Run-Test "adapters M4 (opencode)" @("$ROOT\tests\adapter\adapters-m4.test.ts")
 Run-Test "adapter audit re-regress (GAN R14)" @("$ROOT\tests\adapter\adapter-audit-reregress.test.ts")
