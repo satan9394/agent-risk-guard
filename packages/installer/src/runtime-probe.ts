@@ -251,12 +251,12 @@ export async function probeAgentRuntime(
     if (opts.deep === true) {
       // deep（install verification / doctor / status）：必须 self-test 真过才算 ACTIVE
       // 先判明确缺陷（显式损坏 → BROKEN，不是「未验证」）
-      const explicitDefect = agent === 'opencode'
+      const explicitDefect = !runtimeAvailable || (agent === 'opencode'
         ? !configValid || (wired && !artifactPresent) || (wired && artifactIntegrity === false)
-        : !configValid || (wired && hookCommand && !hookTargetExists);
+        : !configValid || (wired && hookCommand && !hookTargetExists));
       if (explicitDefect) {
         state = 'BROKEN';
-        ev.push(agent === 'opencode' ? 'artifact missing/tampered or config invalid → BROKEN' : 'hook target missing or config invalid → BROKEN');
+        ev.push(!runtimeAvailable ? 'node runtime unavailable → BROKEN' : (agent === 'opencode' ? 'artifact missing/tampered or config invalid → BROKEN' : 'hook target missing or config invalid → BROKEN'));
       } else {
         const complete = criticalOk && runtimeAvailable && selftestOk;
         if (complete) {

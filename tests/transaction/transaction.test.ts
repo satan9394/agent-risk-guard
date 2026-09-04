@@ -17,8 +17,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 import { cmdInstall } from '../../packages/cli/src/commands.ts';
 import { probeAgentRuntime } from '../../packages/installer/src/runtime-probe.ts';
@@ -166,8 +167,9 @@ test('Case8: runtime 不可用 → BROKEN（注入 runtimeAvailableOverride）',
     mkdirSync(join(home, '.claude'), { recursive: true });
     mkdirSync(join(home, '.riskguard', 'manifests'), { recursive: true });
     const cc = join(home, '.claude', 'settings.json');
-    const repoRoot = join(new URL('.', import.meta.url).pathname, '..', '..');
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
     const realHook = join(repoRoot, 'packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts');
+    assert.equal(existsSync(realHook), true, `real hook must exist for a meaningful test: ${realHook}`);
     writeFileSync(manifestPathFor('claude-code', home), JSON.stringify({ product: 'riskguard', version: '0.1.1', agent: 'claude-code', installedAt: new Date().toISOString(), installedFiles: [], modifiedConfig: [cc], riskguardEntryId: 'riskguard-pre-tool-hook', backupDir: '' }), 'utf8');
     writeFileSync(cc, JSON.stringify({
       hooks: { PreToolUse: [{ _riskguard: true, id: 'riskguard-pre-tool-hook', matcher: 'Bash', hooks: [{ type: 'command', command: `node "${realHook}" --agent claude` }] }] },
