@@ -14,15 +14,24 @@
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
+export interface ManifestArtifact {
+  path: string;   // 部署到用户目录的文件（绝对路径）
+  sha256: string; // 安装时该文件内容的 SHA256（卸载前校验是否仍是我方文件）
+}
+
 export interface AgentManifest {
+  /** manifest schema 版本；缺省视为 1（v0.1.0 前无 schemaVersion 字段的旧 manifest） */
+  schemaVersion?: number;
   product: string;          // 'riskguard'
   version: string;          // '0.1.0'
   agent: string;            // 'claude-code' | 'opencode' | 'codex' | ...
   installedAt: string;      // ISO timestamp
-  installedFiles: string[]; // 部署到用户目录的文件（绝对路径）
+  installedFiles: string[]; // 部署到用户目录的文件（绝对路径；兼容旧 manifest）
   modifiedConfig: string[]; // 被修改的配置文件（绝对路径）
   riskguardEntryId: string; // 注入条目的标识符（hook id / plugin id / marker）
   backupDir: string;        // 写入前备份目录（绝对路径）
+  /** 安装物逐文件 hash（v0.1.0 起写入） */
+  artifacts?: ManifestArtifact[];
 }
 
 export function manifestDir(home?: string): string {

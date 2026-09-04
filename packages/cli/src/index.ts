@@ -60,7 +60,7 @@ async function runSubcommand(): Promise<boolean> {
       process.stdout.write(await cmdInstall({ dryRun, verbose, only, home }) + '\n');
       return true;
     case 'status':
-      process.stdout.write(cmdStatus({ home }) + '\n');
+      process.stdout.write(await cmdStatus({ home }) + '\n');
       return true;
     case 'doctor':
       process.stdout.write(await cmdDoctor({ verbose, home }) + '\n');
