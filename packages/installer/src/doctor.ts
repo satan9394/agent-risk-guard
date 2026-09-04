@@ -21,16 +21,23 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
+/** 识别 RiskGuard hook 是否在配置里（新 CLI hook：_riskguard/id:riskguard-* 或 pre-tool-hook.ts 命令；兼容旧的 dangerous-commands 接线） */
+export function hasRiskGuardHook(raw: string): boolean {
+  if (raw.includes('_riskguard')) return true;
+  if (raw.includes('riskguard-pre-tool-hook') || raw.includes('riskguard-codex-hook')) return true;
+  if (raw.includes('pre-tool-hook.ts')) return true;
+  return raw.includes('dangerous-commands');
+}
+
 /** Claude Code：检查 settings.json 是否含 RiskGuard PreToolUse hook */
 export async function checkClaudeHook(home?: string): Promise<DoctorCheck> {
   const base = home ?? process.env.USERPROFILE ?? process.env.HOME ?? '.';
   const p = join(base, '.claude', 'settings.json');
   try {
     const raw = await readFile(p, 'utf8');
-    // R25 修复：识别标准 RiskGuard 接线（PreToolUse + dangerous-commands hook 命令），兼容旧 filter/permissionDecision 输出约定
-    const hitCurrent = raw.includes('PreToolUse') && raw.includes('dangerous-commands');
-    const hitLegacy = raw.includes('PreToolUse') && (raw.includes('permissionDecision') || raw.includes('hookSpecificOutput'));
-    return { agent: 'claude-code', check: 'PreToolUse hook 注入', state: hitCurrent || hitLegacy ? 'ok' : 'missing', detail: hitCurrent || hitLegacy ? '发现 RiskGuard dangerous-commands hook' : 'settings.json 无 RiskGuard hook' };
+    const hitCurrent = raw.includes('PreToolUse') && hasRiskGuardHook(raw);
+    const hitLegacy = raw.includes('PreToolUse') && raw.includes('hookSpecificOutput');
+    return { agent: 'claude-code', check: 'PreToolUse hook 注入', state: hitCurrent || hitLegacy ? 'ok' : 'missing', detail: hitCurrent ? '发现 RiskGuard PreToolUse hook' : hitLegacy ? '发现旧版 hook 接线' : 'settings.json 无 RiskGuard hook' };
   } catch {
     return { agent: 'claude-code', check: 'PreToolUse hook 注入', state: 'missing', detail: `未找到 ${p}` };
   }
@@ -67,11 +74,11 @@ export async function checkCodexHook(home?: string): Promise<DoctorCheck> {
   const p = join(base, '.codex', 'hooks.json');
   try {
     const raw = await readFile(p, 'utf8');
-    const hit = raw.includes('PreToolUse') && raw.includes('dangerous-commands');
+    const hit = raw.includes('PreToolUse') && hasRiskGuardHook(raw);
     return {
       agent: 'codex', check: 'PreToolUse hook 注入（hooks.json）',
       state: hit ? 'ok' : 'missing',
-      detail: hit ? '发现 PreToolUse + dangerous-commands 接线' : 'hooks.json 无 RiskGuard 门禁',
+      detail: hit ? '发现 RiskGuard PreToolUse 门禁' : 'hooks.json 无 RiskGuard 门禁',
     };
   } catch {
     return { agent: 'codex', check: 'PreToolUse hook 注入（hooks.json）', state: 'missing', detail: `未找到 ${p}` };
