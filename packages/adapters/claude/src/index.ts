@@ -87,11 +87,12 @@ export function parseClaudePayload(payload: ClaudePayload, home?: string): Norma
   });
 }
 
-/** Decision → Claude 阻断输出 JSON（exit 0） */
+/** Decision → Claude 阻断输出 JSON（exit 0）。Claude Code 要求 hookSpecificOutput.hookEventName='PreToolUse' */
 export function renderClaudeDecision(decision: Decision): string {
   if (decision.decision === 'deny') {
     return JSON.stringify({
       hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason: decision.reason ?? 'denied by RiskGuard',
       },
@@ -107,7 +108,7 @@ export function evaluateClaude(payload: ClaudePayload, decide: (e: RiskEvent) =>
   const out = parseClaudePayload(payload);
   if (!out.ok) {
     return JSON.stringify({
-      hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: `RiskGuard parse failure (fail-closed): ${out.reason}` },
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `RiskGuard parse failure (fail-closed): ${out.reason}` },
       systemMessage: 'RiskGuard: payload 解析失败，fail-closed 拒绝',
     });
   }
