@@ -23,7 +23,7 @@
 - **统一 runtime probe**（`packages/installer/src/runtime-probe.ts`）：status / doctor / install-verification 共用同一判定；**ACTIVE = 完整 runtime self-test 通过**；hook 目标缺失 / OpenCode artifact hash 改变 / node 不可用 → BROKEN。
 - **Manifest schemaVersion 2**：`transactionId`、`artifacts[].createdByInstall`、`runtimeVerification{verifiedAt, result}`；manifest 与配置写入均原子化（write temp → rename）。
 - **故障注入测试** `tests/transaction/`（8 cases）：manifest 保存失败、created-file verify 失败、backup 失败、config-write 失败、artifact 失败、hook target 丢失、artifact hash 改变、runtime 不可用。
-- **D0–D4 单一事实源防护**：`scripts/check-compatibility-docs.ts`（CI 跑）扫描 README/docs/CHANGELOG 防旧定义漂移；`docs/adapter-contract.md` 旧定义（Docs Confirmed/Payload Tested/Adversarial Hardened）已清除。
+- **D0–D4 单一事实源防护**：`scripts/check-compatibility-docs.ts`（CI 跑）扫描 README/docs/CHANGELOG 防旧定义漂移；`docs/adapter-contract.md` 的历史等级命名已全部清除并改为引用 `compatibility.json` 的权威定义。
 - **版本单一源**：`packages/core/src/version.ts` 从 `package.json` 读取；CLI/manifest 不再各自硬编码 `0.1.1`。
 - GitHub `v0.1.0` Release 标记为 **Pre-release**（历史 tag 保留）。
 
