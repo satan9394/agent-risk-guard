@@ -10,7 +10,7 @@
 
 ## 已授权可执行（待安排）
 
-- [ ] **GitHub Release 页面**：`v1.0.0` 目前只有 git tag，无 Release 页面（建议带 CHANGELOG 摘要发布）；v0.2.0 tag 已推送，Release 页面待建（Pre-release）
+- [x] **GitHub Release 页面**：v0.2.0（2026-08-21 补建，Pre-release）与 v0.2.1（ACS Schema Conformance Patch，Pre-release）已创建；`v1.0.0` 仍只有 git tag，无 Release 页面（建议带 CHANGELOG 摘要发布）
 - [ ] **macOS / Linux trash 实测**：trash 包 macOS/Linux 分支为 D1（文档级），待真实环境验证
 - [ ] **Codex D3 实测**：codex 额度恢复后做真实会话删除拦截验证
 
