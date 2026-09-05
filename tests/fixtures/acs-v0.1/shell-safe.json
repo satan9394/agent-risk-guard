@@ -1,0 +1,9 @@
+{
+  "_expected": "allow",
+  "_note": "safe shell command, Profile B 放行（filesystem.read 语义）",
+  "tool": { "name": "shell", "provider": "cli-smoke" },
+  "operation": "execute",
+  "capability": "shell.execute",
+  "arguments": { "command": { "value": "npm test" } },
+  "intent": { "description": "run unit tests" }
+}

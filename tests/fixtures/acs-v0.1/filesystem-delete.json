@@ -1,0 +1,9 @@
+{
+  "_expected": "modify",
+  "_note": "permanent delete → RG-FS-001 deny + safeAlternative trash → ACS modify（Modification Proposal）",
+  "tool": { "name": "filesystem", "provider": "cli-smoke" },
+  "operation": "delete",
+  "capability": "filesystem.delete",
+  "arguments": { "path": "C:\\work\\obsolete-project" },
+  "intent": { "description": "clean up obsolete project" }
+}

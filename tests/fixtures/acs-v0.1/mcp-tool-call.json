@@ -1,0 +1,10 @@
+{
+  "_expected": "ask",
+  "_note": "mcp.invoke 近似映射 process.execute（MCP 内容不可见）→ RG-PROC-001 ask（§十三：context insufficient / ambiguous）",
+  "tool": { "name": "mcp__fetch", "provider": "cli-smoke", "protocol": "mcp" },
+  "operation": "invoke",
+  "capability": "mcp.invoke",
+  "arguments": { "server": "web", "tool": "fetch", "url": "https://example.com" },
+  "intent": { "description": "fetch external page" },
+  "environment": { "os": "windows", "sandboxed": false }
+}
