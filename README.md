@@ -2,14 +2,17 @@
 
 **Deterministic safety guardrails for AI coding agents.**
 
+**Cross-agent runtime security enforcement with experimental OWASP ACS v0.1 alignment.**
+
 在 AI Agent 真正执行文件删除、Shell 命令、Git 破坏性操作之前，进行确定性安全拦截——把「永久删除」变成「回收站」，把破坏性操作挡在执行之前。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.1.2 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
+> **状态：`v0.2.0 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
+> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。定位是 ACS *aligned*（实验性），不是 compliant / certified（详见 [docs/acs-alignment.md](docs/acs-alignment.md)）。
 
 ---
 
@@ -87,6 +90,7 @@ AI Coding Agent
 
 > 状态含义：**✅ Verified**＝真实 Agent 环境验证；**🟢 Implemented**＝已实现并有测试，缺少完整的真实生产复核；**🟡 Experimental**＝实验性；**⚪ Unsupported**＝尚未实现。
 > 区分「**软规则约束**」（写入 AGENTS.md / CLAUDE.md，靠模型遵守）与「**执行前硬拦截**」（hook / plugin / pre-execute 机器门禁）。
+> **真实执行边界矩阵**（Compatibility Schema v2：surfaces / fail mode / policy scope / bypass / 边界层 / per-capability）由 [docs/generated/agent-security-matrix.md](docs/generated/agent-security-matrix.md) 自动生成（`node scripts/generate-agent-security-matrix.ts`，CI 防漂移），本节保留人工可读汇总表。
 
 | Agent | 集成（Integration） | 执行前硬拦截 | 验证等级 | 状态 |
 |---|---|---|---|---|
@@ -170,6 +174,16 @@ node bin/riskguard.mjs uninstall
 
 卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
 
+**6.（v0.2.0）ACS v0.1 实验性 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
+
+```bash
+cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
+cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
+cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
+```
+
+非法输入不抛 stack trace：输出 `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` 且 `extensions.riskguard.degraded = true`（fail-closed，§十八）。
+
 > Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 
 ### 效果演示
@@ -217,6 +231,8 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 
 ## 文档导航
 
+- [docs/acs-alignment.md](docs/acs-alignment.md) — OWASP ACS v0.1 对齐边界（inbound/outbound 映射、Compatibility v2、Conformance C1–C10、审计格式）
+- [docs/generated/agent-security-matrix.md](docs/generated/agent-security-matrix.md) — Agent 安全执行边界矩阵（自动生成自 compatibility.json）
 - [docs/adapter-contract.md](docs/adapter-contract.md) — 适配器契约（Vendor Payload → RiskEvent → Decision）与验证等级（D0–D4，单一事实源见 compatibility.json）
 - [docs/deployment-status.md](docs/deployment-status.md) — 本机生产接线现状与同步清单
 - [docs/d3-deletion-test-3agents.md](docs/d3-deletion-test-3agents.md) — 三 Agent 删除测试真实会话实证
@@ -229,7 +245,7 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 ## 开发与安全验证
 
 - **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
-- 测试：`tests/` 含 policy / adapter / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 134/134 通过（本机，含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组）。
+- 测试：`tests/` 含 policy / adapter / acs / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 235/235 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
 
 ## 社区与协议
 
@@ -239,5 +255,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：当前统一产品版本为 **`v0.1.2 Developer Preview`**（`package.json` = `0.1.2`，单一版本源见 `packages/core/src/version.ts`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> **版本说明**：当前统一产品版本为 **`v0.2.0 Developer Preview`**（`package.json` = `0.2.0`，单一版本源见 `packages/core/src/version.ts`）。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
