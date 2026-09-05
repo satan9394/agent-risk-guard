@@ -10,9 +10,16 @@
 
 ## 已授权可执行（待安排）
 
-- [ ] **GitHub Release 页面**：`v1.0.0` 目前只有 git tag，无 Release 页面（建议带 CHANGELOG 摘要发布）
+- [ ] **GitHub Release 页面**：`v1.0.0` 目前只有 git tag，无 Release 页面（建议带 CHANGELOG 摘要发布）；v0.2.0 tag 已推送，Release 页面待建（Pre-release）
 - [ ] **macOS / Linux trash 实测**：trash 包 macOS/Linux 分支为 D1（文档级），待真实环境验证
 - [ ] **Codex D3 实测**：codex 额度恢复后做真实会话删除拦截验证
+
+## v0.2.0 遗留（下一阶段，见 docs/devlog-2026-09-05-v0.2.0.md）
+
+- [ ] **真实 Agent D3 Conformance（P1 顺序 §二十八）**：基于统一 Conformance Framework（C1–C10）对 Cursor / Copilot CLI / Windsurf 做真实会话执行；Cursor 先做 official payload fixture → adapter contract test → conformance harness（§二十九）
+- [ ] **Copilot CLI machine Policy Hook PoC**：system policy（`/etc/github-copilot/policy.d/` / `C:\ProgramData\GitHub\Copilot\policy.d\` / Registry）→ RiskGuard Machine Guard（§三十，本轮只预留 policyScope）
+- [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
+- [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
 
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 
