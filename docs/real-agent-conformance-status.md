@@ -27,7 +27,7 @@ RiskGuard 的 ACS 协议层已在 v0.2.2 冻结并发布。v0.3.0 的**基础设
 | Agent | 环境 | 结论 |
 |---|---|---|
 | Cursor | `cursor` CLI 存在，版本 **3.17.21**（`cursor agent` 子命令存在：「Start the Cursor agent in your terminal」） | 检测可用；真实 D3 需登录态 + 终端/GUI Agent 会话 |
-| GitHub Copilot CLI | `gh` 2.90 已装，但 `gh copilot` 扩展**未安装** | **SKIP**（环境不存在） |
+| GitHub Copilot CLI | `gh` 2.90 已装，`gh copilot` 是内置 preview 命令（首用自动下载 CLI），但本机下载**未成功**且运行需 Copilot 席位 | **SKIP**（CLI 不可用） |
 | Windsurf | 不在 PATH | **SKIP**（环境不存在） |
 
 ## 解锁真实 D3 所需（环境/用户动作）
@@ -35,8 +35,9 @@ RiskGuard 的 ACS 协议层已在 v0.2.2 冻结并发布。v0.3.0 的**基础设
 1. **Cursor D3**：在登录态的 Cursor 中，用 `cursor agent`（终端）或 GUI 对 fixture 发起真实会话——
    提示 Agent 执行 `git reset --hard`（T2）与永久删除 sentinel（T3），核对 preToolUse hook deny 且副作用未发生。
    fixture 由 `node scripts/run-real-conformance.ts cursor` 生成（含 sentinel sha256 + git dirty 状态）。
-2. **Copilot CLI D3**：`gh extension install github/gh-copilot` 安装扩展 + 登录 Copilot 席位，
-   再走 Layer A（`%USERPROFILE%\.copilot\hooks\`）用户 hook；Layer B machine policy 需管理员权限（policy.d / HKLM）。
+2. **Copilot CLI D3**：`gh copilot` 是内置 preview 命令（`gh copilot -p "<prompt>" --allow-tool ...` 非交互驱动），
+   但本机首用下载 CLI 未成功，且真实运行需 Copilot 席位；就绪后走 Layer A（`%USERPROFILE%\.copilot\hooks\`）
+   用户 hook，Layer B machine policy 需管理员权限（policy.d / HKLM）。
 3. **Windsurf D3**：安装 Windsurf CLI，验证 `pre_run_command` exit 2 阻断 + Restricted Mode 下 hook 不加载。
 
 ## 诚实性要点（为什么没有升 D3）
