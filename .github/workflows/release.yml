@@ -1,0 +1,80 @@
+name: Release
+
+# v0.2.2 §七/§九/§十：tag v* 触发，tests + schema conformance + artifact hash 全部 PASS 后才上传。
+# 与 ci.yml（push/PR 的 Node 22/24 matrix）不同，本工作流负责「真正把 release assets 上传到 GitHub Release」。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # Release Gate：双 Node 全量验证（任一失败 → release job 不执行 → 不上传）
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dev dependencies (ajv, for ACS v0.1.0 schema conformance)
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify ACS v0.1.0 vendor schema snapshot integrity
+        run: node scripts/verify-acs-schema-snapshot.ts
+
+      - name: Build release artifact (portable runtime)
+        run: node scripts/build-release.ts
+
+      - name: Verify release artifact checksums (§十：hash PASS 才允许上传)
+        run: |
+          ART="$(ls -d dist/agent-risk-guard-v* 2>/dev/null | head -1)"
+          if [ -z "$ART" ] || [ ! -d "$ART" ]; then echo "artifact dir not found"; exit 1; fi
+          cd "$ART" && sha256sum -c SHA256SUMS.txt
+
+      - name: Run platform-independent test suites (§十：tests PASS 才允许上传)
+        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts packages/acs/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts tests/acs/*.test.ts tests/compatibility/*.test.ts tests/conformance/*.test.ts tests/acs-schema-conformance/*.test.ts
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dev dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build release artifact (portable runtime)
+        run: node scripts/build-release.ts
+
+      # Release 根目录 SHA256SUMS.txt：覆盖发布 archive 本身（供下载方校验 tarball）。
+      # 逐文件校验由 tarball 内的 SHA256SUMS.txt 承担（§八）。
+      - name: Generate release-root SHA256SUMS.txt (covers archives)
+        run: |
+          TGZ="$(ls dist/agent-risk-guard-v*.tar.gz 2>/dev/null | head -1)"
+          if [ -z "$TGZ" ]; then echo "tarball not found"; exit 1; fi
+          cd dist && sha256sum "$(basename "$TGZ")" > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release (Pre-release, §十二)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/*.tar.gz \
+            dist/SHA256SUMS.txt \
+            --title "${{ github.ref_name }}" \
+            --prerelease \
+            --generate-notes
