@@ -246,6 +246,7 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - [docs/devlog-2026-09-05-v0.2.0.md](docs/devlog-2026-09-05-v0.2.0.md) — 开发日志：v0.2.0（ACS Alignment Foundation）
 - [docs/devlog-2026-09-05-v0.2.1.md](docs/devlog-2026-09-05-v0.2.1.md) — 开发日志：v0.2.1（ACS Schema Conformance Patch，官方 JSON Schema 判据 + wire mode）
 - [docs/devlog-2026-09-05-v0.2.2.md](docs/devlog-2026-09-05-v0.2.2.md) — 开发日志：v0.2.2（ACS Protocol Finalization，version gate + release assets）
+- [docs/real-agent-conformance-status.md](docs/real-agent-conformance-status.md) — v0.3.0 Real Agent Conformance 进度与诚实结论（D3 evidence 格式 / runner / 三家 adapter / 环境探测）
 - [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
 
 ## 开发与安全验证
