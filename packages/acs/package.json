@@ -1,6 +1,6 @@
 {
   "name": "@riskguard/acs",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "OWASP ACS v0.1.0 boundary protocol — inbound/outbound gateway + JSON-RPC wire envelope + conformance framework (experimental)",
   "type": "module",
   "main": "src/index.ts",

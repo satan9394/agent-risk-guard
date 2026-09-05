@@ -4,13 +4,42 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.2.1 Developer Preview`**（`package.json` = `0.2.1`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.2.2 Developer Preview`**（`package.json` = `0.2.2`；单一版本源 `packages/core/src/version.ts`）。
 
 - `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.2.1 ACS Schema Conformance Patch
+## [Unreleased] - v0.2.2 ACS Protocol Finalization
+
+> 定位：**ACS 协议层冻结**。Phase A 只解决两件事：① ACS version gate——official wire gateway
+> 精确拒绝不支持版本（schema-valid ≠ supported，未知版本返回 ACS application error `-32001`，
+> 绝不误当作 0.1.0 处理、绝不返回 security policy DENY）；② Release assets 真正上传——
+> GitHub Release 不再只有 Source Code，而是包含可校验的 `tar.gz` + `SHA256SUMS.txt`。
+> 完成后 ACS 协议层冻结（§十三），核心转向 v0.3.0 Real Agent Conformance。
+
+### Added
+
+- **ACS version gate**（§一~§六）：`SUPPORTED_ACS_SPEC_VERSIONS = ['0.1.0']`、`isSupportedAcsVersion()`、
+  `getSupportedAcsVersions()`（精确 pin，禁止 0.1.x / 0.x / latest / semver range / negotiation）。
+- **Unsupported version 错误语义**（§四）：wire 模式 `params.acs_version != 0.1.0`（且 schema-valid）→
+  ACS application error `-32001 Unsupported ACS version: <v>. Supported: 0.1.0`；不进 RiskEvent / Policy Engine；
+  与 schema-invalid（`-32602`）、policy deny 三者严格区分。
+- **`.github/workflows/release.yml`**（§七/§九/§十）：tag `v*` 触发，双 Node (22/24) 全量验证
+  （tests + schema conformance + artifact hash）全 PASS 后才 `gh release create`（Pre-release）上传
+  `agent-risk-guard-v*.tar.gz` + 根目录 `SHA256SUMS.txt`。
+
+### Changed
+
+- `ACS_JSONRPC_CODES` 增加 `UNSUPPORTED_ACS_VERSION: -32001`（ACS application error 区间 -32000 ~ -32099）。
+- `package.json` / `compatibility.json` productVersion → `0.2.2`。
+
+### Security
+
+- **Protocol version mismatch must fail explicitly**：未知 ACS 版本绝不 fallback 到 0.1.0 逻辑继续处理。
+- 协议能力不匹配（-32001）与危险操作判断（policy DENY）彻底分离，避免“协议错误被当成安全拦截成功”的假象。
+
+## [0.2.1] - 2026-09-05（v0.2.1 ACS Schema Conformance Patch，已发布）
 
 > 定位：**Experimental OWASP ACS v0.1.0 schema-conformant wire gateway**（§五十七），
 > 仍不宣称 compliant / certified。官方 JSON Schema 自本轮起是 Release Gate（§五十三）。
