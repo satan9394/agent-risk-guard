@@ -1,8 +1,8 @@
 /**
- * core/version.ts — 产品版本单一事实源（v0.1.1）
+ * core/version.ts — 产品版本单一事实源
  *
  * package.json 的 version 字段是唯一权威；CLI / manifest / compatibility 等
- * 一律从这里读取，禁止在多处硬编码 const VERSION = '0.1.x'。
+ * 一律从这里读取，禁止在多处硬编码 const VERSION = '0.x.y'。
  *
  * 运行时读取 package.json（零依赖、无构建；Node ≥ 22.18 原生 ESM+type-stripping）。
  */

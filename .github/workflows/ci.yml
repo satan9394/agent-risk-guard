@@ -33,7 +33,10 @@ jobs:
         run: node scripts/build-release.ts
 
       - name: Run platform-independent test suites
-        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts
+        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts packages/acs/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts tests/acs/*.test.ts tests/compatibility/*.test.ts tests/conformance/*.test.ts
+
+      - name: Verify generated agent security matrix is up to date
+        run: node scripts/generate-agent-security-matrix.ts --check
 
       - name: Verify release artifact checksums
         run: |
