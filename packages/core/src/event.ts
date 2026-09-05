@@ -39,6 +39,12 @@ export interface EventContext {
   interactive?: boolean;
   sandbox?: string; // workspace-write / read-only / none ...
   env?: Record<string, string>;
+  /**
+   * 非破坏式上下文元数据（v0.2.0 新增；Core 不解释其内容）。
+   * 用于承载 ACS intent / provenance 等 contextual evidence——
+   * 只能作为证据，绝不能直接决定 allow（v0.2.0 目标 §七）。
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** 统一风险事件 */
