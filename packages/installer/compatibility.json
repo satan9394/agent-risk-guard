@@ -215,6 +215,38 @@
       },
       "componentInventory": { "agent": "windsurf", "version": "unknown", "adapter": "packages/adapters/windsurf", "hook": "pre_run_command hook", "runtime": "node", "policy": "default-policy" }
     },
+    "copilot": {
+      "display": "GitHub Copilot CLI",
+      "integration": "preToolUse hook + policy.d machine policy",
+      "enforcement": "hard",
+      "verification": { "windows": "D2", "macos": "D2", "linux": "D2" },
+      "notes": "adapter 已实现（D1/D2 单测，2026-09 官方 hooks-reference 核查）。真实 D3 待本机安装 Copilot CLI（当前 SKIP）；copilot-cli issue #3874（2026-06）显示 preToolUse deny 在部分版本存在不阻断回归 → failMode 记 unknown，不标 D3。machine policy（Layer B）需管理员权限：policy.d + HKLM。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "unknown"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "supported", "enterpriseLevel": "unknown", "policyScope": ["user", "machine"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "unknown",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "filesystem.write": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "copilot", "version": "unknown", "adapter": "packages/adapters/copilot", "hook": "preToolUse hook + policy.d", "runtime": "node", "policy": "default-policy" }
+    },
     "grok": {
       "display": "Grok CLI",
       "integration": "PreToolUse hook",

@@ -23,6 +23,7 @@
 | dsh | hard | fail-closed | user | supported | unsupported | fail-closed | L0,L2,L3 | — |
 | cursor | hard | unknown | user | supported | unknown | unknown | L0,L2 | — |
 | windsurf | hard | unknown | user | supported | unknown | unknown | L0,L2 | hook:supported@Restricted Mode disabled |
+| copilot | hard | unknown | user,machine | supported | unknown | unknown | L0,L2 | — |
 | grok | soft | fail-open | user | supported | unknown | fail-open | L0 | — |
 | pi | none | unknown | — | not-applicable | not-applicable | unknown | — | — |
 
@@ -59,6 +60,9 @@
 |  | mcp.invoke | unknown | D0 | — | — |
 | windsurf | shell.execute | hard | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
+| copilot | shell.execute | hard | D2 | — | — |
+|  | filesystem.write | unknown | D0 | — | — |
+|  | mcp.invoke | unknown | D0 | — | — |
 | grok | shell.execute | soft | D1 | — | — |
 | pi | — | — | — | — | — |
 
@@ -72,6 +76,7 @@
 | dsh | supported | supported | supported | unknown | unknown |
 | cursor | supported | unknown | unknown | unknown | unknown |
 | windsurf | supported | unknown | unknown | unknown | unknown |
+| copilot | supported | unknown | unknown | unknown | unknown |
 | grok | supported | unknown | unknown | unknown | unknown |
 | pi | not-applicable | not-applicable | not-applicable | not-applicable | not-applicable |
 
