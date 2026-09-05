@@ -19,3 +19,4 @@ export * from './result.ts';
 export * from './gateway.ts';
 export * from './audit.ts';
 export * from './conformance.ts';
+export * from './real-conformance.ts';

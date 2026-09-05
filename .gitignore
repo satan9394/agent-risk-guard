@@ -9,6 +9,9 @@ build/
 .tmp/
 coverage/
 
+# Real Agent Conformance evidence（生成物；由 scripts/run-real-conformance.ts 按需落盘）
+tests/evidence/
+
 # IDE / OS
 .vscode/
 .idea/
