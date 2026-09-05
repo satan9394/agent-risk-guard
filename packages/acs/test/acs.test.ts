@@ -12,9 +12,9 @@ import { validateAcsRequestEnvelope } from '../src/envelope.ts';
 import { validateAcsResult } from '../src/outbound.ts';
 import { unwrapAcsArguments } from '../src/arguments.ts';
 import { deny, ask, allow, type Decision } from '../../core/src/decision.ts';
-import { ACS_VERSION, ACS_SPEC_VERSION, ACS_DECISIONS } from '../src/version.ts';
+import { ACS_VERSION, ACS_SPEC_VERSION, ACS_DECISIONS, SUPPORTED_ACS_SPEC_VERSIONS, isSupportedAcsVersion, getSupportedAcsVersions } from '../src/version.ts';
 import { toRiskGuardCapability, capabilityToOperation, listCapabilities, deriveAcsCapability } from '../src/capability-map.ts';
-import type { AcsToolCallRequest } from '../src/types.ts';
+import type { AcsToolCallRequest, AcsResult } from '../src/types.ts';
 
 function req(partial: Partial<AcsToolCallRequest> & Pick<AcsToolCallRequest, 'capability'>): AcsToolCallRequest {
   return {
@@ -318,6 +318,55 @@ test('§四十一：wire 模式协议错误 → JSON-RPC error（-32700/-32600/-
   const invalidParams = evaluateAcsEnvelope({ ...VALID_ENVELOPE, params: { ...VALID_ENVELOPE.params, acs_version: '0.1' } });
   assert.equal(invalidParams.envelope.error?.code, -32602);
   assert.equal(invalidParams.envelope.id, 42);
+});
+
+// ============================================================================
+// v0.2.2 §一~§六：ACS version gate（schema-valid ≠ supported）
+// ============================================================================
+
+test('§二/§三/§六：SUPPORTED_ACS_SPEC_VERSIONS 精确 pin，禁止 range/自动兼容', () => {
+  assert.deepEqual([...SUPPORTED_ACS_SPEC_VERSIONS], ['0.1.0']);
+  assert.equal(isSupportedAcsVersion('0.1.0'), true);
+  // 精确 pin：0.1.x / 0.x / latest / 未来版本一律 unsupported
+  assert.equal(isSupportedAcsVersion('0.1.1'), false);
+  assert.equal(isSupportedAcsVersion('0.2.0'), false);
+  assert.equal(isSupportedAcsVersion('1.0.0'), false);
+  assert.equal(isSupportedAcsVersion('9.9.9'), false);
+  // schema-invalid 版本也不是 supported（由 envelope 层判 -32602，本函数只判支持集）
+  assert.equal(isSupportedAcsVersion('0.1'), false);
+  assert.equal(isSupportedAcsVersion('latest'), false);
+  assert.deepEqual(getSupportedAcsVersions(), ['0.1.0']);
+});
+
+test('§四/§五：wire 模式 unsupported 版本 → -32001，不进入 Policy Engine（非 policy deny）', () => {
+  let engineReached = false;
+  const spyOpts = {
+    mapDecision: (d: Decision): AcsResult => { engineReached = true; return riskDecisionToAcsResult(d); },
+  };
+  for (const v of ['0.2.0', '1.0.0', '9.9.9']) {
+    const out = evaluateAcsEnvelope(
+      { ...VALID_ENVELOPE, params: { ...VALID_ENVELOPE.params, acs_version: v } },
+      spyOpts,
+    );
+    assert.equal(out.envelope.error?.code, -32001, `acs_version=${v} → -32001 Unsupported ACS version`);
+    assert.ok(out.envelope.error?.message.includes(`Unsupported ACS version: ${v}`), 'message 回显被拒版本');
+    assert.ok(out.envelope.error?.message.includes('Supported: 0.1.0'), 'message 列出 supported 版本');
+    // 协议错误 → 无 result（绝不产出 policy verdict）
+    assert.equal(out.envelope.result, undefined, `acs_version=${v} 不得产生 policy result`);
+    assert.equal(out.envelope.id, 42, 'id 回显');
+  }
+  assert.equal(engineReached, false, 'Policy 管线（mapDecision）绝不可被执行');
+});
+
+test('§四/§五：wire 模式 schema-invalid 版本（0.1）→ -32602（仍 invalid params，非 -32001）', () => {
+  const out = evaluateAcsEnvelope({ ...VALID_ENVELOPE, params: { ...VALID_ENVELOPE.params, acs_version: '0.1' } });
+  assert.equal(out.envelope.error?.code, -32602);
+});
+
+test('§五：wire 模式 0.1.0 → 正常进入（result envelope，无 error）', () => {
+  const out = evaluateAcsEnvelope(JSON.stringify(VALID_ENVELOPE));
+  assert.equal(out.envelope.error, undefined);
+  assert.equal(out.envelope.result?.acs_version, '0.1.0');
 });
 
 test('§三十七/§三十八：result.request_id 与 response.id 回显', () => {
