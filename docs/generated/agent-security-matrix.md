@@ -1,6 +1,6 @@
 # Agent Security Matrix
 
-> 自动生成自 `packages/installer/compatibility.json`（schemaVersion 2.0，product 0.2.0，ACS profile experimental-0.1）。
+> 自动生成自 `packages/installer/compatibility.json`（schemaVersion 2.0，product 0.2.1，ACS profile experimental-0.1.0）。
 > 手工修改本文件无效；运行 `node scripts/generate-agent-security-matrix.ts` 重新生成。
 
 ## 验证等级（D0–D4）

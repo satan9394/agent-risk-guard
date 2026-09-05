@@ -44,6 +44,7 @@ Run-Test "dsh guard hardening (P2-3)" @("$ROOT\packages\dsh\test\guard-hardening
 Run-Test "acs gateway v0.1 (inbound/outbound/gateway)" @("$ROOT\packages\acs\test\acs.test.ts")
 Run-Test "acs golden fixtures (v0.2.0)" @("$ROOT\tests\acs\golden-fixtures.test.ts")
 Run-Test "acs cli evaluate (v0.2.0)" @("$ROOT\tests\acs\cli-acs-evaluate.test.ts")
+Run-Test "acs schema conformance v0.1.0 (official JSON Schema, ajv)" @("$ROOT\tests\acs-schema-conformance\schema-conformance.test.ts", "$ROOT\tests\acs-schema-conformance\snapshot-integrity.test.ts")
 Run-Test "compatibility v2 (migration + boundaries)" @("$ROOT\tests\compatibility\compatibility-v2.test.ts")
 Run-Test "conformance framework (C1-C10)" @("$ROOT\tests\conformance\conformance.test.ts")
 

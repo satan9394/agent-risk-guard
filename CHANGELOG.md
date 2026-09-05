@@ -4,13 +4,68 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.2.0 Developer Preview`**（`package.json` = `0.2.0`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.2.1 Developer Preview`**（`package.json` = `0.2.1`；单一版本源 `packages/core/src/version.ts`）。
 
 - `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
-- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` 条目保留为历史记录，不删除、不重写历史。
+- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.2.0 ACS Alignment Foundation
+## [Unreleased] - v0.2.1 ACS Schema Conformance Patch
+
+> 定位：**Experimental OWASP ACS v0.1.0 schema-conformant wire gateway**（§五十七），
+> 仍不宣称 compliant / certified。官方 JSON Schema 自本轮起是 Release Gate（§五十三）。
+> 核心目标：RiskGuard 的 ACS 输入/输出必须能通过 **OWASP ACS v0.1.0 官方 JSON Schema** 验证，
+> 而不是只通过 RiskGuard 自己的简化校验。
+
+### Added
+
+- **官方 ACS v0.1.0 schema 快照**（§二十四/§二十五）：`tests/vendor/owasp-acs-v0.1.0/`
+  （request-envelope / response-envelope / hooks/tool-call-request / modifications / ask-details / defer-details / provenance），
+  pinned 到 upstream commit `f46d260d22fe6d6ad71e4d979be7e25d063c468e`（GenAI-Security-Project/agent-control-standard，Apache-2.0）。
+- **JSON Schema 校验（Layer 2）**（§二十八/§二十九）：`ajv`（Draft 2020-12）+ `ajv-formats`（devDependencies），
+  官方 schema 是最终 conformance 判据；本地 validator（Layer 1）保留（快速、友好、fail-closed）。
+- **JSON-RPC Request/Response Envelope**（§七/§十/§十二）：`AcsRequestEnvelope` / `AcsRequestParams` /
+  `AcsRequestMetadata` / `AcsResponseEnvelope` 类型 + `packages/acs/src/envelope.ts`。
+- **wire 模式 Gateway**（§八/§九）：`evaluateAcsEnvelope()`——Request Envelope → Gateway → Response Envelope
+  是唯一官方 conformance 对象；`response.id` 回显 `request.id`（§三十八）、`result.request_id` 回显
+  `params.request_id`（§三十七）。
+- **错误语义分离**（§三十九/§四十/§四十一）：invalid JSON → `-32700`（id null）；invalid envelope → `-32600`；
+  invalid params/payload → `-32602`；valid request 但安全映射失败 → **ACS deny + degraded=true**（policy 层，非协议错误）。
+- **capability 推导**（§三十一/§三十二）：官方 capability 可选；缺失时从 tool/operation/raw_command/arguments 推导
+  （例：tool=shell + `git reset --hard` → git.destructive），推导不确定 → fail-closed deny。
+- **arguments value-wrapper 解析**（§三十三~§三十五）：`unwrapAcsArguments()`（wrapper → 普通值，保留
+  argument-level provenance + `argumentPath=/arguments/<key>`）；envelope metadata → `context.metadata.acs`（§三十六）。
+- **CLI `acs evaluate --wire`**（§四十七/§四十八）：stdin 官方 Request Envelope → stdout 官方 Response Envelope；
+  默认保持 payload mode；help 明确两种模式。
+- **Schema 完整性**（§五十四/§五十六）：`SCHEMA_SHA256SUMS` + `scripts/verify-acs-schema-snapshot.ts`（CI 校验）；
+  `scripts/check-acs-upstream.ts`（informational drift check，不阻塞 CI，§二十七）。
+- **官方 fixtures**（§四十五/§四十六）：`tests/fixtures/acs-v0.1.0/{payload,envelope}/`（官方 shape、合法 UUID、wrapper arguments）。
+- **Conformance 测试套件**（§五十一/§六十）：`tests/acs-schema-conformance/`——official envelope/payload PASS、
+  capability omitted PASS、arguments missing / wrapper shape / acs_version=0.1 / type missing /
+  description-only modification FAIL、allow/deny/modify/ask/defer 响应 PASS、request_id/id 回显、协议错误码。
+
+### Changed
+
+- `ACS_VERSION` → `0.1.0`；新增 `ACS_SPEC_VERSION = '0.1.0'`（完整 SemVer，§三）；`ACS_PROFILE` 保持 `experimental-0.1`。
+- **ToolCallRequest 对齐官方 required**（§四）：`tool` + `arguments` 必填；`capability` 可选；
+  非官方顶层字段（environment / provenance[] / requestId / tool.protocol）移出官方 payload 类型（§六）。
+- **AcsResult 官方必填**（§十三/§十四/§十五/§十六）：`type="final"` / `acs_version`（SemVer）/ `request_id`（UUID）/
+  `decision`；`request_id` 不再放 extensions。
+- **modifications 官方结构**（§十七~§二十一）：object（`parameter_overrides` / `modified_content` / `redactions`），
+  不再是 `[{tool,capability,description}]` 数组；safeAlternative → modify 仅在 arguments 能安全表达
+  operation/path/mode 时输出；否则 deny（`Safe replacement is available conceptually but cannot be represented safely in this ACS payload.`）。
+- **ask_details / defer_details 官方 schema**（§二十二/§二十三）：approver+question+timeout_seconds /
+  reason+resolution_method+resolution_timeout_ms。
+- `compatibility.json`：`acsProfile` → `experimental-0.1.0`，productVersion → `0.2.1`（§五十）。
+- 遗留 fixture `tests/fixtures/acs-v0.1/filesystem-delete.json`：`_expected` `modify` → `deny`（§二十 行为变更；官方可表达版本见 acs-v0.1.0 fixtures）。
+
+### Security
+
+- 协议错误与 policy deny 严格区分：wire 模式不把 invalid JSON-RPC 伪装成 deny result（§四十）。
+- 显式未知 capability 绝不静默 reinterpret（fail-closed，§三十二）。
+- vendor schema 只读 + hash 完整性校验，防止“为了让测试通过而改官方 schema”（§五十四/§五十五）。
+
+## [0.2.0] - 2026-09-05（v0.2.0 ACS Alignment Foundation，已发布）
 
 > 定位：**OWASP ACS v0.1 aligned（experimental）**，不宣称 compliant / certified（ACS 仍 Public Preview，无官方 conformance 标准）。
 > 原则：ACS 是 Boundary Protocol，不是 Core Domain Model —— RiskEvent / Policy Engine 保持标准无关，Core 不依赖 ACS。
