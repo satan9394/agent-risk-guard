@@ -1,0 +1,10 @@
+{
+  "tool": { "name": "shell", "provider": "cli-smoke" },
+  "operation": "execute",
+  "capability": "shell.execute",
+  "arguments": {
+    "command": { "value": "npm test" }
+  },
+  "raw_command": "npm test",
+  "intent": { "description": "run unit tests" }
+}

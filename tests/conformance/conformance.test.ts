@@ -118,7 +118,7 @@ test('四件套（P0）都能产出报告且格式稳定', () => {
   for (const agent of ['claude-code', 'codex', 'opencode', 'dsh']) {
     const report: ConformanceReport = runConformance(agent, EVIDENCE[agent]);
     assert.equal(report.agent, agent);
-    assert.equal(report.acsVersion, '0.1');
+    assert.equal(report.acsVersion, '0.1.0');
     assert.equal(report.frameworkVersion, '1.0');
     assert.ok(report.generatedAt);
     assert.equal(report.checks.length, 10);

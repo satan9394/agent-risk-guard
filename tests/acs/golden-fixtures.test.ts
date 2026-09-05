@@ -1,9 +1,14 @@
 /**
- * tests/acs/golden-fixtures.test.ts — ACS v0.1 Golden Fixtures（v0.2.0 §四十）
+ * tests/acs/golden-fixtures.test.ts — ACS v0.1 Golden Fixtures（v0.2.0 §四十，v0.2.1 §二十/§四十五）
  *
  * tests/fixtures/acs-v0.1/*.json 每个都是真实链路 fixture（shell-safe / git-reset-hard /
  * filesystem-delete / credential-read / mcp-tool-call），带 _expected 决策。
  * 测试经 gateway 全链路（含 JSON 解析路径）验证并做 outbound schema 校验。
+ *
+ * v0.2.1 行为变更（§二十）：filesystem-delete（仅 path 参数）无法安全表达 trash 改写
+ * → 不再伪造 modify，输出 deny。
+ * 官方 shape 的 v0.1.0 fixtures（payload/envelope）见 tests/fixtures/acs-v0.1.0/，
+ * 由 tests/acs-schema-conformance/ 覆盖。
  */
 
 import { test } from 'node:test';
@@ -61,18 +66,21 @@ test('golden fixtures：gateway 全链路决策与 _expected 一致', () => {
     const out = evaluateAcsToolCall(f.requestRaw);
     assert.equal(out.result.decision, f.expected, `${f.name}: expected ${f.expected}, got ${out.result.decision}`);
     assert.equal(out.degraded, false, `${f.name} 不应 degraded`);
-    // outbound schema 校验
+    // outbound schema 校验（Layer 1：官方必填 type/acs_version/request_id 等）
     const v = validateAcsResult(out.result);
     assert.equal(v.ok, true, `${f.name}: invalid ACS result — ${v.problems.join('; ')}`);
   }
 });
 
-test('golden fixtures：allow/deny/modify/ask 四种决策均有覆盖', () => {
+test('golden fixtures：allow/deny/ask 决策均有覆盖（modify 由 acs-v0.1.0 官方 fixtures 覆盖）', () => {
   const decisions = new Set(FIXTURES.map((f) => f.expected));
   assert.ok(decisions.has('allow'), '缺 allow fixture');
   assert.ok(decisions.has('deny'), '缺 deny fixture');
-  assert.ok(decisions.has('modify'), '缺 modify fixture');
   assert.ok(decisions.has('ask'), '缺 ask fixture（mcp-tool-call）');
+  // §二十：legacy filesystem-delete（仅 path）→ deny，不再伪造 modify
+  const fsDelete = FIXTURES.find((f) => f.name === 'filesystem-delete.json');
+  assert.ok(fsDelete, '缺 filesystem-delete fixture');
+  assert.equal(fsDelete.expected, 'deny');
 });
 
 test('round-trip：ToolCallRequest → RiskEvent → Decision → ACS Result（显式链路）', () => {
@@ -84,16 +92,20 @@ test('round-trip：ToolCallRequest → RiskEvent → Decision → ACS Result（�
     // RiskEvent → RiskGuard Decision
     const decision = evaluate(mapped.event, defaultPolicy());
     // Decision → ACS Result
-    const result = riskDecisionToAcsResult(decision, { operation: `${mapped.event.operation.domain}.${mapped.event.operation.action}`, capability: mapped.meta.capability, profile: 'autonomy-safe' });
+    const result = riskDecisionToAcsResult(decision, {
+      operation: `${mapped.event.operation.domain}.${mapped.event.operation.action}`,
+      capability: mapped.meta.capability,
+      profile: 'autonomy-safe',
+      argumentValues: Object.fromEntries(
+        Object.entries((f.request['arguments'] as Record<string, unknown> | undefined) ?? {}).map(([k, v]) => [
+          k,
+          v !== null && typeof v === 'object' && 'value' in (v as Record<string, unknown>) ? (v as Record<string, unknown>)['value'] : v,
+        ]),
+      ),
+    });
     // ACS Result 校验
     const v = validateAcsResult(result);
     assert.equal(v.ok, true, `${f.name}: round-trip result invalid — ${v.problems.join('; ')}`);
-    // modify 必须带 modifications（§十二：只提议不执行）
-    if (result.decision === 'modify') {
-      assert.ok(result.modifications?.length, `${f.name}: modify 缺 modifications`);
-      assert.ok(result.modifications![0]!.operation === 'trash');
-      assert.ok(result.modifications![0]!.description?.includes('Not executed'));
-    }
     // deny/modify/ask 必须带 reasoning（§十五）
     if (result.decision !== 'allow') {
       assert.ok(result.reasoning && result.reasoning.length > 5, `${f.name}: reasoning 缺失`);

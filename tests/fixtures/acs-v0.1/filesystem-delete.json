@@ -1,6 +1,6 @@
 {
-  "_expected": "modify",
-  "_note": "permanent delete → RG-FS-001 deny + safeAlternative trash → ACS modify（Modification Proposal）",
+  "_expected": "deny",
+  "_note": "v0.2.1：permanent delete → RG-FS-001 deny + safeAlternative trash，但 arguments 只有 path、无法安全表达 operation/path/mode 改写 → 不伪造 modify，deny（§二十）。官方可表达版本见 tests/fixtures/acs-v0.1.0/payload/filesystem-delete.json（带 mode 参数 → modify）。",
   "tool": { "name": "filesystem", "provider": "cli-smoke" },
   "operation": "delete",
   "capability": "filesystem.delete",

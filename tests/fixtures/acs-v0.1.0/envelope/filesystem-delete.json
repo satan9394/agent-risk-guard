@@ -1,0 +1,24 @@
+{
+  "jsonrpc": "2.0",
+  "method": "steps/toolCallRequest",
+  "id": 3,
+  "params": {
+    "acs_version": "0.1.0",
+    "request_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "timestamp": "2026-08-21T10:00:00.000Z",
+    "metadata": {
+      "agent_id": "acs-conformance-agent",
+      "session_id": "7a2d9f01-6c8b-4e3a-b5d2-1f0e9c8b7a65"
+    },
+    "payload": {
+      "tool": { "name": "filesystem", "provider": "cli-smoke" },
+      "operation": "delete",
+      "capability": "filesystem.delete",
+      "arguments": {
+        "path": { "value": "/project/obsolete" },
+        "mode": { "value": "permanent" }
+      },
+      "intent": { "description": "clean up obsolete project" }
+    }
+  }
+}

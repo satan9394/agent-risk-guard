@@ -21,7 +21,7 @@ import {
 test('v2: schemaVersion=2.0 + acsProfile 存在', () => {
   const c = loadCompatibility();
   assert.equal(c.schemaVersion, '2.0');
-  assert.equal(c.acsProfile, 'experimental-0.1');
+  assert.equal(c.acsProfile, 'experimental-0.1.0');
   // D0–D4 定义保留（check-compatibility-docs 依赖；§二十七 不替换 D 等级）
   assert.ok(c.levels.D3.includes('Real agent execution verified'));
 });

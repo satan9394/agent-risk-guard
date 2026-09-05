@@ -1,0 +1,10 @@
+{
+  "tool": { "name": "filesystem", "provider": "cli-smoke" },
+  "operation": "delete",
+  "capability": "filesystem.delete",
+  "arguments": {
+    "path": { "value": "/project/obsolete" },
+    "mode": { "value": "permanent" }
+  },
+  "intent": { "description": "clean up obsolete project" }
+}
