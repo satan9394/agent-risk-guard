@@ -1,6 +1,7 @@
 {
-  "schemaVersion": "1.0",
-  "productVersion": "0.1.2",
+  "schemaVersion": "2.0",
+  "productVersion": "0.2.0",
+  "acsProfile": "experimental-0.1",
   "levels": {
     "D0": "Unsupported",
     "D1": "Implementation exists",
@@ -14,56 +15,263 @@
       "integration": "PreToolUse hook",
       "enforcement": "hard",
       "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
-      "notes": "PreToolUse hook 在工具调用前调用 RiskGuard 核心，绕过 permissions/bypassPermissions。v0.1.0 D3 实测：真实 claude -p --permission-mode bypassPermissions 调 Bash `git reset --hard`，hook 输出 permissionDecision=deny（RG-GIT-001），Claude Code 以 permission-rule 拒绝执行，未提交改动存活。修复：hook 输出补 hookEventName='PreToolUse'（当前 CC schema 要求）。"
+      "notes": "PreToolUse hook 在工具调用前调用 RiskGuard 核心，绕过 permissions/bypassPermissions。v0.1.0 D3 实测：真实 claude -p --permission-mode bypassPermissions 调 Bash `git reset --hard`，hook 输出 permissionDecision=deny（RG-GIT-001），Claude Code 以 permission-rule 拒绝执行，未提交改动存活。修复：hook 输出补 hookEventName='PreToolUse'（当前 CC schema 要求）。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "supported",
+        "git": "supported",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unsupported", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unsupported" },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L1", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "filesystem.write": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "filesystem.delete": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "git.destructive": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "network.connect": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "claude-code", "version": "unknown", "adapter": "packages/adapters/claude", "hook": "PreToolUse", "runtime": "node", "policy": "default-policy" }
     },
     "opencode": {
       "display": "OpenCode",
       "integration": "tool.before / tool.execute.before plugin",
       "enforcement": "hard",
       "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
-      "notes": "plugins/agent-risk-guard.ts（v0.1.0 namespace 名；1.0.0 旧名 destructive-operation-guard 仍兼容识别）在 bash 执行前硬拦截（bash 已 allow 仍拦截）。v0.1.0 D3 实测：真实 opencode run 会话中 bash 硬重置命令被拒（工具态 status=error、抛出 BLOCKED_BY_GLOBAL_SAFETY_GUARD），命令未执行、未提交改动存活。本机生产已接线。"
+      "notes": "plugins/agent-risk-guard.ts（v0.1.0 namespace 名；1.0.0 旧名 destructive-operation-guard 仍兼容识别）在 bash 执行前硬拦截（bash 已 allow 仍拦截）。v0.1.0 D3 实测：真实 opencode run 会话中 bash 硬重置命令被拒（工具态 status=error、抛出 BLOCKED_BY_GLOBAL_SAFETY_GUARD），命令未执行、未提交改动存活。本机生产已接线。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "supported",
+        "git": "supported",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unsupported", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unsupported" },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L1", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "filesystem.write": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "filesystem.delete": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "git.destructive": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "network.connect": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "opencode", "version": "unknown", "adapter": "packages/adapters/opencode", "hook": "tool.before plugin", "runtime": "node", "policy": "default-policy" }
     },
     "codex": {
       "display": "Codex CLI",
       "integration": "PreToolUse hook (hooks.json) + AGENTS.md rules",
       "enforcement": "hard",
       "verification": { "windows": "D2", "macos": "D1", "linux": "D1" },
-      "notes": "hooks.json PreToolUse 已接线（riskguard-codex-hook + legacy dangerous-commands.ps1）。机器层 hook D2 实测：DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。本机未安装 codex CLI 二进制，真实会话 D3 待 CLI 可用后补验。"
+      "notes": "hooks.json PreToolUse 已接线（riskguard-codex-hook + legacy dangerous-commands.ps1）。机器层 hook D2 实测：DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。本机未安装 codex CLI 二进制，真实会话 D3 待 CLI 可用后补验。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "supported",
+        "git": "supported",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "filesystem.write": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "filesystem.delete": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "git.destructive": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "network.connect": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "codex", "version": "unknown", "adapter": "packages/adapters/codex + packages/codex", "hook": "PreToolUse hook (hooks.json)", "runtime": "node + powershell hook", "policy": "rules-compiler AGENTS.md" }
     },
     "dsh": {
       "display": "DeepSeek Harness",
       "integration": "pre-execute / guard",
       "enforcement": "hard",
       "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
-      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。"
+      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "supported",
+        "git": "supported",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": { "available": "supported", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unsupported" },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L2", "L3"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "filesystem.write": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "filesystem.delete": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "git.destructive": { "enforcement": "hard", "verification": { "windows": "D3" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "network.connect": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "dsh", "version": "unknown", "adapter": "packages/adapters/dsh + packages/dsh", "hook": "tools/pre-execute + guard", "runtime": "node", "policy": "cordis.patch.yml deny-risk-commands" }
     },
     "cursor": {
       "display": "Cursor",
       "integration": "preToolUse hook",
       "enforcement": "hard",
       "verification": { "windows": "D2", "macos": "D1", "linux": "D1" },
-      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。"
+      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "unknown"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "unknown",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "filesystem.write": { "enforcement": "unknown", "verification": { "windows": "D0" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "cursor", "version": "unknown", "adapter": "packages/adapters/cursor", "hook": "preToolUse hook", "runtime": "node", "policy": "default-policy" }
     },
     "windsurf": {
       "display": "Windsurf",
       "integration": "pre_run_command hook",
       "enforcement": "hard",
       "verification": { "windows": "D2", "macos": "D1", "linux": "D1" },
-      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。"
+      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。⚠ Restricted Mode 下 hooks 不加载：Restricted Mode ≠ RiskGuard ACTIVE。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "unknown"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "unknown",
+      "conditionalAvailability": [
+        { "feature": "hook", "condition": "Restricted Mode disabled", "state": "supported" }
+      ],
+      "securityBoundaries": ["L0", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } }
+      },
+      "componentInventory": { "agent": "windsurf", "version": "unknown", "adapter": "packages/adapters/windsurf", "hook": "pre_run_command hook", "runtime": "node", "policy": "default-policy" }
     },
     "grok": {
       "display": "Grok CLI",
       "integration": "PreToolUse hook",
       "enforcement": "soft",
       "verification": { "windows": "D1", "macos": "D1", "linux": "D1" },
-      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。"
+      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "unsupported",
+        "failMode": "fail-open"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "fail-open",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "soft", "verification": { "windows": "D1" } }
+      },
+      "componentInventory": { "agent": "grok", "version": "unknown", "adapter": "packages/adapters/grok", "hook": "PreToolUse hook (fail-open)", "runtime": "node", "policy": "default-policy" }
     },
     "pi": {
       "display": "Pi",
       "integration": "none",
       "enforcement": "none",
       "verification": { "windows": "D0", "macos": "D0", "linux": "D0" },
-      "notes": "无实现（adapter 目录为空），Unsupported。"
+      "notes": "无实现（adapter 目录为空），Unsupported。",
+      "surfaces": {
+        "shell": "not-applicable",
+        "filesystem": "not-applicable",
+        "git": "not-applicable",
+        "mcp": "not-applicable",
+        "network": "not-applicable"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "not-applicable",
+        "postExecutionHook": "not-applicable",
+        "hardDeny": "not-applicable",
+        "failMode": "not-applicable"
+      },
+      "sandbox": { "available": "not-applicable", "osEnforced": "not-applicable" },
+      "policy": { "userLevel": "not-applicable", "systemLevel": "not-applicable", "enterpriseLevel": "not-applicable", "policyScope": [] },
+      "bypass": { "userCanDisable": "not-applicable", "agentCanBypass": "not-applicable" },
+      "hookFailureSemantics": "unknown",
+      "conditionalAvailability": [],
+      "securityBoundaries": [],
+      "capabilities": {},
+      "componentInventory": { "agent": "pi", "version": "unknown", "adapter": "none", "hook": "none", "runtime": "none", "policy": "none" }
     }
   }
 }
