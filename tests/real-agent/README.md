@@ -74,8 +74,13 @@ node scripts/run-real-conformance.ts windsurf
 
 | Agent | 环境 | 结论 |
 |---|---|---|
-| Cursor | `cursor` CLI 存在（`E:\APP\Technology\Cursor\...\cursor.cmd`） | 检测可用；真实会话 D3 待手动驱动 |
-| Copilot CLI | `gh` 存在但 `gh copilot` 扩展未安装 | **SKIP**（环境不存在） |
-| Windsurf | 不在 PATH | **SKIP**（环境不存在） |
+| Cursor | `cursor` CLI 存在（3.17.21） | 检测可用；adapter D2；真实会话 D3 待手动驱动 |
+| Copilot CLI | `gh` 存在但 `gh copilot` 扩展未安装 | **SKIP**（环境不存在）；adapter D1/D2 已建 |
+| Windsurf | 不在 PATH | **SKIP**（环境不存在）；adapter D2 |
+
+Copilot CLI adapter（`packages/adapters/copilot`）基于 2026-09 官方 hooks-reference 核查：
+preToolUse 配置 `{version:1, hooks.preToolUse[]}`，machine policy（`C:\ProgramData\GitHub\Copilot\policy.d\*.json`
++ `HKLM\Software\Policies\GitHub\Copilot`），user hooks `%USERPROFILE%\.copilot\hooks\`。deny = `hookSpecificOutput.permissionDecision`
++ exit 2；`failMode` 记 unknown（copilot-cli issue #3874 显示 preToolUse deny 有版本回归，不标 D3）。
 
 按任务书 §二十七/§三十三：环境无法完成的不阻塞 v0.3.0，以真实结果为准，不伪造 D3。
