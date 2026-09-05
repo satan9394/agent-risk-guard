@@ -243,12 +243,14 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - [docs/dsh-api-evidence-d2.md](docs/dsh-api-evidence-d2.md) — DSH `pre-execute` + `guard()` 源码级实证
 - [docs/dsh-live-wiring-guide.md](docs/dsh-live-wiring-guide.md) — DSH 插件真实接入指南
 - [docs/devlog-2026-09-04-v0.1.2.md](docs/devlog-2026-09-04-v0.1.2.md) — 开发日志：v0.1.0 → v0.1.2（安装器收尾 + portable runtime 分发）
+- [docs/devlog-2026-09-05-v0.2.0.md](docs/devlog-2026-09-05-v0.2.0.md) — 开发日志：v0.2.0（ACS Alignment Foundation）
+- [docs/devlog-2026-09-05-v0.2.1.md](docs/devlog-2026-09-05-v0.2.1.md) — 开发日志：v0.2.1（ACS Schema Conformance Patch，官方 JSON Schema 判据 + wire mode）
 - [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
 
 ## 开发与安全验证
 
 - **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
-- 测试：`tests/` 含 policy / adapter / acs / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 235/235 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
+- 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 277/277 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
 
 ## 社区与协议
 
