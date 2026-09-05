@@ -36,7 +36,7 @@ import {
 } from './envelope.ts';
 import { riskDecisionToAcsResult, failClosedAcsResult, securityMappingDenyResult, newAcsRequestId } from './result.ts';
 import { validateAcsResult } from './outbound.ts';
-import { ACS_SPEC_VERSION, ACS_PROFILE } from './version.ts';
+import { ACS_SPEC_VERSION, ACS_PROFILE, isSupportedAcsVersion, getSupportedAcsVersions } from './version.ts';
 import type { AcsResult, AcsRequestEnvelope, AcsResponseEnvelope, AcsRequestMetadata } from './types.ts';
 import type { AcsResultMappingOpts } from './result.ts';
 import type { RiskEvent } from '../../core/src/event.ts';
@@ -188,6 +188,22 @@ export function evaluateAcsEnvelope(input: unknown, opts: AcsEvaluateOptions = {
     return { envelope: buildAcsErrorEnvelope(id, code, v.reason), degraded: true };
   }
   const env: AcsRequestEnvelope = v.envelope;
+
+  // 2.5 ACS version gate（v0.2.2 §一/§二/§三/§四）：
+  //    schema-valid（x.y.z）≠ supported。params.acs_version != 0.1.0 → 直接拒绝，
+  //    绝不进入 RiskEvent / Policy Engine，也绝不返回 security policy DENY。
+  //    这是 protocol capability mismatch → ACS application error -32001。
+  if (!isSupportedAcsVersion(env.params.acs_version)) {
+    return {
+      envelope: buildAcsErrorEnvelope(
+        env.id,
+        ACS_JSONRPC_CODES.UNSUPPORTED_ACS_VERSION,
+        `Unsupported ACS version: ${env.params.acs_version}. Supported: ${getSupportedAcsVersions().join(', ')}`,
+      ),
+      // 协议能力拒绝不是 runtime 降级（§四十）；RiskGuard 正常工作且正确识别未知版本。
+      degraded: false,
+    };
+  }
 
   // 3. params.payload → ToolCallRequest（Layer 1；payload 属 params 一部分 → -32602）
   const pv = validateAcsToolCallRequest(env.params.payload);

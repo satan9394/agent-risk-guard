@@ -249,7 +249,12 @@ export const ACS_JSONRPC_CODES = {
   PARSE_ERROR: -32700,
   INVALID_REQUEST: -32600,
   INVALID_PARAMS: -32602,
-  /** ACS application error 区间下限（-32000 ~ -32099；本轮仅保留区间定义） */
+  /**
+   * ACS application error 区间（-32000 ~ -32099）。
+   * v0.2.2 §四：Unsupported ACS version（protocol capability mismatch，
+   * 不是安全 policy DENY）。
+   */
+  UNSUPPORTED_ACS_VERSION: -32001,
   APPLICATION_ERROR_MIN: -32099,
   APPLICATION_ERROR_MAX: -32000,
 } as const;
