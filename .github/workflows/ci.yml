@@ -21,7 +21,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          # 零依赖 monorepo（纯 TS 原生运行，无 node_modules / lock 文件）→ 不启用 npm cache
+          # v0.2.1：引入 ajv / ajv-formats（devDependencies，仅 ACS Schema conformance 使用）；
+          # 其余运行链仍零依赖。安装 devDeps 后官方 JSON Schema 校验才能作为 Release Gate（§五十三）。
+
+      - name: Install dev dependencies (ajv, for ACS v0.1.0 schema conformance)
+        run: npm ci --no-audit --no-fund
 
       - name: Show versions
         run: node --version && npm --version
@@ -29,11 +33,14 @@ jobs:
       - name: Check D0-D4 compatibility docs have not drifted
         run: node scripts/check-compatibility-docs.ts
 
+      - name: Verify ACS v0.1.0 vendor schema snapshot integrity (§五十四/§五十六)
+        run: node scripts/verify-acs-schema-snapshot.ts
+
       - name: Build release artifact (portable runtime)
         run: node scripts/build-release.ts
 
       - name: Run platform-independent test suites
-        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts packages/acs/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts tests/acs/*.test.ts tests/compatibility/*.test.ts tests/conformance/*.test.ts
+        run: node --test packages/core/test/*.test.ts packages/trash/test/*.test.ts packages/installer/test/*.test.ts packages/codex/test/*.test.ts packages/dsh/test/*.test.ts packages/acs/test/*.test.ts tests/e2e/*.test.ts tests/adapter/*.test.ts tests/adversarial/*.test.ts tests/product/*.test.ts tests/release-hardening/*.test.ts tests/transaction/*.test.ts tests/distribution/*.test.ts tests/acs/*.test.ts tests/compatibility/*.test.ts tests/conformance/*.test.ts tests/acs-schema-conformance/*.test.ts
 
       - name: Verify generated agent security matrix is up to date
         run: node scripts/generate-agent-security-matrix.ts --check

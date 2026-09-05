@@ -1,0 +1,10 @@
+{
+  "tool": { "name": "mcp__fetch", "provider": "mcp-server" },
+  "operation": "invoke",
+  "capability": "mcp.invoke",
+  "arguments": {
+    "server": { "value": "web" },
+    "url": { "value": "https://example.com" }
+  },
+  "intent": { "description": "fetch external page" }
+}

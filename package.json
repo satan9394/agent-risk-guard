@@ -1,6 +1,6 @@
 {
   "name": "agent-risk-guard-monorepo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "description": "Deterministic safety guardrails for AI coding agents",
@@ -10,8 +10,16 @@
   },
   "scripts": {
     "test": "node --test packages/core/test tests/e2e",
+    "test:acs": "node --test packages/acs/test/*.test.ts tests/acs/*.test.ts",
+    "test:acs-schema": "node --test tests/acs-schema-conformance/*.test.ts",
+    "verify:acs-schema": "node scripts/verify-acs-schema-snapshot.ts",
+    "check:acs-upstream": "node scripts/check-acs-upstream.ts",
     "riskguard": "node bin/riskguard.mjs",
     "bootstrap": "node bin/riskguard.mjs bootstrap",
     "build-release": "node scripts/build-release.ts"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   }
 }

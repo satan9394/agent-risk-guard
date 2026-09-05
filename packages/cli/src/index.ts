@@ -87,11 +87,12 @@ async function runSubcommand(): Promise<boolean> {
       process.stdout.write(await cmdBootstrap({ home, force: opts['force'] === true }) + '\n');
       return true;
     case 'acs-evaluate': {
-      // §十七：stdin ToolCallRequest JSON → stdout Result JSON；非法输入 fail-closed
+      // §十七/§四十七：stdin ToolCallRequest JSON → stdout Result JSON；--wire = official Envelope → Envelope
       const raw = await readStdin();
       const profile = opts['profile'] === 'strict' ? ('strict' as const) : undefined;
       const audit = opts['audit'] === true;
-      process.stdout.write(cmdAcsEvaluate(raw, { profile, audit }) + '\n');
+      const wire = opts['wire'] === true;
+      process.stdout.write(cmdAcsEvaluate(raw, { profile, audit, wire }) + '\n');
       return true;
     }
     case 'version':

@@ -1,0 +1,9 @@
+{
+  "tool": { "name": "shell", "provider": "cli-smoke" },
+  "operation": "execute",
+  "raw_command": "git reset --hard HEAD",
+  "arguments": {
+    "command": { "value": "git reset --hard HEAD" }
+  },
+  "intent": { "description": "discard local changes" }
+}

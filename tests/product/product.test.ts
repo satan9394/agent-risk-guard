@@ -125,7 +125,7 @@ test('manifest: manifestDir 定位到 <home>/.riskguard/manifests', () => {
 test('compatibility: schema 版本与产品版本一致', () => {
   const c = loadCompatibility();
   assert.equal(c.schemaVersion, '2.0');
-  assert.equal(c.productVersion, '0.2.0');
+  assert.equal(c.productVersion, '0.2.1');
   assert.equal(typeof c.levels.D3, 'string');
 });
 

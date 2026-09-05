@@ -15,7 +15,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverAgents, detectAgent, AGENT_REGISTRY } from '../../installer/src/discovery.ts';
 import { loadCompatibility } from '../../installer/src/compatibility.ts';
-import { evaluateAcsToolCall, acsGatewayInfo } from '../../acs/src/gateway.ts';
+import { evaluateAcsToolCall, evaluateAcsEnvelope, acsGatewayInfo } from '../../acs/src/gateway.ts';
 import { auditLineFromEvent } from '../../acs/src/audit.ts';
 import {
   mergeClaudeSettings, mergeCodexHooks, mergeOpencodePlugins, isRiskGuardPluginRef,
@@ -676,7 +676,7 @@ export function cmdHelp(): string {
     '    --dry-run       show changes without writing',
     '  bootstrap         Install portable RiskGuard runtime to ~/.riskguard/runtime/<version>',
     '    --force         reinstall even if already installed',
-    '  acs evaluate      OWASP ACS v0.1 gateway (experimental): stdin ToolCallRequest → stdout Result',
+    '  acs evaluate      OWASP ACS v0.1.0 gateway: payload mode (stdin ToolCallRequest → stdout Result); --wire = official JSON-RPC envelope mode',
     '    --profile strict   use Strict policy',
     '    --audit            append redacted SecurityAuditEvent JSONL line',
     '  version           Show version',
@@ -692,15 +692,27 @@ export interface AcsEvaluateOpts {
   profile?: 'autonomy-safe' | 'strict';
   /** 额外审计行输出（stderr 前的单行 JSONL；默认关闭） */
   audit?: boolean;
+  /** §四十七：--wire = official ACS v0.1.0 JSON-RPC wire mode（Envelope → Envelope） */
+  wire?: boolean;
 }
 
 /**
- * riskguard acs evaluate
- * stdin：ACS ToolCallRequest JSON；stdout：ACS Result JSON。
- * 非法输入 fail-closed（deny + degraded=true，不抛 stack trace，§十八）。
+ * riskguard acs evaluate（§四十七/§四十八）
+ * 默认（payload mode）：stdin ToolCallRequest JSON；stdout ACS Result JSON。
+ *   = RiskGuard convenience interface（非官方 conformance 对象）
+ * --wire：stdin official ACS Request Envelope；stdout official ACS Response Envelope。
+ *   = official ACS v0.1.0 schema-conformant wire mode
  * 统一走 packages/acs gateway —— CLI 不重复实现映射（§十六）。
  */
 export function cmdAcsEvaluate(raw: string, opts: AcsEvaluateOpts = {}): string {
+  if (opts.wire) {
+    const out = evaluateAcsEnvelope(raw, { profile: opts.profile });
+    const lines = [JSON.stringify(out.envelope, null, 2)];
+    if (opts.audit && out.envelope.result) {
+      lines.push(auditLineFromEvent(out.event ?? null, { decision: out.envelope.result.decision, ruleId: out.ruleId, degraded: out.degraded }, 'dynamic'));
+    }
+    return lines.join('\n');
+  }
   const out = evaluateAcsToolCall(raw, { profile: opts.profile });
   const lines = [JSON.stringify(out.result, null, 2)];
   if (opts.audit) {
@@ -709,15 +721,17 @@ export function cmdAcsEvaluate(raw: string, opts: AcsEvaluateOpts = {}): string 
   return lines.join('\n');
 }
 
-/** acs 帮助块（cmdHelp 引用） */
+/** acs 帮助块（cmdHelp 引用；§四十八：help 必须明确两种模式） */
 function acsHelpBlock(): string {
   const info = acsGatewayInfo();
   return [
-    '  acs evaluate       OWASP ACS v0.1 gateway: stdin ToolCallRequest JSON → stdout Result JSON',
+    '  acs evaluate         OWASP ACS payload compatibility mode: stdin ToolCallRequest JSON → stdout Result JSON',
     `                    (acs ${info.acsVersion}, profile ${info.profile}, decisions: ${info.decisions.join('/')})`,
     '    --profile strict   use Strict policy instead of Autonomy-Safe',
     '    --audit            append one SecurityAuditEvent JSONL line (redacted)',
+    '    --wire             official ACS v0.1.0 JSON-RPC wire mode: stdin Request Envelope → stdout Response Envelope',
     '    e.g.  cat request.json | riskguard acs evaluate',
+    '          cat envelope.json | riskguard acs evaluate --wire',
   ].join('\n');
 }
 

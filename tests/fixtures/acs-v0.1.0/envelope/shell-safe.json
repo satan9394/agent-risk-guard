@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "method": "steps/toolCallRequest",
+  "id": 1,
+  "params": {
+    "acs_version": "0.1.0",
+    "request_id": "5f1c9c3e-2b4a-4f6d-9a3e-8f2b1d0c4a77",
+    "timestamp": "2026-08-21T10:00:00.000Z",
+    "metadata": {
+      "agent_id": "acs-conformance-agent",
+      "session_id": "7a2d9f01-6c8b-4e3a-b5d2-1f0e9c8b7a65",
+      "turn_id": "b4e1c2d3-4f5a-4b6c-9d8e-7f6a5b4c3d2e"
+    },
+    "payload": {
+      "tool": { "name": "shell", "provider": "cli-smoke" },
+      "operation": "execute",
+      "capability": "shell.execute",
+      "arguments": {
+        "command": { "value": "npm test" }
+      },
+      "raw_command": "npm test",
+      "intent": { "description": "run unit tests" }
+    }
+  }
+}

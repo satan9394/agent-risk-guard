@@ -2,7 +2,7 @@
 
 **Deterministic safety guardrails for AI coding agents.**
 
-**Cross-agent runtime security enforcement with experimental OWASP ACS v0.1 alignment.**
+**Cross-agent runtime security enforcement with experimental OWASP ACS v0.1.0 schema alignment.**
 
 在 AI Agent 真正执行文件删除、Shell 命令、Git 破坏性操作之前，进行确定性安全拦截——把「永久删除」变成「回收站」，把破坏性操作挡在执行之前。
 
@@ -10,9 +10,9 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.2.0 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
+> **状态：`v0.2.1 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
-> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。定位是 ACS *aligned*（实验性），不是 compliant / certified（详见 [docs/acs-alignment.md](docs/acs-alignment.md)）。
+> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。定位是 **Experimental OWASP ACS v0.1.0 schema-conformant wire gateway**（§五十七），不是 compliant / certified（详见 [docs/acs-alignment.md](docs/acs-alignment.md)）。
 
 ---
 
@@ -174,15 +174,18 @@ node bin/riskguard.mjs uninstall
 
 卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
 
-**6.（v0.2.0）ACS v0.1 实验性 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
+**6.（v0.2.0/v0.2.1）OWASP ACS 边界协议 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
 
 ```bash
 cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
 cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
 cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
+cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
 ```
 
-非法输入不抛 stack trace：输出 `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` 且 `extensions.riskguard.degraded = true`（fail-closed，§十八）。
+- `acs evaluate` = **payload compatibility mode**（RiskGuard convenience interface）；`acs evaluate --wire` = **official ACS v0.1.0 schema-conformant wire mode**（Request Envelope → Response Envelope；§四十七/§四十八/§四十九）。
+- 非法输入不抛 stack trace：payload mode 输出 `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` 且 `extensions.riskguard.degraded = true`（fail-closed，§十八）；wire mode 输出 JSON-RPC error（-32700/-32600/-32602，§四十/§四十一）。
+- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（upstream commit 记录在 README；只读，§五十五），是 v0.2.1 起的 Release Gate（§五十三）。
 
 > Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 
@@ -255,5 +258,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：当前统一产品版本为 **`v0.2.0 Developer Preview`**（`package.json` = `0.2.0`，单一版本源见 `packages/core/src/version.ts`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> **版本说明**：当前统一产品版本为 **`v0.2.1 Developer Preview`**（`package.json` = `0.2.1`，单一版本源见 `packages/core/src/version.ts`）。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` / `v0.2.0` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
