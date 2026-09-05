@@ -48,7 +48,7 @@ test('artifact standalone: launcher 全生命周期（fake HOME，不依赖 repo
   const home = makeHome();
   try {
     const ver = run(LAUNCHER, ['version'], home);
-    assert.match(ver.stdout, /0\.1\.2/);
+    assert.match(ver.stdout, new RegExp(PRODUCT_VERSION.replace(/\./g, '\\.')));
 
     const det = run(LAUNCHER, ['detect', '--json'], home);
     assert.equal(det.status, 0, det.stdout + det.stderr);

@@ -1,6 +1,6 @@
 {
   "name": "agent-risk-guard-monorepo",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "description": "Deterministic safety guardrails for AI coding agents",

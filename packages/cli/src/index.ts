@@ -11,7 +11,7 @@
 
 import { run } from './cli.ts';
 import type { CliInput } from './cli.ts';
-import { cmdDetect, cmdInstall, cmdStatus, cmdDoctor, cmdUninstall, cmdBootstrap, cmdVersion, cmdHelp } from './commands.ts';
+import { cmdDetect, cmdInstall, cmdStatus, cmdDoctor, cmdUninstall, cmdBootstrap, cmdVersion, cmdHelp, cmdAcsEvaluate } from './commands.ts';
 
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
@@ -23,11 +23,26 @@ function readStdin(): Promise<string> {
   });
 }
 
-/** 解析 argv：提取子命令 + --key value / --flag */
+/** 解析 argv：提取子命令 + --key value / --flag（支持两词子命令 acs evaluate） */
 function parseArgs(argv: string[]): { cmd?: string; opts: Record<string, string | boolean> } {
   const args = argv.slice(2);
   if (!args.length) return { opts: {} };
   const first = args[0];
+  // 两词子命令：acs evaluate（v0.2.0 §十七）
+  if (first === 'acs' && args[1] === 'evaluate') {
+    const cmd = 'acs-evaluate';
+    const opts: Record<string, string | boolean> = {};
+    for (let i = 2; i < args.length; i++) {
+      const a = args[i];
+      if (a.startsWith('--')) {
+        const key = a.slice(2);
+        const next = args[i + 1];
+        if (next !== undefined && !next.startsWith('--')) { opts[key] = next; i++; }
+        else opts[key] = true;
+      }
+    }
+    return { cmd, opts };
+  }
   const known = new Set(['detect', 'install', 'status', 'doctor', 'uninstall', 'bootstrap', 'version', 'help']);
   if (!known.has(first)) return { opts: {} }; // 非子命令 → hook 运行时
   const cmd = first;
@@ -71,6 +86,14 @@ async function runSubcommand(): Promise<boolean> {
     case 'bootstrap':
       process.stdout.write(await cmdBootstrap({ home, force: opts['force'] === true }) + '\n');
       return true;
+    case 'acs-evaluate': {
+      // §十七：stdin ToolCallRequest JSON → stdout Result JSON；非法输入 fail-closed
+      const raw = await readStdin();
+      const profile = opts['profile'] === 'strict' ? ('strict' as const) : undefined;
+      const audit = opts['audit'] === true;
+      process.stdout.write(cmdAcsEvaluate(raw, { profile, audit }) + '\n');
+      return true;
+    }
     case 'version':
       process.stdout.write(cmdVersion() + '\n');
       return true;

@@ -76,8 +76,8 @@ export async function collectRuntimeFiles(): Promise<string[]> {
   // installer 的数据文件（compatibility.ts 运行时读 ../compatibility.json）
   const compatJson = join(REPO_ROOT, 'packages', 'installer', 'compatibility.json');
   if (existsSync(compatJson)) files.push(compatJson);
-  // CLI 运行链
-  for (const pkg of ['cli', 'core', 'installer', 'trash']) {
+  // CLI 运行链（v0.2.0：+ acs 边界协议包；installer 依赖 acs 的 EvidenceState 类型）
+  for (const pkg of ['cli', 'core', 'installer', 'trash', 'acs']) {
     files.push(...(await collectTs(join(REPO_ROOT, 'packages', pkg, 'src'))));
   }
   // hook 链：claude adapter

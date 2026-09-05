@@ -41,6 +41,11 @@ Run-Test "installer audit re-regress (GAN R22)" @("$ROOT\packages\installer\test
 Run-Test "codex M5 (rules-compiler)" @("$ROOT\packages\codex\test\rules-compiler.test.ts")
 Run-Test "dsh plugin M2 (pre-execute + guard)" @("$ROOT\packages\dsh\test\dsh-plugin.test.ts")
 Run-Test "dsh guard hardening (P2-3)" @("$ROOT\packages\dsh\test\guard-hardening.test.ts")
+Run-Test "acs gateway v0.1 (inbound/outbound/gateway)" @("$ROOT\packages\acs\test\acs.test.ts")
+Run-Test "acs golden fixtures (v0.2.0)" @("$ROOT\tests\acs\golden-fixtures.test.ts")
+Run-Test "acs cli evaluate (v0.2.0)" @("$ROOT\tests\acs\cli-acs-evaluate.test.ts")
+Run-Test "compatibility v2 (migration + boundaries)" @("$ROOT\tests\compatibility\compatibility-v2.test.ts")
+Run-Test "conformance framework (C1-C10)" @("$ROOT\tests\conformance\conformance.test.ts")
 
 # hook 管线验证（D3，PS 驱动真实脚本 + RedirectStandardInput）
 Write-Output "=== hook pipeline (CC/Codex PreToolUse, D3 real) ==="

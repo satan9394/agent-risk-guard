@@ -15,6 +15,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverAgents, detectAgent, AGENT_REGISTRY } from '../../installer/src/discovery.ts';
 import { loadCompatibility } from '../../installer/src/compatibility.ts';
+import { evaluateAcsToolCall, acsGatewayInfo } from '../../acs/src/gateway.ts';
+import { auditLineFromEvent } from '../../acs/src/audit.ts';
 import {
   mergeClaudeSettings, mergeCodexHooks, mergeOpencodePlugins, isRiskGuardPluginRef,
   CLAUDE_HOOK_ID, CODEX_HOOK_ID, OPENCODE_PLUGIN_ID, OPENCODE_PLUGIN_LEGACY_ID,
@@ -674,10 +676,50 @@ export function cmdHelp(): string {
     '    --dry-run       show changes without writing',
     '  bootstrap         Install portable RiskGuard runtime to ~/.riskguard/runtime/<version>',
     '    --force         reinstall even if already installed',
+    '  acs evaluate      OWASP ACS v0.1 gateway (experimental): stdin ToolCallRequest → stdout Result',
+    '    --profile strict   use Strict policy',
+    '    --audit            append redacted SecurityAuditEvent JSONL line',
     '  version           Show version',
     '  help              Show this help',
   ].join('\n');
 }
 
+// ============================================================================
+// acs evaluate（v0.2.0 §十七/§十八）
+// ============================================================================
+
+export interface AcsEvaluateOpts {
+  profile?: 'autonomy-safe' | 'strict';
+  /** 额外审计行输出（stderr 前的单行 JSONL；默认关闭） */
+  audit?: boolean;
+}
+
+/**
+ * riskguard acs evaluate
+ * stdin：ACS ToolCallRequest JSON；stdout：ACS Result JSON。
+ * 非法输入 fail-closed（deny + degraded=true，不抛 stack trace，§十八）。
+ * 统一走 packages/acs gateway —— CLI 不重复实现映射（§十六）。
+ */
+export function cmdAcsEvaluate(raw: string, opts: AcsEvaluateOpts = {}): string {
+  const out = evaluateAcsToolCall(raw, { profile: opts.profile });
+  const lines = [JSON.stringify(out.result, null, 2)];
+  if (opts.audit) {
+    lines.push(auditLineFromEvent(out.event ?? null, { decision: out.result.decision, ruleId: out.ruleId, degraded: out.degraded }, 'dynamic'));
+  }
+  return lines.join('\n');
+}
+
+/** acs 帮助块（cmdHelp 引用） */
+function acsHelpBlock(): string {
+  const info = acsGatewayInfo();
+  return [
+    '  acs evaluate       OWASP ACS v0.1 gateway: stdin ToolCallRequest JSON → stdout Result JSON',
+    `                    (acs ${info.acsVersion}, profile ${info.profile}, decisions: ${info.decisions.join('/')})`,
+    '    --profile strict   use Strict policy instead of Autonomy-Safe',
+    '    --audit            append one SecurityAuditEvent JSONL line (redacted)',
+    '    e.g.  cat request.json | riskguard acs evaluate',
+  ].join('\n');
+}
+
 // re-export helpers for tests
-export { HOMES, REPO_ROOT, normalizeAgentId, CANONICAL_AGENTS, removeInjection };
+export { HOMES, REPO_ROOT, normalizeAgentId, CANONICAL_AGENTS, removeInjection, acsHelpBlock };

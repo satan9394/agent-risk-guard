@@ -1,0 +1,10 @@
+{
+  "_expected": "deny",
+  "_note": "destructive git → RG-GIT-001 deny",
+  "tool": { "name": "shell", "provider": "cli-smoke" },
+  "operation": "execute",
+  "capability": "process.execute",
+  "arguments": { "command": { "value": "git reset --hard HEAD" } },
+  "raw_command": "git reset --hard HEAD",
+  "intent": { "description": "discard local changes" }
+}

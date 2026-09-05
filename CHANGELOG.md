@@ -4,13 +4,47 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.1.2 Developer Preview`**（`package.json` = `0.1.2`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.2.0 Developer Preview`**（`package.json` = `0.2.0`；单一版本源 `packages/core/src/version.ts`）。
 
-- `v0.1.0` / `v0.1.1`（2026-09-04）已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
-- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` 条目保留为历史记录，不删除、不重写历史。
+- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.1.2 Installer Finalization + Portable Runtime
+## [Unreleased] - v0.2.0 ACS Alignment Foundation
+
+> 定位：**OWASP ACS v0.1 aligned（experimental）**，不宣称 compliant / certified（ACS 仍 Public Preview，无官方 conformance 标准）。
+> 原则：ACS 是 Boundary Protocol，不是 Core Domain Model —— RiskEvent / Policy Engine 保持标准无关，Core 不依赖 ACS。
+
+### Added
+
+- **`packages/acs/` 独立边界协议包**（v0.2.0 目标 §三）：
+  - `ACS_VERSION = '0.1'` 显式固定（§四）；未来 acs-v1 并存预留。
+  - **Capability Taxonomy**（§八）：11 个 capability（filesystem.read/write/delete、shell.execute、git.modify/git.destructive、process.execute、network.connect、credentials.read/write、mcp.invoke）；Capability ≠ Risk（§九，RG 规则族负责风险判定）。
+  - **Inbound**：`acsToolCallToRiskEvent()`（§六/§七）——tool→domain、operation→action、raw_command→command.raw（触发 classifyShellCommand 细化）、arguments→targets、intent→`context.metadata.intent`（仅 contextual evidence，绝不决定 allow）。
+  - **Outbound**：`riskDecisionToAcsResult()`（§十~§十五）——allow→allow、deny→deny、deny+safeAlternative→**modify（Modification Proposal，只提议不执行）**、ask→ask、defer 仅协议支持；`buildAcsReasoning()` 保证 reasoning 含 rule ID + risk category + operation + reason。
+  - **Gateway**：`evaluateAcsToolCall()`（§十六）统一管线 validate → map → evaluate → map → validate；非法输入 **fail-closed**（deny + `extensions.riskguard.degraded=true`，不抛 stack trace，§十八）。
+  - **RiskGuard Extension Namespace**（§十九）：`extensions.riskguard { ruleId, degraded, verification, monotonic, acsVersion, profile }`，不往 ACS 官方 schema 顶层加字段。
+  - **SecurityAuditEvent**（§三十七/§三十八）：JSONL / structured log，出口统一 `redactSecrets` 脱敏，不记录 raw_command / arguments / 凭据路径。
+- **Compatibility Schema v2**（§二十~§三十六）：`compatibility.json` → `schemaVersion "2.0"`，每 Agent 增加 surfaces（EvidenceState）、enforcementDetail、sandbox、policy（`policyScope: user|machine|enterprise`，Copilot CLI 系统策略预留 §三十）、bypass、hookFailureSemantics（fail-open/fail-closed/warning-and-continue/unknown，§三十二）、conditionalAvailability（Windsurf Restricted Mode → hooks 不加载，§三十一）、securityBoundaries（L0–L5，§三十三/§三十四）、capabilities（per-capability matrix）、componentInventory（AGBoM 预留 §三十六）。**loader 兼容 v1→v2 迁移**（§四十一），v2 未声明字段一律 unknown 不伪造 false（§二十三）。
+- **Agent Security Conformance Framework**（§二十五~§二十七）：`packages/acs/src/conformance.ts` + `tests/conformance/` —— C1–C10 维度（Hook Available / Pre-execution / Hard Deny / Deny survives bypass / Safe allowed / Dangerous blocked / Tool never executed / Hook failure semantics / User bypass / MCP coverage），状态 PASS / FAIL / SKIP / UNKNOWN；与 D0–D4 是另一维度，不互相替代。本轮 Framework 就绪（mock evidence 驱动 P0 四件套），真实 D3 下一阶段执行。
+- **CLI `riskguard acs evaluate`**（§十七/§十八）：stdin ToolCallRequest JSON → stdout Result JSON；`--profile strict`、`--audit`（追加脱敏 JSONL）。
+- **Golden Fixtures**（§四十）：`tests/fixtures/acs-v0.1/`（shell-safe / git-reset-hard / filesystem-delete / credential-read / mcp-tool-call，各带 `_expected`），gateway 全链路 + round-trip 测试。
+- **Agent Security Matrix 自动生成**（§二十四）：`scripts/generate-agent-security-matrix.ts` → `docs/generated/agent-security-matrix.md`，CI `--check` 防漂移。
+
+### Changed
+
+- `package.json` version → `0.2.0`；`compatibility.json` productVersion → `0.2.0`。
+- README 增加第二行定位：**Cross-agent runtime security enforcement with experimental OWASP ACS v0.1 alignment.**（§四十三：ACS 不占第一标题，RiskGuard 仍是独立项目）。
+- `packages/core/src/event.ts`：`EventContext` 增加可选 `metadata`（非破坏式；承载 ACS intent/provenance evidence，Core 不解释其内容）。
+- `packages/cli/src/runtime-install.ts`：portable runtime 文件集加入 `packages/acs`。
+
+### Security
+
+- 非法 ACS 输入 fail-closed（deny + degraded），绝不抛 stack trace（§十八）。
+- reasoning 满足 ACS 要求（rule ID + risk category + operation + reason），禁止 "blocked / dangerous / denied" 无意义文本（§十五）。
+- 审计不降低隐私保护：ACS 对齐不改变现有脱敏机制（§三十八）。
+
+## [0.1.2] - 2026-09-04（v0.1.2 Installer Finalization + Portable Runtime，已发布）
 
 ### Added（Phase A：installer 收尾）
 
