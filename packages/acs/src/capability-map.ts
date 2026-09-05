@@ -10,6 +10,7 @@
  */
 
 import type { Domain, Action } from '../../core/src/risk-taxonomy.ts';
+import { classifyShellCommand } from '../../core/src/normalize.ts';
 
 /** RiskGuard capability taxonomy（首版固定集合；版本化扩展） */
 export const CAPABILITIES = [
@@ -131,4 +132,83 @@ export function capabilityDefaultRisk(cap: Capability): string {
 /** RiskGuard capability 全量清单（测试/矩阵生成用） */
 export function listCapabilities(): Capability[] {
   return [...CAPABILITIES];
+}
+
+// ============================================================================
+// Capability 推导（v0.2.1 §三十一/§三十二）
+// ============================================================================
+//
+// ACS 官方 capability 是可选字段（§四）。缺失时从
+//   tool.name / operation / raw_command / arguments
+// 推导；推导不确定 → null → 调用方 fail-closed deny（§三十二）。
+
+export interface CapabilityDerivationInput {
+  toolName?: string;
+  operation?: string;
+  rawCommand?: string | null;
+  argumentValues?: Record<string, unknown>;
+}
+
+/** 命令分类结果 → ACS capability 名（映射回官方/本地 taxonomy） */
+function classifiedToCapability(domain: Domain, action: Action): string | null {
+  if (domain === 'filesystem') {
+    if (action === 'delete') return 'filesystem.delete';
+    if (action === 'write' || action === 'overwrite' || action === 'move') return 'filesystem.write';
+    return 'filesystem.read';
+  }
+  if (domain === 'git') {
+    if (action === 'git_reset' || action === 'git_clean' || action === 'git_checkout_discard') return 'git.destructive';
+    return 'git.modify';
+  }
+  if (domain === 'credentials') return action === 'credential_read' ? 'credential.read' : 'credential.mutate';
+  if (domain === 'process') return 'process.execute';
+  if (domain === 'network') return 'network.egress';
+  return null;
+}
+
+/**
+ * 从 tool/operation/raw_command/arguments 推导 ACS capability（§三十一）。
+ * 推导不确定返回 null（§三十二：fail-closed，不能把官方 optional 变成人为 mandatory）。
+ */
+export function deriveAcsCapability(input: CapabilityDerivationInput): string | null {
+  // 1. raw_command 优先：classifyShellCommand 已做过领域/动作细化
+  //    （例：tool.name=shell + raw_command="git reset --hard" → git.destructive）
+  if (input.rawCommand) {
+    const classified = classifyShellCommand(input.rawCommand);
+    if (classified) {
+      const cap = classifiedToCapability(classified.domain, classified.action);
+      if (cap) return cap;
+    }
+  }
+
+  const tool = (input.toolName ?? '').trim().toLowerCase();
+  const op = (input.operation ?? '').trim().toLowerCase();
+  const delOp = /^(del|delete|remove|rm|unlink|erase|trash)(\b|_|\.)/.test(op) || /^(delete|remove|rm|unlink|erase|trash)$/.test(op);
+  const writeOp = /^(write|create|edit|append|mv|move|copy|overwrite|put|upload)(\b|_|\.)/.test(op) || /^(write|create|edit|append|move|copy|overwrite|put|upload)$/.test(op);
+  const gitDestructiveOp = /^(reset|clean|force|discard)(\b|_|\.)/.test(op) || /^(reset|clean|force|discard)$/.test(op);
+
+  // 2. tool.name 引导
+  if (tool.startsWith('mcp')) return 'mcp.invoke';
+  if (tool === 'shell' || tool === 'bash' || tool === 'zsh' || tool === 'powershell' || tool === 'pwsh' || tool === 'cmd') return 'shell.execute';
+  if (tool === 'process' || tool === 'exec' || tool === 'run' || tool === 'spawn') return 'process.execute';
+  if (tool === 'git') return gitDestructiveOp ? 'git.destructive' : 'git.modify';
+  if (tool === 'filesystem' || tool === 'fs' || tool === 'file' || tool === 'directory') {
+    if (delOp) return 'filesystem.delete';
+    if (writeOp) return 'filesystem.write';
+    return 'filesystem.read';
+  }
+  if (tool === 'credentials' || tool === 'credential' || tool === 'secrets') {
+    if (writeOp || /^(write|mutate|create|set|put|export|delete)$/.test(op)) return 'credential.mutate';
+    return 'credential.read';
+  }
+  if (tool === 'network' || tool === 'http' || tool === 'fetch' || tool === 'curl' || tool === 'wget') return 'network.egress';
+
+  // 3. 仅 operation 引导（tool 未知时保守最小集）
+  if (delOp) return 'filesystem.delete';
+  if (gitDestructiveOp) return 'git.destructive';
+  if (writeOp) return 'filesystem.write';
+  if (/^(read|cat|view|list|get|show)$/.test(op)) return 'filesystem.read';
+  if (/^(execute|run|spawn|invoke|call)$/.test(op)) return 'process.execute';
+
+  return null; // 推导不确定 → fail-closed（§三十二）
 }

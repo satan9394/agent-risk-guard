@@ -1,7 +1,7 @@
 {
   "schemaVersion": "2.0",
-  "productVersion": "0.2.0",
-  "acsProfile": "experimental-0.1",
+  "productVersion": "0.2.1",
+  "acsProfile": "experimental-0.1.0",
   "levels": {
     "D0": "Unsupported",
     "D1": "Implementation exists",
