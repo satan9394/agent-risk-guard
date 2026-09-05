@@ -217,12 +217,13 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 
 ## 文档导航
 
-- [docs/adapter-contract.md](docs/adapter-contract.md) — 适配器契约（Vendor Payload → RiskEvent → Decision）与验证等级（D1–D4）
+- [docs/adapter-contract.md](docs/adapter-contract.md) — 适配器契约（Vendor Payload → RiskEvent → Decision）与验证等级（D0–D4，单一事实源见 compatibility.json）
 - [docs/deployment-status.md](docs/deployment-status.md) — 本机生产接线现状与同步清单
 - [docs/d3-deletion-test-3agents.md](docs/d3-deletion-test-3agents.md) — 三 Agent 删除测试真实会话实证
 - [docs/ecosystem-benchmark.md](docs/ecosystem-benchmark.md) — 生态对标（allowlister / CC Safety Net 等）与融合决策、Roadmap
 - [docs/dsh-api-evidence-d2.md](docs/dsh-api-evidence-d2.md) — DSH `pre-execute` + `guard()` 源码级实证
 - [docs/dsh-live-wiring-guide.md](docs/dsh-live-wiring-guide.md) — DSH 插件真实接入指南
+- [docs/devlog-2026-09-04-v0.1.2.md](docs/devlog-2026-09-04-v0.1.2.md) — 开发日志：v0.1.0 → v0.1.2（安装器收尾 + portable runtime 分发）
 - [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
 
 ## 开发与安全验证
