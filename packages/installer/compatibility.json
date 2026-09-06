@@ -247,6 +247,36 @@
       },
       "componentInventory": { "agent": "copilot", "version": "unknown", "adapter": "packages/adapters/copilot", "hook": "preToolUse hook + policy.d", "runtime": "node", "policy": "default-policy" }
     },
+    "agy": {
+      "display": "Antigravity CLI (agy)",
+      "integration": "PreToolUse hook (hooks.json)",
+      "enforcement": "hard",
+      "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
+      "notes": "全局 hooks ~/.gemini/config/hooks.json（PreToolUse matcher run_command → agy-dangerous-commands.ps1 适配器 → dangerous-commands.ps1 规则源 → deny JSON；hook command 必须绝对路径，相对路径子目录启动 127 绕过守卫；stdout 顶层 {decision,reason}，exit 0 恒）。2026-09-06 本机真实会话 D3：agy 1.1.27 会话尝试 git reset --hard HEAD → hook deny（\"tool call denied by pre-tool hook: RiskGuard: ...\"），未提交修改保留。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": { "available": "unknown", "osEnforced": "unknown" },
+      "policy": { "userLevel": "supported", "systemLevel": "unknown", "enterpriseLevel": "unknown", "policyScope": ["user"] },
+      "bypass": { "userCanDisable": "supported", "agentCanBypass": "unknown" },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": ["L0", "L2"],
+      "capabilities": {
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D3" } }
+      },
+      "componentInventory": { "agent": "agy", "version": "1.1.27", "adapter": "packages/adapters/agy", "hook": "PreToolUse hook (hooks.json)", "runtime": "node + powershell hook", "policy": "default-policy" }
+    },
     "grok": {
       "display": "Grok CLI",
       "integration": "PreToolUse hook",
