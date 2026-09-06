@@ -51,21 +51,37 @@ const HARMLESS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { comma
 /** hook 危险 self-test payload（必须被 DENY；仅测 parser/policy，不真正执行任何命令） */
 const DANGEROUS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git reset --hard HEAD' } });
 
-/** 从 hook command 提取 "node <script>" 的 script 路径；无则 null */
+/** 从 hook command 提取脚本路径（node pre-tool-hook.ts 或 powershell dangerous-commands.ps1）；无则 null */
 function extractHookScript(command: string | undefined): string | null {
   if (!command) return null;
   const m = command.match(/(?:node|node\.exe)\s+"([^"]+)"/i) ?? command.match(/(?:node|node\.exe)\s+'([^']+)'/i);
   if (m) return m[1];
   // 形如 node "C:\...\pre-tool-hook.ts" --agent claude
   const alt = command.match(/(?:^|\s)node(?:\s+--[^\s]+)*\s+"?([^"\s]+pre-tool-hook\.ts)"?/i);
-  return alt ? alt[1] : null;
+  if (alt) return alt[1];
+  // legacy 生产接线：powershell.exe -NoProfile ... -File "C:\...\dangerous-commands.ps1"
+  const ps = command.match(/-File\s+"([^"]+\.ps1)"/i) ?? command.match(/-File\s+'([^']+\.ps1)'/i) ?? command.match(/-File\s+([^\s"]+\.ps1)/i);
+  return ps ? ps[1] : null;
 }
 
-/** 对 claude/codex 类 hook：spawn pre-tool-hook.ts，验证 无害→allow、危险→deny */
+/** 对 claude/codex 类 hook：spawn pre-tool-hook.ts（node）或 dangerous-commands.ps1（powershell），验证 无害→allow、危险→deny */
 function runHookSelfTest(script: string, agent: 'claude' | 'codex'): { ok: boolean; detail: string } {
   if (!existsSync(script)) return { ok: false, detail: `hook script missing: ${script}` };
   try {
-    // 无害 → 期望 allow（claude: '{}' / codex: '{}' exit 0）
+    // PowerShell legacy 接线（dangerous-commands.ps1）：stdin 喂 payload，stdout 输出 CC 风格 JSON deny（exit 0）
+    if (script.toLowerCase().endsWith('.ps1')) {
+      const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script];
+      const safe = spawnSync('powershell.exe', args, { input: HARMLESS_PAYLOAD, encoding: 'utf8', timeout: 30000 });
+      const safeOut = (safe.stdout ?? '').trim();
+      const safeAllowed = safe.status === 0 && (safeOut === '' || safeOut === '{}' || !safeOut.toLowerCase().includes('deny'));
+      if (!safeAllowed) return { ok: false, detail: `self-test: harmless payload not allowed (status=${safe.status} out=${safeOut.slice(0, 120)})` };
+      const danger = spawnSync('powershell.exe', args, { input: DANGEROUS_PAYLOAD, encoding: 'utf8', timeout: 30000 });
+      const dangerOut = (danger.stdout ?? '').trim();
+      const denied = dangerOut.includes('permissionDecision') && dangerOut.includes('deny');
+      if (!denied) return { ok: false, detail: `self-test: dangerous payload not denied (status=${danger.status} out=${dangerOut.slice(0, 120)})` };
+      return { ok: true, detail: 'self-test PASS (ps1: harmless=allow, dangerous=deny)' };
+    }
+    // node pre-tool-hook.ts 路径
     const safe = spawnSync(process.execPath, [script, '--agent', agent], { input: HARMLESS_PAYLOAD, encoding: 'utf8', timeout: 20000 });
     const safeOut = (safe.stdout ?? '').trim();
     const safeAllowed = safe.status === 0 && (safeOut === '{}' || !safeOut.toLowerCase().includes('deny'));
@@ -153,6 +169,15 @@ export async function probeAgentRuntime(
         if (!wired && JSON.stringify(data).includes('dangerous-commands')) {
           wired = true;
           ev.push('legacy dangerous-commands wiring present');
+          // legacy 接线：提取首个含 dangerous-commands 的 PreToolUse command 作为 hookCommand
+          const legacyEntry = Array.isArray(hookArr)
+            ? (hookArr as any[]).find((h) => JSON.stringify(h).includes('dangerous-commands'))
+            : undefined;
+          const legacyCmd = legacyEntry?.hooks?.[0]?.command;
+          if (typeof legacyCmd === 'string') {
+            hookCommand = legacyCmd;
+            ev.push(`legacy hook command: ${legacyCmd.slice(0, 100)}`);
+          }
         }
       }
       // hook target 存在性
