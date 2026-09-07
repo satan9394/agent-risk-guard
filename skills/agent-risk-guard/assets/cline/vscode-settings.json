@@ -1,0 +1,14 @@
+{
+  "cline.autoApprove.enabled": false,
+  "cline.autoApprove.allowedTools": ["readFile", "listFiles", "searchFiles"],
+  "cline.yoloMode": false,
+  "cline.hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/.cline/hooks/dangerous-commands.ps1\"",
+        "timeout": 10
+      }
+    ]
+  }
+}

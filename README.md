@@ -117,6 +117,18 @@ AI Coding Agent
 | **macOS** | 🟡 已实现，**未在真实环境实测**（trash 包 `macos.ts` 为 D1） |
 | **Linux** | 🟡 已实现，**未在真实环境实测**（CI 在 Ubuntu 跑平台无关测试，trash `linux.ts` 为 D1） |
 
+## Agent Skill（canonical）
+
+本仓库同时是 **Agent Skill 的 canonical 源**（`skills/agent-risk-guard/`，含 SKILL.md + 拦截脚本 + 配置模板，符合开放 `SKILL.md` 标准）。任何支持 Agent Skills 的运行时（Claude Code / Codex / Gemini CLI / OpenCode / Antigravity 等）都可直接安装：
+
+```bash
+# 经 Vercel skills 生态安装
+npx skills add satan9394/agent-risk-guard            # 安装全部
+npx skills add satan9394/agent-risk-guard --skill agent-risk-guard
+```
+
+安装后按 `skills/agent-risk-guard/SKILL.md` 的「快速适配」流程，即可为本机各 Agent 落地机器级拦截门禁（hooks / 插件 / pre-execute）。
+
 ## 快速开始（Developer Preview）
 
 RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。仓库内统一入口：`node bin/riskguard.mjs`（等价 `node packages/cli/src/index.ts`，用户无需面对内部源码路径）。

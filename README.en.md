@@ -118,6 +118,18 @@ The single source of truth for verification levels is `packages/installer/compat
 | **macOS** | 🟡 Implemented, **not yet tested in a real environment** (trash `macos.ts` is D1) |
 | **Linux** | 🟡 Implemented, **not yet tested in a real environment** (CI runs platform-independent tests on Ubuntu; trash `linux.ts` is D1) |
 
+## Agent Skill (canonical)
+
+This repository is also the **canonical source of an Agent Skill** (`skills/agent-risk-guard/`, with SKILL.md + blocking scripts + config templates, following the open `SKILL.md` standard). Any Agent Skills runtime (Claude Code / Codex / Gemini CLI / OpenCode / Antigravity, etc.) can install it directly:
+
+```bash
+# via the Vercel skills ecosystem
+npx skills add satan9394/agent-risk-guard            # install all
+npx skills add satan9394/agent-risk-guard --skill agent-risk-guard
+```
+
+After install, follow the "Quick setup" flow in `skills/agent-risk-guard/SKILL.md` to land machine-level gates (hooks / plugins / pre-execute) for each agent on the machine.
+
 ## Quick start (Developer Preview)
 
 RiskGuard ships a **zero-dependency, zero-build** user-level CLI (`riskguard`) covering install / status / doctor / uninstall. Requires Node >= 22.18. Unified in-repo entry: `node bin/riskguard.mjs` (equivalent to `node packages/cli/src/index.ts`, so you never face internal source paths).
