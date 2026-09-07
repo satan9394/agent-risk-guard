@@ -131,8 +131,20 @@ function unwrapWrapper(stmt: string): string | null {
   m = t.match(/^cmd(?:\.exe)?\s+\/c\s+/i)
   if (m) return t.slice(m[0].length).trim()
   // bash/sh -c —— R16 修复（B-04）：允许任意 flags 插在中间（bash --noprofile -c / bash -x -c / sh -p -c）
-  m = t.match(/^(?:bash|sh|zsh|ksh|dash|git-bash)(?:\.exe)?(?:\s+--?[a-z][a-z0-9-]*)*?\s+-c\s+/i)
-  if (m) return unquote(t.slice(m[0].length))
+  // GAN-fix（F3）：支持组合短参数簇（-xec / -ec / -lc / -exc，含 c）与紧贴 -c'...' 形式（bash -c'rm ...'）
+  m = t.match(/^(?:bash|sh|zsh|ksh|dash|git-bash)(?:\.exe)?\s*/i)
+  if (m) {
+    let todo = t.slice(m[0].length)
+    // 依次消费 flag token：跳过 --long 与不含 c 的短 flag；遇到含 c 的短 flag 簇后，剩余 todo 即命令体
+    while (todo.trim().length > 0) {
+      const fm = todo.match(/^\s*(-[a-zA-Z0-9-]+)/)
+      if (!fm) break
+      const tok = fm[1]
+      todo = todo.slice(fm[0].length)
+      if (tok.startsWith("--") || !/^-[a-zA-Z]*c[a-zA-Z]*$/i.test(tok)) continue
+      return unquote(todo)
+    }
+  }
   // python -c
   m = t.match(/^(?:python[23]?|py)(?:\.exe)?\s+-c\s+/i)
   if (m) return unquote(t.slice(m[0].length))
@@ -185,18 +197,24 @@ type Block = { policy: PolicyId; reason: string }
 
 function detectPOSIX(s: string): Block | null {
   // R16 修复：空引号剥离（r''m → rm）+ 空格混淆归一（r   m → rm）（B-07/B-15）
-  const norm = s.replace(/''/g, "").replace(/\s+/g, " ")
+  // GAN-fix（F2）：追加剥离空双引号（r""m → rm）
+  const norm = s.replace(/''/g, "").replace(/""/g, "").replace(/\s+/g, " ")
   const lo = norm.toLowerCase()
+  // GAN-fix（F2）：剥离命令词前缀的转义反斜杠（\rm → rm）用于命令定位
+  const eb = lo.replace(/\\(?=[a-z])/g, "")
   // rm 帮助/版本无害（排除误拦）
-  if (/^rm\s+(?:--help|-h|--version|-v)\b/.test(lo)) return null
-  // rm
-  if (/\brm\b/.test(lo) && !/\barm\b/.test(lo)) {
+  if (/^rm\s+(?:--help|-h|--version|-v)\b/.test(eb)) return null
+  // GAN-fix（F1）：移除 /\barm\b/ 误排除——目标名含独立单词 arm（rm -rf arm / rm -rf /tmp/arm）时 rm 分支仍进入拦截
+  if (/\brm\b/.test(eb)) {
     // R16 补充（B-16）：变量赋值内容含 rm -rf（$x="rm -rf /tmp"）——展开后危险
     if (/=\s*["']\s*rm\s+-rf\b/.test(lo))
       return { policy: P.PERMANENT_DELETE_POSIX, reason: "Variable assignment contains rm -rf (dangerous on expansion)." }
-    const first = lo.replace(/^\s*[&.{}]\s*/, "").trim()
+    // 命令定位：剥离 ./ 路径前缀后测试；支持前缀命令词（sudo/env/nohup/timeout/nice/busybox）
+    const first = eb.replace(/^\s*\\?(?:\.\.?\/)*/, "").replace(/^\s*[&.{}]\s*/, "").trim()
+    // GAN-fix（F2）：段首与分隔符后均允许前缀命令词（sudo rm / ; env rm / timeout 5 rm）
+    const PREFIX = "(?:(?:sudo|env|nohup|nice|busybox)\\s+|timeout\\s+\\S+\\s+)*?"
     // R16 修复：段首/分隔符/{}/case 后（B-08）
-    if (/^rm\b/.test(first) || /[;&|{}]\s*rm\b/.test(first) || /\|\s*rm\b/.test(first) || /case\b[^;]*\)\s*rm\b/.test(first))
+    if (new RegExp("^" + PREFIX + "rm\\b").test(first) || new RegExp("[;&|{}]\\s*" + PREFIX + "rm\\b").test(first) || /case\b[^;]*\)\s*rm\b/.test(first))
       return { policy: P.PERMANENT_DELETE_POSIX, reason: "Permanent deletion via rm is disabled. Use the trash tool instead." }
   }
   // rmdir
@@ -246,8 +264,10 @@ function detectPython(s: string): Block | null {
       /\bshutil\.rmtree\b/.test(lo) ||
       /\bpathlib\b.*\.(?:unlink|rmdir)\b/.test(lo) ||
       /\.unlink\(\)/.test(lo) || /\.rmdir\(\)/.test(lo) ||
-      // R16 补齐（审计 B-09）：subprocess/os.system/popen 动态执行
-      /\bsubprocess\.(?:call|run|popen|check_call|check_output|os\.system|os\.popen)\(/.test(lo) ||
+      // GAN-fix（F4）：subprocess 与 os.system/os.popen 拆开匹配——os.system/os.popen 不再要求字面 subprocess. 前缀；
+      // 裸 os.system("rm ...") / os.popen(...) 亦可命中
+      /\bsubprocess\.(?:call|run|popen|check_call|check_output)\s*\(/.test(lo) ||
+      /\bos\.(?:system|popen)\s*\(/.test(lo) ||
       /\b__import__\(['"]shutil['"]\).*rmtree/.test(lo) ||
       /\bimportlib\.import_module\(['"]shutil['"]\).*rmtree/.test(lo))
     return { policy: P.PERMANENT_DELETE_PYTHON, reason: "Permanent file deletion via Python os.remove/shutil.rmtree is disabled." }
@@ -379,6 +399,13 @@ function analyzeCommand(command: string): AR {
   // R16 修复（B-13）：管道到 shell 在分段前检查完整命令（splitStmts 拆掉 | 会漏检测）
   const pipeHit = detectPipe(command)
   if (pipeHit) return { blocked: true, policy: pipeHit.policy, reason: pipeHit.reason, command }
+  // GAN-fix（F2）：变量赋值拼接执行（x=rm; $x -rf ...）在完整命令上检测——分割符分段会拆开「赋值」与「使用」
+  {
+    const eb = command.toLowerCase().replace(/\\(?=[a-z])/g, "").normalize('NFKC')
+    const am = eb.match(/\b([a-z_][a-z0-9_]*)\s*=\s*rm\b(?:\s*[;&]|\s+)/)
+    if (am && new RegExp("\\$" + am[1] + "\\b\\s+-(?:[a-z]*rf\\b|f\\b)").test(eb))
+      return { blocked: true, policy: P.PERMANENT_DELETE_POSIX, reason: "Variable assignment + expansion executes rm (dangerous).", command }
+  }
   const segments = expandSegments(command)
   for (const seg of segments) {
     const t = seg.trim()
