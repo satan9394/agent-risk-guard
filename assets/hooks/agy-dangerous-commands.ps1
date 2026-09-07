@@ -1,4 +1,4 @@
-# agy-dangerous-commands.ps1 — Antigravity CLI (agy) PreToolUse hook 适配器（v0.2，BOM + fail-closed 加固）
+﻿# agy-dangerous-commands.ps1 — Antigravity CLI (agy) PreToolUse hook 适配器（v0.2，BOM + fail-closed 加固）
 # 复用 codex 的 dangerous-commands.ps1 规则集（单一规则源，跨 agent 同步），
 # 把 Antigravity 的 hook 协议翻译成该脚本能识别的格式。
 # 编码：UTF-8 with BOM（Windows PowerShell 5.1 必须；无 BOM 时 5.1 按 ANSI 解析中文会崩）
@@ -46,7 +46,7 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
     exit 0
 }
 
-$main = 'C:\Users\Satanchen\.codex\hooks\dangerous-commands.ps1'
+$main = Join-Path $env:USERPROFILE '.codex\hooks\dangerous-commands.ps1'
 if (-not (Test-Path -LiteralPath $main)) {
     Emit-Deny "rules engine missing: $main (fail-closed)"
 }
