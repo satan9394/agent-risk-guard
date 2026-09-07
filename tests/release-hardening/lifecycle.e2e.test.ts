@@ -62,7 +62,17 @@ test('lifecycle: detect 全部 detected', () => {
     assert.match(r.stdout, /Codex CLI\s+detected/);
     const j = rg(['detect', '--json'], home);
     const map = JSON.parse(j.stdout);
-    assert.deepEqual(map, { 'claude-code': true, codex: true, opencode: true, dsh: false });
+    // T7：detect --json 现在遍历全部 AGENT_REGISTRY（含 agy），返回全量 map。
+    // fake home 只检测到 claude-code/opencode/codex；dsh 与其余 registry 均为 not detected。
+    assert.equal(map['claude-code'], true);
+    assert.equal(map.codex, true);
+    assert.equal(map.opencode, true);
+    assert.equal(map.dsh, false);
+    assert.equal(typeof map.agy, 'boolean');
+    // 全量列齐：既有四件套 + agy + 其余 registry 全部出现
+    for (const id of ['claude-code', 'codex', 'opencode', 'cursor', 'windsurf', 'grok', 'claude-code-copilot', 'hermes', 'cline', 'aider', 'goose', 'agy', 'dsh']) {
+      assert.ok(id in map, `detect --json should include ${id}`);
+    }
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

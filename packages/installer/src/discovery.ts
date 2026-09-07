@@ -104,6 +104,12 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
     configRel: ['.config/goose'], probePaths: ['.config/goose'],
     notes: 'goose.conf extensions（MCP/插件）',
   },
+  {
+    id: 'agy', display: 'Antigravity CLI (agy)', mechanisms: ['hooks'],
+    configRel: [], configAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
+    probePaths: [], probeAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
+    notes: '~/.gemini/config/hooks.json PreToolUse(run_command) → agy-dangerous-commands.ps1；D3(2026-09-06)',
+  },
 ];
 
 /** 解析带 %ENV% 前缀的探测路径 */

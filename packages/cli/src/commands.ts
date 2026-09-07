@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import { statSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { discoverAgents, detectAgent, AGENT_REGISTRY } from '../../installer/src/discovery.ts';
 import { loadCompatibility } from '../../installer/src/compatibility.ts';
@@ -50,6 +51,9 @@ export interface InstallAgentOpts {
   dryRun?: boolean;
   verbose?: boolean;
   only?: string;             // 只安装指定 agent（可选）
+  /** 跳过交互，直接全装已检测到的（T7 新增） */
+  yes?: boolean;
+  all?: boolean;
   /** 测试专用故障注入（仅 tests/transaction 使用；生产 CLI 不产生该字段） */
   _test?: { failAt?: 'config-write' | 'manifest-save' | 'verify'; failVerify?: boolean };
 }
@@ -93,20 +97,20 @@ function installerKey(raw: string | undefined | null): string | null {
 
 export function cmdDetect(opts: { home?: string; json?: boolean }): string {
   const agents = discoverAgents({ home: HOMES.get(opts.home) });
+  const dsh = detectDsh(opts.home);
   if (opts.json) {
+    // —— T7：遍历全部 AGENT_REGISTRY（含 agy），--json 也全量 ——
     const map: Record<string, boolean> = {};
-    for (const a of agents) if (a.id === 'claude-code' || a.id === 'opencode' || a.id === 'codex' || a.id === 'dsh') map[a.id] = a.installed;
-    // dsh 不在 registry；单独探测
-    map['dsh'] = detectDsh(opts.home);
+    for (const a of agents) map[a.id] = a.installed;
+    map['dsh'] = dsh; // dsh 不在 registry；单独探测
     return JSON.stringify(map, null, 2);
   }
   const lines = ['RiskGuard Agent Detection', ''];
+  // —— T7：从「只列四件套」扩展为遍历全部 AGENT_REGISTRY（含新增 agy） ——
   for (const a of agents) {
-    if (a.id === 'claude-code' || a.id === 'opencode' || a.id === 'codex') {
-      lines.push(`${a.display.padEnd(16)} ${a.installed ? 'detected' : 'not detected'}`);
-    }
+    lines.push(`${a.display.padEnd(24)} ${a.installed ? 'detected' : 'not detected'}`);
   }
-  lines.push(`${'DSH'.padEnd(16)} ${detectDsh(opts.home) ? 'detected' : 'not detected'}`);
+  lines.push(`${'DSH'.padEnd(24)} ${dsh ? 'detected' : 'not detected'}`);
   return lines.join('\n');
 }
 
@@ -217,11 +221,116 @@ function resolveTargets(only: string | undefined): { targets: string[]; unknown:
   return { targets, unknown };
 }
 
+// ============================================================================
+// install 交互式目标选择（T7）
+// 无 --agent 时：detect 全部 → 列出「已检测到且可安装」的 Agent → 交互选择。
+// 非 TTY / 管道 / 超时 / EOF / 出错 → fallback 默认全装已检测到的（绝不能卡死）。
+// ============================================================================
+
+export interface InstallChoice { id: string; display: string; }
+
+/**
+ * 解析交互输入："1,3" / "all" / "" → 结果。
+ * 返回 'all'（all/回车）或索引数组（1-based）；非法输入返回 null（需重试一次）。
+ */
+export function parseSelectionInput(raw: string, count: number): number[] | 'all' | null {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === '' || s === 'all') return 'all';
+  const idx: number[] = [];
+  for (const part of s.split(',')) {
+    const p = part.trim();
+    if (!p) continue;
+    const n = Number(p);
+    if (!Number.isInteger(n) || n < 1 || n > count) return null; // 非法 / 越界
+    if (!idx.includes(n)) idx.push(n);
+  }
+  return idx.length ? idx : null;
+}
+
+/** 编号列表（供交互展示） */
+export function formatChoiceList(choices: InstallChoice[]): string {
+  return choices.map((c, i) => `  ${i + 1}. ${c.display}`).join('\n');
+}
+
+/**
+ * 交互选择（默认读 process.stdin；可注入 input/output 供测试）。
+ * 返回选中 agent id 列表。任何非正常结束（EOF/超时/错误）→ 返回全部（fallback 全装，绝不卡死）。
+ * isTTY 可覆盖：测试注入 readable + isTTY=true 可确定性验证「选子集」路径。
+ */
+export async function interactiveSelectChoices(
+  choices: InstallChoice[],
+  io: { input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream; isTTY?: boolean } = {},
+  timeoutMs = 20000,
+): Promise<string[]> {
+  const input = io.input ?? process.stdin;
+  const output = io.output ?? process.stdout;
+  const isTTY = io.isTTY !== undefined ? io.isTTY : !!(process.stdin.isTTY);
+  const all = () => choices.map((c) => c.id);
+  // 非 TTY（管道/CI）：不交互，直接全装（绝不能卡死）
+  if (!isTTY) return all();
+
+  return new Promise<string[]>((resolve) => {
+    const rl = createInterface({ input, output, terminal: true });
+    let settled = false;
+    const finish = (ids: string[]) => { if (settled) return; settled = true; try { rl.close(); } catch { /* ignore */ } resolve(ids); };
+    const timer = setTimeout(() => finish(all()), timeoutMs);
+    rl.on('close', () => { clearTimeout(timer); finish(all()); });
+    rl.on('error', () => { clearTimeout(timer); finish(all()); });
+    const ask = () => {
+      rl.question(`Enter number(s) to install (comma-separated, e.g. 1,3), 'all', or Enter to install all detected: `, (ans) => {
+        const parsed = parseSelectionInput(ans, choices.length);
+        if (parsed === 'all') { clearTimeout(timer); finish(all()); return; }
+        if (parsed === null) {
+          output.write('Invalid selection. Valid: 1-N comma-separated, "all", or Enter.\n');
+          ask();
+          return;
+        }
+        clearTimeout(timer);
+        finish(parsed.map((i) => choices[i - 1].id));
+      });
+    };
+    ask();
+  });
+}
+
 export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
   const home = HOMES.get(opts.home);
   const lines: string[] = ['RiskGuard Install:', ''];
-  const { targets, unknown } = resolveTargets(opts.only);
-  for (const u of unknown) lines.push(`Unknown agent: ${u}. Skipped.`);
+  let targets: string[];
+
+  if (opts.only) {
+    // —— --agent <id> 精确指定（保留现状） ——
+    const { targets: t, unknown } = resolveTargets(opts.only);
+    for (const u of unknown) lines.push(`Unknown agent: ${u}. Skipped.`);
+    targets = t;
+  } else {
+    // —— T7：检测 → 交互式选择 ——
+    const candidates = discoverAgents({ home })
+      .filter((a) => a.installed && installers[a.id]) // 仅「已检测到且可安装」
+      .map((a) => ({ id: a.id, display: installers[a.id].display }));
+    if (!candidates.length) {
+      lines.push('No installable agents detected on this machine.');
+      lines.push('');
+      lines.push(`Backup root: ${backupRoot(home)}`);
+      return lines.join('\n');
+    }
+    const interactive = (opts.yes !== true && opts.all !== true) && !!(process.stdin.isTTY);
+    if (interactive) {
+      // —— TTY：交互选择 ——
+      lines.push('Detected installable agents:');
+      lines.push(formatChoiceList(candidates));
+      lines.push('');
+      const selected = await interactiveSelectChoices(candidates);
+      targets = selected;
+      lines.push(`Selected: ${selected.length === candidates.length
+        ? 'all detected agents'
+        : selected.map((id) => installers[id].display).join(', ')}`);
+    } else {
+      // —— 非 TTY / 管道 / --yes / --all：默认全装已检测到的（绝不卡死） ——
+      targets = candidates.map((c) => c.id);
+      lines.push(`Installing all detected agents: ${targets.map((id) => installers[id].display).join(', ')}`);
+    }
+  }
 
   for (const id of targets) {
     const inst = installers[id];
@@ -662,12 +771,14 @@ export function cmdHelp(): string {
     '        (or: npm run riskguard -- <command> [options])',
     '',
     'Commands:',
-    '  detect            Detect installed AI agents (Claude Code / OpenCode / Codex / DSH)',
+    '  detect            Detect installed AI agents (full registry incl. Claude Code / Codex / OpenCode / DSH / AGY)',
     '    --json          machine-readable JSON output',
     '  install           Install RiskGuard into detected agents (backup + merge-preserving + transactional)',
-    '    --agent <id>    only install one agent (aliases: claude|cc → claude-code, oc → opencode, codex)',
-    '    --dry-run       show changes without writing',
-    '    --verbose       show detail',
+    '    <none>           interactively choose which detected agents to install (or Enter = all)',
+    '    --yes, --all     skip interactive prompt, install all detected agents (non-TTY safe)',
+    '    --agent <id>     only install one agent (aliases: claude|cc → claude-code, oc → opencode, codex)',
+    '    --dry-run        show changes without writing',
+    '    --verbose        show detail',
     '  status            Per-agent Runtime state (NOT_DETECTED/DETECTED/INSTALLED/ACTIVE/BROKEN) + Capability (D0–D4)',
     '  doctor            Health-check RiskGuard wiring (PASS/WARN/FAIL/SKIP)',
     '    --verbose       show evidence detail',

@@ -72,7 +72,7 @@ async function runSubcommand(): Promise<boolean> {
       process.stdout.write(cmdDetect({ json, home }) + '\n');
       return true;
     case 'install':
-      process.stdout.write(await cmdInstall({ dryRun, verbose, only, home }) + '\n');
+      process.stdout.write(await cmdInstall({ dryRun, verbose, only, home, yes: opts['yes'] === true, all: opts['all'] === true }) + '\n');
       return true;
     case 'status':
       process.stdout.write(await cmdStatus({ home }) + '\n');
