@@ -10,9 +10,9 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.2.2 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与大部分适配器已实现并通过自动化测试；
-> 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
-> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。v0.2.2 冻结 ACS 协议层：新增 **ACS version gate**（官方 wire gateway 精确拒绝不支持版本，返回 `-32001`，绝不误当作 0.1.0 处理）与 **release workflow**（GitHub Release 真正上传可校验的 `tar.gz` + `SHA256SUMS.txt`）。定位是 **Experimental OWASP ACS v0.1.0 schema-conformant wire gateway**（§五十七），不是 compliant / certified（详见 [docs/acs-alignment.md](docs/acs-alignment.md)）。
+> **状态：`v0.3.0 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与各 Agent 适配器已实现并通过自动化测试；
+> 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH / AGY），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
+> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。v0.2.2 冻结 ACS 协议层：新增 **ACS version gate**（官方 wire gateway 精确拒绝不支持版本，返回 `-32001`，绝不误当作 0.1.0 处理）与 **release workflow**（GitHub Release 真正上传可校验的 `tar.gz` + `SHA256SUMS.txt`）。**v0.3.0 Real Agent Conformance**：定位从「构建基础设施」转向「真实 Agent 会话验证」——OpenCode / Claude Code / DSH / AGY 四 Agent 拿到真实会话 D3 硬拦截证据，Codex 应用形态拿到真实会话拦截确认（拦截来源 = 应用 `approval_policy=never` + `sandbox=unelevated` 策略/沙箱层，RiskGuard hook 应用会话触发待补测），DSH / OpenCode / CC / AGY 的 ps1 / 插件资产入库。
 
 ---
 
@@ -246,13 +246,14 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - [docs/devlog-2026-09-05-v0.2.0.md](docs/devlog-2026-09-05-v0.2.0.md) — 开发日志：v0.2.0（ACS Alignment Foundation）
 - [docs/devlog-2026-09-05-v0.2.1.md](docs/devlog-2026-09-05-v0.2.1.md) — 开发日志：v0.2.1（ACS Schema Conformance Patch，官方 JSON Schema 判据 + wire mode）
 - [docs/devlog-2026-09-05-v0.2.2.md](docs/devlog-2026-09-05-v0.2.2.md) — 开发日志：v0.2.2（ACS Protocol Finalization，version gate + release assets）
+- [docs/devlog-2026-09-07-v0.3.0.md](docs/devlog-2026-09-07-v0.3.0.md) — 开发日志：v0.3.0（Real Agent Conformance，5-Agent D3 / GAN 审查闭环 / installer UX / Codex 应用形态真相 / ps1 资产入仓库）
 - [docs/real-agent-conformance-status.md](docs/real-agent-conformance-status.md) — v0.3.0 Real Agent Conformance 进度与诚实结论（D3 evidence 格式 / runner / 三家 adapter / 环境探测）
 - [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
 
 ## 开发与安全验证
 
 - **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
-- 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 277/277 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
+- 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 312/312 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
 
 ## 社区与协议
 
@@ -262,5 +263,5 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 
-> **版本说明**：当前统一产品版本为 **`v0.2.2 Developer Preview`**（`package.json` = `0.2.2`，单一版本源见 `packages/core/src/version.ts`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` / `v0.2.0` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent，因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> **版本说明**：当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`，单一版本源见 `packages/core/src/version.ts`）。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` / `v0.2.0` / `v0.2.1` / `v0.2.2` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent（macOS / Linux、Copilot CLI / Windsurf / Cursor 真实 D3 待补），因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。

@@ -4,13 +4,64 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.2.2 Developer Preview`**（`package.json` = `0.2.2`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`；单一版本源 `packages/core/src/version.ts`）。
 
-- `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
-- 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent 的真实环境验证尚未完成，Codex 的 D3 真实会话待补。详见 `docs/TODO.md`。
-- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` 条目保留为历史记录，不删除、不重写历史。
+- `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` / `v0.2.0` / `v0.2.1` / `v0.2.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
+- 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.2.2 ACS Protocol Finalization
+## [Unreleased] - v0.3.0 Real Agent Conformance
+
+> 定位：**从「构建基础设施」转向「真实 Agent 会话验证」**。Phase B（v0.3.0）的五类工作闭环：
+> ① 5-Agent Conformance——OpenCode / Claude Code / DSH / AGY 拿到真实会话 D3 硬拦截证据；Codex 应用形态拿到
+> 真实会话拦截确认（拦截来源 = Codex 应用自身 `approval_policy=never` + `sandbox=unelevated` 策略/沙箱层，
+> RiskGuard hook 双注册在应用会话的触发待补测，诚实标注）；② GAN 对抗审查 17/17 findings 修复（5-Agent 判别器审查闭环）；
+> ③ installer UX——`detect` 全量 Agent registry + 交互式安装选择；④ agy adapter 新增（首个完整 D3 全链路样板）；
+> ⑤ DSH / OpenCode / CC / AGY 的 ps1 / 插件事务资产（`assets/`）入仓库作为单一规则源分发。
+> 定位仍是 **Developer Preview**：macOS / Linux 与 Copilot CLI / Windsurf / Cursor 真实 D3 待补，不宣称 1.0 Stable。
+
+### Added
+
+- **5-Agent Real Agent Conformance**（docs/real-agent-conformance-final-report.md）：真实会话 / 应用形态硬拦截证据。
+  - OpenCode（1.18.29）：真实会话 `git reset --hard` 被 `BLOCKED_BY_GLOBAL_SAFETY_GUARD/GIT_RESET_HARD` 拒绝，
+    git status 仍 M file.txt，副作用保留（Windows D3）。
+  - Claude Code：真实会话 `git reset --hard` 输出 `permissionDecision=deny`（RG-GIT-001），permission-rule 拒绝执行、
+    未提交改动存活（Windows D3）。
+  - DSH：pre-execute 门禁真实拦截含黑名单词命令（Windows D3，D2 源码实证 + D3 真实会话拦截）。
+  - AGY（1.1.27）：首次接入的 PreToolUse hook（run_command matcher），真实会话尝试 `git reset --hard HEAD` 被 deny，
+    未提交修改保留（Windows D3），提供「真实会话证据 + 双脚本（适配器+共享规则）+ D3 标注」全链路样板。
+  - Codex（0.146.x 应用形态）：2026-09-06 应用内真实会话拦截确认（永久删除被拒、文件保留）升 D3，
+    但**如实注明拦截来源 = Codex 应用自身 `approval_policy=never` + `sandbox=unelevated` 策略/沙箱层**
+    （`blocked by policy`，非 RiskGuard hook deny；`%TEMP%\riskguard-hook-calls.log` 无该次 hook 记录）；
+    RiskGuard hook 双注册（hooks.json + config.toml）在应用会话的触发待补测。
+- **GAN 对抗审查闭环（shop 17/17 findings 修复）**：workflow fan-out 4 个独立判别器（纯静态源码分析），
+  findings = **P0×10 / P1×6 / P2×1 = 17 条**，落在共享 ps1（6）/ OpenCode 插件（4）/ AGY 适配器（3）/ DSH YAML（4），
+  **全部修复（17/17 全覆盖）**：大小写绕过、fail-open、落盘执行、插词、包装/换名变体、arm 误排、`-xec` 解包、
+  os.system/os.popen、EncodedCommand/base64、git restore/checkout、拆拼/变量拼接/转义/base64 管道、xargs/execdir 落空、
+  工具名匹配盲区、ri/echo del 误伤等。修复提交 `2159afd`（opencode 插件 + dsh yaml）+ `7fe08a8`
+  （R4 deny 规则同步进 `defaultDenyRules`，deploy.ts +29，修复 M7 双源漂移）+ T4a/T4b/T4c 生产同步。
+- **installer UX**（packages/cli/src/commands.ts + tests/e2e/install-ux.test.ts）：`AGENT_REGISTRY` 补 agy 条目；
+  `detect` 遍历全量 registry（--json 返回完整映射）；`install` 无 `--agent` 时 detect + 交互式编号选择（`1,3` / `all` / Enter），
+  readline 驱动，非 TTY / 管道 / 超时 / EOF 回退默认全装（绝不挂起）；`--yes`/`--all` 跳过提示。
+- **`packages/adapters/agy` Antigravity CLI（agy）PreToolUse adapter**：全局 hooks `~/.gemini/config/hooks.json`
+  （PreToolUse run_command）→ `agy-dangerous-commands.ps1`（BOM、fail-closed）→ 共享规则源；hook command 必须绝对路径
+  （相对路径子目录启动 127 绕过，已文档提醒）。
+- **ps1 / 插件事务资产入仓库**（assets/hooks/dangerous-commands.ps1，GAN-hardened 21466B，单一源同步 CC/Codex/AGY 生产；
+  assets/hooks/agy-dangerous-commands.ps1，BOM 加固适配器）：monorepo 作为 scripts 规则的单一事实源分发。
+
+### Changed
+
+- `package.json` / `package-lock.json` / `packages/acs/package.json` / `compatibility.json` productVersion → `0.3.0`。
+- README 状态 → v0.3.0 Developer Preview，定位补 Real Agent Conformance；文档导航加 v0.3.0 devlog。
+- `compatibility.json`：agy 新增 D3 条目；Codex `verification.windows` 升 D3（应用形态，notes 如实注明拦截来源）。
+
+### Security
+
+- 单一规则源纪律：ps1 主源一处，三处生产（~/.claude/hooks、~/.codex/hooks、~/.gemini/config/hooks）哈希一致；
+  opencode 生产与 monorepo assets 哈希一致（T4 复验 + T2 核对一致）。
+- GAN 审查发现的 bypass 向量全部修复并同步自测；合法命令（git status / ls / echo hello / ri Array#map）不误伤。
+
+## [0.2.2] - 2026-09-05（v0.2.2 ACS Protocol Finalization，已发布）
 
 > 定位：**ACS 协议层冻结**。Phase A 只解决两件事：① ACS version gate——official wire gateway
 > 精确拒绝不支持版本（schema-valid ≠ supported，未知版本返回 ACS application error `-32001`，
