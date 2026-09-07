@@ -55,6 +55,35 @@ export function defaultDenyRules(): GuardRules {
     // R3 生态融合：Windows wrapper 内嵌删除（对标 CC Safety Net shell wrapper 检测的 Windows 版）
     '\\bcmd(?:\\.exe)?\\s+\\/c\\b[^|;&]*\\b(del\\s|rmdir\\b|rd\\s|erase\\b)',
     '\\b(pwsh|powershell)\\s+-(?:command|c)\\b[^|;&]*[\'\"][\\s\\S]*?\\b(?:remove-item|rm\\s+-rf|del\\s|rmdir\\s*\\/s)\\b',
+    // R4 GAN 修复（对齐 assets/dsh/deny-risk-commands.patch.yml R4 段，M7 单一事实源防漂移）
+    // [P0] 反引号/反斜杠插字拆拼命令名：r`m / r\m / R`emove-Item / d`el / rmd`ir
+    '\\bR[`\\\\]?e[`\\\\]?m[`\\\\]?o[`\\\\]?v[`\\\\]?e[`\\\\]?-[`\\\\]?I[`\\\\]?t[`\\\\]?e[`\\\\]?m\\b',
+    '\\br[`\\\\]?m\\b',
+    '\\bd[`\\\\]?e[`\\\\]?l\\b',
+    '\\br[`\\\\]?m[`\\\\]?d[`\\\\]?i[`\\\\]?r\\b',
+    // [P0] base64 解码后管道投递解释器（echo ... | base64 -d | sh/bash）
+    '\\|\\s*base64\\s+-[dD]\\b[^|;&\\n]*\\|\\s*(?:sh|bash|zsh|fish)\\b',
+    // [P0] iex / Invoke-Expression 内联拼接删除命令
+    '\\b(?:iex|invoke-expression)\\b[^|;&\\n]*(?:remove-item|rmdir|shred|erase|delete|\\brm\\b)',
+    // [P0] 变量字符串拼接组装命令名后 & 调用（$c='Remo'+'ve-Item'; & $c）
+    '\\$[A-Za-z_]\\w*\\s*=\\s*[\'"][^\'"\\r\\n]*[\'"]\\s*\\+\\s*[\'"][^\'"\\r\\n]*[\'"]\\s*;?\\s*&\\s*\\$',
+    // [P0] 变量直接持有删除命令名后 & 调用（$x='rm'; & $x）
+    '\\$[A-Za-z_]\\w*\\s*=\\s*[\'"]\\s*(?:remove-item|rmdir|shred|erase|delete|\\brm\\b)\\s*[\'"]\\s*;?\\s*&\\s*\\$',
+    // [P0] xargs 投递删除（find | xargs rm / xargs -0 rm）
+    '\\bxargs\\b[^|;&\\n]*\\b(?:rm|rmdir|shred|unlink|dd|mkfs|mv)\\b',
+    // [P0] find -execdir/-okdir 删除（补 -exec 之外的词边界变体）
+    '\\bfind\\s+[^|;&]*\\s-(?:execdir|ok|okdir)\\b[^|;&]*\\b(?:rm|rmdir|shred|unlink|mv)\\b',
+    // [P1] 工具名盲区：git rm / git update-ref / filter-branch
+    '\\bgit\\s+rm\\b',
+    '\\bgit\\s+(?:update-ref|filter-branch)\\b',
+    // [P1] 磁盘低层写操作 dd/mkfs/fdisk/parted/format
+    '\\b(?:dd|mkfs(?:\\.\\w+)?|fdisk|parted|format)\\s',
+    // [P1] Node fs.promises 删除（fs.promises.rm/unlink/rmdir）
+    '\\bfs\\.promises\\.(?:rm(?:Sync)?|unlink(?:Sync)?|rmdir(?:Sync)?)\\s*\\(',
+    // [P1] [IO.File]::Delete / [IO.Directory]::Delete（无需 System.IO. 前缀）
+    '\\[\\s*IO\\.(?:File|Directory)\\s*\\]::Delete',
+    // [P1] docker compose run/exec（现有 docker run/exec 规则之外）
+    '\\bdocker\\s+compose\\s+(?:run|exec)\\b',
   ];
 }
 
