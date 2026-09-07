@@ -85,7 +85,7 @@
       "integration": "PreToolUse hook (hooks.json) + AGENTS.md rules",
       "enforcement": "hard",
       "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
-      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（codex.exe 0.146.x，C:\\Users\\Satanchen\\AppData\\Local\\OpenAI\\Codex\\bin），~/.codex/ 为完整应用数据目录。机器级 hook 双注册：~/.codex/hooks.json（PreToolUse matcher Bash → ~/.codex/hooks/dangerous-commands.ps1）AND ~/.codex/config.toml 的 [[hooks.PreToolUse]]（同一命令）。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。用户 2026-09-06 日志确认 PreToolUse→Bash→dangerous-commands.ps1 拦截生效。",
+      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（codex.exe 0.146.x，C:\\Users\\Satanchen\\AppData\\Local\\OpenAI\\Codex\\bin），~/.codex/ 为完整应用数据目录。机器级 hook 双注册：~/.codex/hooks.json（PreToolUse matcher Bash → ~/.codex/hooks/dangerous-commands.ps1）AND ~/.codex/config.toml 的 [[hooks.PreToolUse]]（同一命令）。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。2026-09-06 用户应用内手动验证：创建测试文件 → 尝试永久删除被拒（返回 blocked by policy，无具体原因）、文件保留 —— 真实会话拦截确认，但拦截来自 Codex 应用自身的 approval_policy=never+sandbox=unelevated 策略/沙箱层（%TEMP%\\riskguard-hook-calls.log 无该次测试触发的 hook deny 记录）；RiskGuard hook 双注册（hooks.json+config.toml）在应用会话的触发尚未确认，待应用会话补测。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",

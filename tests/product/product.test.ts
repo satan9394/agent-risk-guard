@@ -4,7 +4,7 @@
  * 覆盖 v0.1.0 产品化新增能力，确保：
  *  - merge 只「加入」不覆盖用户配置，且幂等
  *  - manifest 精确记录与恢复
- *  - compatibility.json 是单一事实源，等级诚实（claude/opencode D3、codex D2）
+ *  - compatibility.json 是单一事实源，等级诚实（claude/opencode/dsh 本机 D3、codex 应用形态 D3、其余无实现 D0）
  *  - PreToolUse hook 输出符合当前 Claude Code schema（hookEventName='PreToolUse'）——真实 D3 实测修复的回归
  *  - classifyShellCommand 的破坏性命令正确映射到 DENY
  */
@@ -136,7 +136,7 @@ test('compatibility: 关键 agent 覆盖 detect 四件套', () => {
   }
 });
 
-test('compatibility: 诚实等级 — claude/opencode 本机 D3，codex 无 CLI 判 D2', () => {
+test('compatibility: 诚实等级 — claude/opencode/dsh 本机 D3，codex 应用形态 D3', () => {
   const c = loadCompatibility();
   const cc = c.agents['claude-code'].verification['windows'];
   const oc = c.agents['opencode'].verification['windows'];
@@ -144,7 +144,7 @@ test('compatibility: 诚实等级 — claude/opencode 本机 D3，codex 无 CLI 
   const dsh = c.agents['dsh'].verification['windows'];
   assert.equal(levelAtLeast(cc, 'D3'), true, 'claude-code 应达到 D3（本机实测硬阻断）');
   assert.equal(levelAtLeast(oc, 'D3'), true, 'opencode 应达到 D3（本机实测硬阻断）');
-  assert.equal(cx, 'D2', 'codex 本机未装 CLI，只能诚实判 D2');
+  assert.equal(cx, 'D3', 'codex 本机为应用形态（非 CLI 二进制），2026-09-06 应用内真实会话拦截确认升 D3（拦截来自应用策略/沙箱层，hook 触发待补测，见 notes）');
   assert.equal(levelAtLeast(dsh, 'D3'), true, 'dsh pre-execute 门禁本机实测为 D3');
 });
 
