@@ -84,8 +84,8 @@
       "display": "Codex CLI",
       "integration": "PreToolUse hook (hooks.json) + AGENTS.md rules",
       "enforcement": "hard",
-      "verification": { "windows": "D2", "macos": "D1", "linux": "D1" },
-      "notes": "hooks.json PreToolUse 已接线（riskguard-codex-hook + legacy dangerous-commands.ps1）。机器层 hook D2 实测：DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。本机未安装 codex CLI 二进制，真实会话 D3 待 CLI 可用后补验。",
+      "verification": { "windows": "D3", "macos": "D1", "linux": "D1" },
+      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（codex.exe 0.146.x，C:\\Users\\Satanchen\\AppData\\Local\\OpenAI\\Codex\\bin），~/.codex/ 为完整应用数据目录。机器级 hook 双注册：~/.codex/hooks.json（PreToolUse matcher Bash → ~/.codex/hooks/dangerous-commands.ps1）AND ~/.codex/config.toml 的 [[hooks.PreToolUse]]（同一命令）。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。用户 2026-09-06 日志确认 PreToolUse→Bash→dangerous-commands.ps1 拦截生效。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
@@ -106,14 +106,14 @@
       "conditionalAvailability": [],
       "securityBoundaries": ["L0", "L2"],
       "capabilities": {
-        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D2" } },
+        "shell.execute": { "enforcement": "hard", "verification": { "windows": "D3" } },
         "filesystem.write": { "enforcement": "hard", "verification": { "windows": "D2" } },
         "filesystem.delete": { "enforcement": "hard", "verification": { "windows": "D2" } },
         "git.destructive": { "enforcement": "hard", "verification": { "windows": "D2" } },
         "mcp.invoke": { "enforcement": "unknown", "verification": { "windows": "D0" } },
         "network.connect": { "enforcement": "unknown", "verification": { "windows": "D0" } }
       },
-      "componentInventory": { "agent": "codex", "version": "unknown", "adapter": "packages/adapters/codex + packages/codex", "hook": "PreToolUse hook (hooks.json)", "runtime": "node + powershell hook", "policy": "rules-compiler AGENTS.md" }
+      "componentInventory": { "agent": "codex", "version": "0.146.x", "adapter": "packages/adapters/codex + packages/codex", "hook": "PreToolUse hook (hooks.json + config.toml [[hooks.PreToolUse]] 双注册)", "runtime": "node + powershell hook（应用形态：VS Code 扩展 openai.chatgpt + 本地 server codex.exe）", "policy": "rules-compiler AGENTS.md" }
     },
     "dsh": {
       "display": "DeepSeek Harness",
