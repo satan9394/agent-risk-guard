@@ -2,6 +2,8 @@
 
 **Deterministic safety guardrails for AI coding agents.**
 
+**[English](README.en.md) | [中文](README.md)**
+
 **Cross-agent runtime security enforcement with experimental OWASP ACS v0.1.0 schema alignment.**
 
 在 AI Agent 真正执行文件删除、Shell 命令、Git 破坏性操作之前，进行确定性安全拦截——把「永久删除」变成「回收站」，把破坏性操作挡在执行之前。
@@ -12,7 +14,7 @@
 
 > **状态：`v0.3.0 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与各 Agent 适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH / AGY），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
-> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。v0.2.2 冻结 ACS 协议层：新增 **ACS version gate**（官方 wire gateway 精确拒绝不支持版本，返回 `-32001`，绝不误当作 0.1.0 处理）与 **release workflow**（GitHub Release 真正上传可校验的 `tar.gz` + `SHA256SUMS.txt`）。**v0.3.0 Real Agent Conformance**：定位从「构建基础设施」转向「真实 Agent 会话验证」——OpenCode / Claude Code / DSH / AGY 四 Agent 拿到真实会话 D3 硬拦截证据，Codex 应用形态拿到真实会话拦截确认（拦截来源 = 应用 `approval_policy=never` + `sandbox=unelevated` 策略/沙箱层，RiskGuard hook 应用会话触发待补测），DSH / OpenCode / CC / AGY 的 ps1 / 插件资产入库。
+> v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。v0.2.2 冻结 ACS 协议层：新增 **ACS version gate**（官方 wire gateway 精确拒绝不支持版本，返回 `-32001`，绝不误当作 0.1.0 处理）与 **release workflow**（GitHub Release 真正上传可校验的 `tar.gz` + `SHA256SUMS.txt`）。**v0.3.0 Real Agent Conformance**：定位从「构建基础设施」转向「真实 Agent 会话验证」——**5 个 Agent 全部拿到真实会话硬拦截证据（D3）**：OpenCode / Claude Code / DSH / AGY 由 RiskGuard hook / plugin 真实会话验证，Codex 为「应用策略/沙箱层（`approval_policy=never` + `sandbox=unelevated`）+ **Codex CLI 0.153.4 hook 真实会话补测（2026-09-07）**」双证据；另完成 **GAN 对抗审查**（17 findings：P0×10/P1×6/P2×1 全部修复）与 **installer UX**（`detect` 全量检测含 agy、`install` 交互式选择）。
 
 ---
 
@@ -96,7 +98,7 @@ AI Coding Agent
 |---|---|---|---|---|
 | **DeepSeek Harness (DSH)** | `pre-execute` 瀑布 + `guard()` 单调不变量 | ✅ 是 | Windows D3（真实会话拦截记录 `Error: 全局铁律…`）；macOS/Linux D1 | ✅ Verified |
 | **Claude Code** | `PreToolUse` hook（`riskguard-pre-tool-hook`）+ CLAUDE.md 规则 | ✅ 是（机器层硬门禁；bypassPermissions 下仍拦截） | Windows D3（真实会话 permission-rule 阻断）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
-| **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook | ✅ 是（hook 已接线；DENY exit 2 实测） | Windows D2（hook 机器层实测；本机未装 CLI，D3 会话待补）；macOS/Linux D1 | 🟢 Implemented |
+| **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook（应用/CLI 共用 `~/.codex/` 双注册） | ✅ 是（hook 已接线；DENY/ALLOW 实测） | Windows D3（应用 `approval_policy=never`+`sandbox=unelevated` 策略层真实拦截 + **CLI 0.153.4 hook 真实会话 2026-09-07**）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **OpenCode** | `tool.execute.before` TS 插件 + AGENTS.md | ✅ 是（生产插件已注册；bash allow 仍拦截） | Windows D3（真实会话 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **Cursor** | `preToolUse` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
 | **Windsurf** | `pre_run_command` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
@@ -105,7 +107,7 @@ AI Coding Agent
 
 验证等级单一事实源为 `packages/installer/compatibility.json`：**D0**＝Unsupported；**D1**＝Implementation exists；**D2**＝Automated test verified；**D3**＝Real agent execution verified；**D4**＝Repeated / production verified。D3/D4 是产品能力等级，不代表某台机器当前 `ACTIVE`（机器状态看 `riskguard status` 的 Runtime）。本表各 Agent 的等级来自该文件（CI 有 `check-compatibility-docs` 防漂移）。
 
-> 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。
+> 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。AGY（Antigravity CLI 1.1.27）经 `~/.gemini/config/hooks.json` PreToolUse 真实会话验证（git reset --hard 被 deny、未提交修改保留）。Codex 应用形态（VS Code 扩展 + codex.exe）拦截来自应用策略/沙箱层（`approval_policy=never` + `sandbox=unelevated`，用户 2026-09-06 应用内手动验证 blocked by policy），并经 **Codex CLI 0.153.4 真实会话补测（2026-09-07）**确认 RiskGuard PreToolUse hook 亦在工具层拦截（hook 日志 deny 吻合、未提交改动保留）。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。所有拦截经 [GAN 对抗审查](docs/GAN-AUDIT-5AGENTS.md)（17 findings 全修复）验证无已知绕过。
 
 ## 操作系统支持
 
@@ -159,11 +161,12 @@ node bin/riskguard.mjs doctor
 
 ```bash
 node bin/riskguard.mjs install --dry-run            # 只显示将改什么，不落盘
-node bin/riskguard.mjs install                      # 应用到检测到的 Agent
+node bin/riskguard.mjs install                      # 交互式：先列出已检测 Agent 供编号勾选；非 TTY/管道自动全装不卡死
+node bin/riskguard.mjs install --all --dry-run      # 跳过交互，直接全装已检测到的
 node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
 ```
 
-已安装但 wiring 损坏（BROKEN）时，install 会识别为 **repair**（输出 `repaired successfully`），成功恢复后 ACTIVE；仅「无改动 + 健康 ACTIVE」才报 `already installed`。安装**非破坏性**：merge 保留用户字段；损坏 JSON / 无权限 / IO 错误立即终止零写入；OpenCode 插件目标同名异内容（SHA256 不符）拒绝安装；任一步失败回滚到安装前（含旧 manifest 恢复），不留下半成品。
+`riskguard detect`（v0.3.0 起）全量检测已知 Agent（含 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose），`install` 无 `--agent` 时对已检测到的 Agent 做交互式选择（输入编号/逗号，如 `1,3` / `all` / 回车默认全装；非交互环境自动全装不卡死），`--all`/`--yes` 跳过交互。已安装但 wiring 损坏（BROKEN）时，install 会识别为 **repair**（输出 `repaired successfully`），成功恢复后 ACTIVE；仅「无改动 + 健康 ACTIVE」才报 `already installed`。安装**非破坏性**：merge 保留用户字段；损坏 JSON / 无权限 / IO 错误立即终止零写入；OpenCode 插件目标同名异内容（SHA256 不符）拒绝安装；任一步失败回滚到安装前（含旧 manifest 恢复），不留下半成品。
 
 **5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
 
@@ -252,7 +255,7 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 
 ## 开发与安全验证
 
-- **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
+- **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。v0.3.0 对 5 Agent 生产拦截做全量对抗审查（workflow fan-out 独立判别器），产出 17 findings（P0×10 / P1×6 / P2×1）——大小写变体、fail-open、落盘执行链、引号/反引号插词、`bash -xec` 解包、`arm` 误排除、`os.system` 正则错位、`-EncodedCommand` base64、xargs/-execdir、git 单文件 restore 等——**全部修复并复验**（见 [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md)）。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
 - 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 312/312 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
 
 ## 社区与协议
