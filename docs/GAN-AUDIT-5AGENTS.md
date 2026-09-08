@@ -66,4 +66,4 @@
 - **测试**：`hook-rules-test.ps1` +16 用例（37/37）、`hook-bypass-regression.ps1` +4（20/20）、`hook-fp-regression.ps1` +3（8/8）、`rule-self-test.test.ts` +4 组 positive/negative、`opencode-guard-reregress.test.ts` +7 用例；skill 侧 tests 同步。
 - **误伤防线**：查看/打开回收站（`Get-ChildItem`、`explorer`、管道 `Measure-Object`）不拦——只有删除动词与 `$Recycle.Bin` 路径同现才拦。
 
-**验证（2026-09-08）**：ps1 payload 实测 `Clear-RecycleBin -Force` / `cleanmgr /sagerun:1` / `rd C:\$Recycle.Bin` → deny，`git status` / `Get-ChildItem C:\$Recycle.Bin` → allow；ps1 六处 + 插件两处 + YAML 四份哈希一致；`test-all.ps1` 全量全绿（node 套件 + ps1 四套 + sh 三套）；doctor 4 PASS。
+**验证（2026-09-08）**：ps1 payload 实测（`-Cmd` 与 stdin 文件管道双路径）`Clear-RecycleBin -Force` / `cleanmgr /sagerun:1` / `rd C:\$Recycle.Bin` → deny，`git status` / `Get-ChildItem C:\$Recycle.Bin` → allow；ps1 六处 + 插件两处 + YAML 四份哈希一致；`test-all.ps1` 全量全绿（node 279 + ps1 109 + sh 285）；doctor 3 PASS / 1 FAIL——claude-code FAIL 为**既有接线漂移**（`~/.claude/settings.json` 2026-09-08 06:55 被重写后仅存 `hooks.Setup`、无 PreToolUse；本修复未触及该文件，恢复接线待用户决策）。
