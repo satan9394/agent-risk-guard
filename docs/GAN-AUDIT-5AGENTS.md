@@ -44,3 +44,26 @@
 - P2×1（低成本即修）：ps1 ri 误伤 + echo del 误伤
 
 > 修复依据：tasks/T4-fix-gan.md。修复后须复现用例不再穿透（payload 文件方式）、doctor 仍 4 PASS、全量测试全绿、生产与仓库单一规则源哈希一致。
+
+---
+
+## Finding 18（用户实测发现，2026-09-08 修复）
+
+**发现方式**：非静态审查——用户在朋友电脑给 Agent 装 hook 深度实测：危险删除确实被拦、只能进回收站；但随后发现**回收站本身可以被清空**：Agent 可被诱导执行清空回收站类命令实现永久删除（删除链最后一环无人拦截）。静态审计（finding 1-17）全部漏过此向量。
+
+**要拦的模式**（拦的是 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响）：
+- PowerShell `Clear-RecycleBin`（含 `-Force` / `-DriveLetter` 各变体、大小写、引号插词 `Clear'-RecycleBin`）
+- 直接删除回收站存储：删除命令指向 `$Recycle.Bin`（`C:\$Recycle.Bin` 等任意盘符）——Remove-Item / rd / rmdir / rm / del / erase / ri / unlink / shred / rimraf / Node `fs.rm(Sync)` / `fs.promises.rm` / `.Delete()` / `[System.IO.File|Directory]::Delete`
+- `cleanmgr`（磁盘清理含回收站清空，`/sagerun`、`/verylowdisk` 等变体）
+
+**reason 统一**：`回收站清空不可逆，如需清理请用户手动操作`（不是阻止用户，是阻止 AI 代做）。
+
+**修复映射（全链同步，单一规则源纪律）**：
+- **ps1 主源**（CC/Codex/AGY 共用规则集，`agent-risk-guard-audit/scripts/dangerous-commands.ps1`）：新增 16f 段三条规则（Clear-RecycleBin / cleanmgr / `$Recycle.Bin` × 删除动词同现即拦，`$cmdTest` + `$cmdNaked` 双重查插词），六处同哈希：三生产（`~/.claude/hooks`、`~/.codex/hooks`、`~/.gemini/config/hooks`）+ 仓库 `skills/agent-risk-guard/scripts/` + `assets/hooks/`（本次顺带把 assets/hooks 的 CRLF 换行漂移一并归一）。
+- **OpenCode 插件**（`assets/opencode/agent-risk-guard.ts` + 生产 `~/.config/opencode/plugins/`，两处同哈希）：新增 `RECYCLE_BIN_EMPTY` 策略 + `detectRecycleBin()` 检测器（注册进 detectors 链 + `hasDangerousSignal` fail-closed 信号）。
+- **DSH YAML**（`assets/dsh/deny-risk-commands.patch.yml` + 生产 `~/.dsh/profiles/web/cordis.patch.yml`，另同步 audit 与 skills 两处对齐副本，四份同哈希）：+4 条规则。
+- **deploy.ts**（`packages/installer/src/deploy.ts` `defaultDenyRules()`）：同步 +4 条，M7 rule-alignment 动态计数保持一致。
+- **测试**：`hook-rules-test.ps1` +16 用例（37/37）、`hook-bypass-regression.ps1` +4（20/20）、`hook-fp-regression.ps1` +3（8/8）、`rule-self-test.test.ts` +4 组 positive/negative、`opencode-guard-reregress.test.ts` +7 用例；skill 侧 tests 同步。
+- **误伤防线**：查看/打开回收站（`Get-ChildItem`、`explorer`、管道 `Measure-Object`）不拦——只有删除动词与 `$Recycle.Bin` 路径同现才拦。
+
+**验证（2026-09-08）**：ps1 payload 实测 `Clear-RecycleBin -Force` / `cleanmgr /sagerun:1` / `rd C:\$Recycle.Bin` → deny，`git status` / `Get-ChildItem C:\$Recycle.Bin` → allow；ps1 六处 + 插件两处 + YAML 四份哈希一致；`test-all.ps1` 全量全绿（node 套件 + ps1 四套 + sh 三套）；doctor 4 PASS。

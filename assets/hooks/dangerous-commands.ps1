@@ -13,6 +13,10 @@
 #           [P1-包装变体] bash -lc/-ec/-xec、sh -c；git rm；find -execdir。
 #           [P2-误伤] ri 仅在有删除标志/Windows 路径时拦（放开 Ruby ri 文档）；echo/printf 未加引号文本
 #                整体剥离防"echo del hello"误伤。
+# 改动记录（T11/Finding 18 用户实测修复，2026-09-08）：
+#           [F18-回收站清空] Clear-RecycleBin（含 -Force/-DriveLetter 各变体）、cleanmgr（含 /sagerun 等）、
+#                直删 $Recycle.Bin 存储（C:\$Recycle.Bin 等任意盘 × 删除动词，含引号插词变体）→ deny，
+#                reason 统一「回收站清空不可逆，如需清理请用户手动操作」；拦 Agent 工具调用，不拦用户手动清空。
 # 安装：在 settings.json / hooks.json PreToolUse 中引用此脚本
 # 输入：stdin JSON { tool_name, tool_input: { command }, ... }
 # 输出：stdout JSON { hookSpecificOutput: { permissionDecision }, systemMessage }
@@ -249,6 +253,23 @@ if ($cmdNaked -match '(?i)(?:^|[;&|\r\n])\s*rm(?:\s+|-)\s*(?:-r\S*|-f\b|-recurse
 }
 if ($cmdNaked -match '(?i)\bRemove-Item\b') {
     Deny-Command '含插词的 Remove-Item 是永久删除（不进回收站），请改用回收站命令'
+}
+
+# 16f) 回收站清空类（T11/Finding 18 用户实测：危险删除已拦、但回收站可被清空 = 删除链最后一环无人拦截）
+#      拦的是 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响。
+$reRecycleBinPath = '(?i)\$recycle\.bin'
+$reRecycleBinDelVerb = '(?i)\b(?:Remove-Item|ri|rm|rmdir|rd|del|erase|unlink|shred|rimraf)\b|\bfs\.(?:promises\.)?(?:rm|unlink|rmdir)(?:Sync)?\s*\(|\.Delete\s*\(|\[System\.IO\.(?:File|Directory)\]::Delete'
+# 1) PowerShell Clear-RecycleBin（含 -Force / -DriveLetter 各变体；引号插词一并查）
+if (($cmdTest -match '(?i)\bClear-RecycleBin\b') -or ($cmdNaked -match '(?i)\bClear-RecycleBin\b')) {
+    Deny-Command '回收站清空不可逆，如需清理请用户手动操作'
+}
+# 2) cleanmgr 磁盘清理（含 /sagerun 等变体，会连带清空回收站）
+if (($cmdTest -match '(?i)\bcleanmgr(?:\.exe)?\b') -or ($cmdNaked -match '(?i)\bcleanmgr(?:\.exe)?\b')) {
+    Deny-Command '回收站清空不可逆，如需清理请用户手动操作'
+}
+# 3) 直接删除回收站存储 $Recycle.Bin（C:\$Recycle.Bin 等任意盘符；删除动词与路径同现即拦，含插词变体）
+if ((($cmdTest -match $reRecycleBinPath) -or ($cmdNaked -match $reRecycleBinPath)) -and (($cmdTest -match $reRecycleBinDelVerb) -or ($cmdNaked -match $reRecycleBinDelVerb))) {
+    Deny-Command '回收站清空不可逆，如需清理请用户手动操作'
 }
 
 # 17) 管道到 shell 执行远程代码（原 ask → deny）

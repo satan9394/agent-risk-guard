@@ -37,6 +37,14 @@ test('B-14 truncate /dev', () => assert.equal(blocked('truncate -s 0 /dev/sda'),
 test('B-14b docker system prune', () => assert.equal(blocked('docker system prune -a --volumes'), true));
 test('B-15 空格混淆 r m（bash 不执行拆分命令名，无害放行）', () => assert.equal(blocked('r   m   -r   f   /'), false));
 test('B-16 变量赋值展开', () => assert.equal(blocked('$x="rm -rf /tmp"; $x'), true));
+// ---- T11/Finding 18：回收站清空（删除链最后一环）----
+test('F18 Clear-RecycleBin -Force', () => assert.equal(blocked('Clear-RecycleBin -Force'), true));
+test('F18 cleanmgr /sagerun', () => assert.equal(blocked('cleanmgr /sagerun:1'), true));
+test('F18 引号插词 Clear-RecycleBin', () => assert.equal(blocked("Clear'-RecycleBin -Force"), true));
+test('F18 rd $Recycle.Bin', () => assert.equal(blocked('rd C:\\$Recycle.Bin'), true));
+test('F18 fs.rmSync $Recycle.Bin', () => assert.equal(blocked("node -e \"fs.rmSync('C:/$Recycle.Bin')\""), true));
+test('FP-F18 Get-ChildItem $Recycle.Bin（查看不拦）', () => assert.equal(blocked('Get-ChildItem C:\\$Recycle.Bin -Force'), false));
+test('FP-F18 explorer $Recycle.Bin（打开不拦）', () => assert.equal(blocked('explorer C:\\$Recycle.Bin'), false));
 test('FP: echo rm 字符串', () => assert.equal(blocked('echo "rm is a command"'), false));
 test('FP: git status', () => assert.equal(blocked('git status'), false));
 test('FP: npm test', () => assert.equal(blocked('npm test'), false));

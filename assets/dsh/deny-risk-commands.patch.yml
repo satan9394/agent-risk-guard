@@ -97,3 +97,9 @@
           - { re: '\[\s*IO\.(?:File|Directory)\s*\]::Delete', reason: '全局铁律：禁止 [IO.File]::Delete 直接删除（R4）' }
           # [P1] docker compose run/exec（现有 docker run/exec 规则之外）
           - { re: '\bdocker\s+compose\s+(?:run|exec)\b', reason: '高危：docker compose 容器内执行（R4）' }
+          # ---- T11/Finding 18（用户实测）：回收站清空绕过缺口——Clear-RecycleBin / cleanmgr / $Recycle.Bin 直删 ----
+          # 拦的是 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响。
+          - { re: '\bClear-RecycleBin\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\bcleanmgr(?:\.exe)?\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b[^|;&\r\n]{0,120}\$recycle\.bin', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\$recycle\.bin[^|;&\r\n]{0,120}\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }

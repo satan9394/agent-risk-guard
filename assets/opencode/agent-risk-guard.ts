@@ -34,6 +34,7 @@ const P = {
   ENCODED_COMMAND_OBFUSCATION: "ENCODED_COMMAND_OBFUSCATION",
   UNPARSEABLE_DESTRUCTIVE: "UNPARSEABLE_DESTRUCTIVE",
   REMOTE_EXECUTION_PIPE: "REMOTE_EXECUTION_PIPE",
+  RECYCLE_BIN_EMPTY: "RECYCLE_BIN_EMPTY",
 } as const
 
 type PolicyId = (typeof P)[keyof typeof P]
@@ -344,6 +345,21 @@ function detectDisk(s: string): Block | null {
   return null
 }
 
+// --- T11/Finding 18：回收站清空检测（用户实测缺口：危险删除被拦但回收站可被清空 = 删除链最后一环）---
+// 拦 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响。
+function detectRecycleBin(s: string): Block | null {
+  const lo = s.toLowerCase()
+  const naked = lo.replace(/['"`]/g, "")
+  if (/\bclear-recyclebin\b/.test(lo) || /\bclear-recyclebin\b/.test(naked) ||
+      /\bcleanmgr(?:\.exe)?\b/.test(lo) || /\bcleanmgr(?:\.exe)?\b/.test(naked))
+    return { policy: P.RECYCLE_BIN_EMPTY, reason: "回收站清空不可逆，如需清理请用户手动操作（Agent 不得代做）。" }
+  const pathHit = /\$recycle\.bin/.test(lo) || /\$recycle\.bin/.test(naked)
+  const verb = /\b(?:remove-item|ri|rm|rmdir|rd|del|erase|unlink|shred|rimraf)\b|\.delete\s*\(|\bfs\.(?:promises\.)?(?:rm|unlink|rmdir)(?:sync)?\s*\(|\[\s*(?:system\.)?io\.(?:file|directory)\s*\]::delete/
+  if (pathHit && (verb.test(lo) || verb.test(naked)))
+    return { policy: P.RECYCLE_BIN_EMPTY, reason: "回收站清空不可逆，如需清理请用户手动操作（Agent 不得代做）。" }
+  return null
+}
+
 // --- Target extraction for protected path checks ---
 function extractTargets(s: string): string[] {
   const toks = s.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []
@@ -381,7 +397,8 @@ function hasDangerousSignal(cmd: string): boolean {
     /\bunlink\b/.test(lo) || /\bgit\s+clean\b/.test(lo) ||
     /\bgit\s+reset\b.*--hard/.test(lo) || /\bformat\b.*[a-z]:/.test(lo) ||
     /\bdiskpart\b/.test(lo) || /\bClear-Disk\b/.test(lo) || /\bdd\b.*of=/.test(lo) ||
-    /\bmkfs\b/.test(lo) || /\bfdisk\b/.test(lo)
+    /\bmkfs\b/.test(lo) || /\bfdisk\b/.test(lo) ||
+    /\bclear-recyclebin\b/.test(lo) || /\bcleanmgr\b/.test(lo)
 }
 
 // --- 管道到 shell 检测（R16 补齐，审计 B-13）：curl|bash / echo|sh / cat|bash 等远程代码执行 ---
@@ -427,7 +444,7 @@ function analyzeCommand(command: string): AR {
     if (rd) return { blocked: true, policy: rd.policy, reason: rd.reason, command }
 
     // Run all detectors
-    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectPipe]
+    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectRecycleBin, detectPipe]
     for (const det of detectors) {
       const r = det(t)
       if (r) {
@@ -546,4 +563,4 @@ const Guard: Plugin = async (ctx) => {
 export default { id: "agent-risk-guard", server: Guard }
 
 // Export internals for testing (not loaded by V1 plugin loader)
-export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectPipe, P }
+export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectRecycleBin, detectPipe, P }

@@ -1,4 +1,4 @@
-﻿hook-bypass-regression.ps1 — Round 8 绕过回归（与 GAN 审查互补，锚定修复后行为）
+hook-bypass-regression.ps1 — Round 8 绕过回归（与 GAN 审查互补，锚定修复后行为）
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\scripts\dangerous-commands.ps1'
 $stdinTmp = Join-Path $env:TEMP 'rg-probe-in.json'
@@ -24,6 +24,11 @@ $cases = @(
   @{ cmd = 'RM -rf /tmp';                  expect = 'deny' },
   # cmd wrap
   @{ cmd = 'cmd /c del /f C:\x\y';         expect = 'deny' },
+  # ---- T11/Finding 18：清空回收站绕过变体 ----
+  @{ cmd = 'CLEAR-RECYCLEBIN -FORCE'; expect = 'deny' },
+  @{ cmd = 'powershell -Command "Clear-RecycleBin"'; expect = 'deny' },
+  @{ cmd = 'Clear-Recycle''Bin -Force'; expect = 'deny' },
+  @{ cmd = 'cleanmgr /verylowdisk'; expect = 'deny' },
   # 正常命令（放行）
   @{ cmd = 'git log';                      expect = 'allow' },
   @{ cmd = 'python main.py';               expect = 'allow' },

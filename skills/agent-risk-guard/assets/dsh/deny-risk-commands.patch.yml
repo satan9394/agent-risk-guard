@@ -1,9 +1,18 @@
 # deny-risk-commands —— DeepSeek Harness pre-execute 门禁规则（下发模板）
-# 来源：实测版（2026-08-22），30 条规则。
+# 来源：本机 ~/.dsh/profiles/web/cordis.patch.yml 实测版（2026-08-22），30 条规则。
 # 用法：把下面这个 insert 块合并进你的 profile 的 cordis.patch.yml（如 ~/.dsh/profiles/<profile>/cordis.patch.yml），
 #       在顶层数组末尾追加即可；改完热加载生效（2026-08 实测，无需重启 dsh web）。
-# 注意：规则为正则，忽略大小写；命中即在 pwsh/bash 工具派发前拒绝命令（tools/pre-execute 门禁），
-#       对全局所有会话/agent 生效。可自行增删规则。
+# 注意：规则为正则，忽略大小写；命中即在 pwsh/bash 工具派发前拒绝命令（tools/pre-execute 门禁）。可自行增删规则。
+#
+# 作用域与 fail 语义（如实声明，GAN-AUDIT-5AGENTS finding 4）：
+#   - 作用域：本规则仅对「加载了本 insert 块所在 cordis.patch.yml 的 profile 会话」生效，
+#     并非对 dsh 全实例/全部 profile 全局生效；其它未加载本 patch 的 profile 不受此规则约束。
+#   - 实现形态：单点依赖 —— 拦截依赖唯一一个 'deny-risk-commands' insert 插件，
+#     须该 profile 安装的 dsh 版本内置该插件才有拦截能力；本文件无法自证插件存在。
+#   - fail 语义：无 fail-closed 开关、无加载/解析期的自检；插件缺失、pacth 解析失败、
+#     或 rules 被同 profile 其它层覆盖时，会在本文件无感知的情况下静默失效（fail-open）。
+#   - 使用约束：接入方必须在 CI/医嘱中验证插件存在且规则被加载（如 doctor 4 PASS），
+#     不可把本文件当作独立的 fail-closed 安全边界。
 
 - insert:
     - id: deny-risk-commands
@@ -58,3 +67,39 @@
           - { re: '\bperl\s+-e\s+[''"][\s\S]*?\b(?:unlink|rmdir)\b', reason: '高危：解释器 one-liner 内嵌删除（perl -e，R3）' }
           - { re: '\bcmd(?:\.exe)?\s+\/c\b[^|;&]*\b(del\s|rmdir\b|rd\s|erase\b)', reason: '高危：cmd /c 内嵌删除（R3）' }
           - { re: '\b(pwsh|powershell)\s+-(?:command|c)\b[^|;&]*[''"][\s\S]*?\b(?:remove-item|rm\s+-rf|del\s|rmdir\s*\/s)\b', reason: '高危：pwsh/powershell -Command 内嵌删除（R3）' }
+          # ---- R4 GAN 修复：命令拆拼/变量拼接/转义插字/base64 管道 + 管道/xargs/-execdir + 工具名盲区 ----
+          # [P0] 反引号/反斜杠插字拆拼命令名：r`m / r\m / R`emove-Item / d`el / rmd`ir
+          - { re: '\bR[`\\]?e[`\\]?m[`\\]?o[`\\]?v[`\\]?e[`\\]?-[`\\]?I[`\\]?t[`\\]?e[`\\]?m\b', reason: '全局铁律：屏蔽反引号/反斜杠插字的 Remove-Item 拆拼（R4）' }
+          - { re: '\br[`\\]?m\b', reason: '全局铁律：屏蔽反引号/反斜杠插字的 rm 拆拼（R4）' }
+          - { re: '\bd[`\\]?e[`\\]?l\b', reason: '全局铁律：屏蔽反引号/反斜杠插字的 del 拆拼（R4）' }
+          - { re: '\br[`\\]?m[`\\]?d[`\\]?i[`\\]?r\b', reason: '全局铁律：屏蔽反引号/反斜杠插字的 rmdir 拆拼（R4）' }
+          # [P0] base64 解码后管道投递解释器（echo ... | base64 -d | sh/bash）
+          - { re: '\|\s*base64\s+-[dD]\b[^|;&\n]*\|\s*(?:sh|bash|zsh|fish)\b', reason: '高危：base64 解码载荷管道投递解释器执行（R4）' }
+          # [P0] iex / Invoke-Expression 内联拼接删除命令
+          - { re: '\b(?:iex|invoke-expression)\b[^|;&\n]*(?:remove-item|rmdir|shred|erase|delete|\brm\b)', reason: '高危：iex 内联拼接删除命令（R4）' }
+          # [P0] 变量字符串拼接组装命令名后 & 调用（$c=''Remo'+'ve-Item''; & $c）
+          - { re: '\$[A-Za-z_]\w*\s*=\s*[''"][^''"\r\n]*[''"]\s*\+\s*[''"][^''"\r\n]*[''"]\s*;?\s*&\s*\$', reason: '高危：字符串拼接组装命令后 & 调用（R4）' }
+          # [P0] 变量直接持有删除命令名后 & 调用（$x=''rm''; & $x）
+          - { re: '\$[A-Za-z_]\w*\s*=\s*[''"]\s*(?:remove-item|rmdir|shred|erase|delete|\brm\b)\s*[''"]\s*;?\s*&\s*\$', reason: '高危：变量持有删除命令后 & 调用（R4）' }
+          # [P0] xargs 投递删除（find | xargs rm / xargs -0 rm）
+          - { re: '\bxargs\b[^|;&\n]*\b(?:rm|rmdir|shred|unlink|dd|mkfs|mv)\b', reason: '高危：xargs 投递删除命令（R4）' }
+          # [P0] find -execdir/-okdir 删除（补 -exec 之外的词边界变体）
+          - { re: '\bfind\s+[^|;&]*\s-(?:execdir|ok|okdir)\b[^|;&]*\b(?:rm|rmdir|shred|unlink|mv)\b', reason: '高危：find -execdir/-okdir 删除（R4）' }
+          # [P1] 工具名盲区：git rm（含 git rm -r 递归）
+          - { re: '\bgit\s+rm\b', reason: '高危：git rm 删除文件/目录（R4）' }
+          # [P1] 工具名盲区：git update-ref / filter-branch
+          - { re: '\bgit\s+(?:update-ref|filter-branch)\b', reason: '高危：git update-ref/filter-branch 破坏引用/历史（R4）' }
+          # [P1] 磁盘低层写操作 dd/mkfs/fdisk/parted/format
+          - { re: '\b(?:dd|mkfs(?:\.\w+)?|fdisk|parted|format)\s', reason: '高危：磁盘低层写操作 dd/mkfs/fdisk/parted/format（R4）' }
+          # [P1] Node fs.promises 删除（fs.promises.rm/unlink/rmdir）
+          - { re: '\bfs\.promises\.(?:rm(?:Sync)?|unlink(?:Sync)?|rmdir(?:Sync)?)\s*\(', reason: '全局铁律：禁止 Node fs.promises 永久删除（R4）' }
+          # [P1] [IO.File]::Delete / [IO.Directory]::Delete（无需 System.IO. 前缀）
+          - { re: '\[\s*IO\.(?:File|Directory)\s*\]::Delete', reason: '全局铁律：禁止 [IO.File]::Delete 直接删除（R4）' }
+          # [P1] docker compose run/exec（现有 docker run/exec 规则之外）
+          - { re: '\bdocker\s+compose\s+(?:run|exec)\b', reason: '高危：docker compose 容器内执行（R4）' }
+          # ---- T11/Finding 18（用户实测）：回收站清空绕过缺口——Clear-RecycleBin / cleanmgr / $Recycle.Bin 直删 ----
+          # 拦的是 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响。
+          - { re: '\bClear-RecycleBin\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\bcleanmgr(?:\.exe)?\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b[^|;&\r\n]{0,120}\$recycle\.bin', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          - { re: '\$recycle\.bin[^|;&\r\n]{0,120}\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }

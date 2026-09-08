@@ -84,6 +84,12 @@ export function defaultDenyRules(): GuardRules {
     '\\[\\s*IO\\.(?:File|Directory)\\s*\\]::Delete',
     // [P1] docker compose run/exec（现有 docker run/exec 规则之外）
     '\\bdocker\\s+compose\\s+(?:run|exec)\\b',
+    // T11/Finding 18（用户实测）：回收站清空绕过缺口——Clear-RecycleBin / cleanmgr / $Recycle.Bin 直删
+    // 拦的是 Agent 的工具调用；用户手动清空回收站是正常操作，不受影响。
+    '\\bClear-RecycleBin\\b',
+    '\\bcleanmgr(?:\\.exe)?\\b',
+    '\\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\\b[^|;&\\r\\n]{0,120}\\$recycle\\.bin',
+    '\\$recycle\\.bin[^|;&\\r\\n]{0,120}\\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\\b',
   ];
 }
 

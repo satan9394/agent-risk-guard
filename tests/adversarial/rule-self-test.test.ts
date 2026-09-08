@@ -95,6 +95,27 @@ const CASES: RuleCase[] = [
     positive: ['pwsh -Command "Remove-Item C:\\temp\\x"', 'powershell -c "rm -rf C:\\temp"'],
     negative: ['pwsh -Command "Get-Process"', 'pwsh -c "ls"', 'pwsh -NoProfile -Command "Get-Date"'],
   },
+  // ---- T11/Finding 18：回收站清空（Clear-RecycleBin / cleanmgr / $Recycle.Bin 直删）----
+  {
+    ruleFragment: 'Clear-RecycleBin',
+    positive: ['Clear-RecycleBin -Force', 'Clear-RecycleBin -DriveLetter C', 'powershell -c "Clear-RecycleBin"'],
+    negative: ['Get-ChildItem C:\\$Recycle.Bin -Force', 'explorer C:\\$Recycle.Bin', 'git status'],
+  },
+  {
+    ruleFragment: 'cleanmgr(?:\\.exe)?',
+    positive: ['cleanmgr /sagerun:1', 'cleanmgr.exe /d C:', 'cleanmgr /verylowdisk'],
+    negative: ['git status', 'npm run clean', 'Get-Process', 'chkdsk C: /f'],
+  },
+  {
+    ruleFragment: 'remove-item|del|erase|rd|rmdir',
+    positive: ['rm C:\\$Recycle.Bin', 'Remove-Item "C:\\$Recycle.Bin"', 'del C:\\$Recycle.Bin\\S-1-5-*'],
+    negative: ['Get-ChildItem C:\\$Recycle.Bin -Force', 'explorer C:\\$Recycle.Bin'],
+  },
+  {
+    ruleFragment: 'recycle\\.bin[^|;&',
+    positive: ['C:\\$Recycle.Bin rd', 'dir C:\\$Recycle.Bin then del it'],
+    negative: ['Get-ChildItem C:\\$Recycle.Bin -Force', 'explorer C:\\$Recycle.Bin'],
+  },
 ];
 
 test('R3: 每条规则 positive 样例必须命中（防过窄漏拦）', () => {
