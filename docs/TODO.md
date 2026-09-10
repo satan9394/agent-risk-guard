@@ -5,14 +5,14 @@
 
 ## 待用户确认（阻塞中，2026-08-29 R3 生态融合）
 
-- [ ] **生产 skill 目录同步（R3）**：生产 `C:\Users\Satanchen\.claude\skills\custom\agent-risk-guard-audit\` 的 `assets/dsh/deny-risk-commands.patch.yml` 35 → 47 条（解释器 one-liner / git 破坏清单 / Windows wrapper），同步仓库最新 patch 与文档
-- [ ] **DSH 门禁同步（R3）**：`~/.dsh/profiles/web/cordis.patch.yml` 的 deny-risk-commands 35 → 47 条，让新规则在 pre-execute 门禁真实生效（当前生产仍是旧版 35 条）
+- [x] **生产 skill 目录同步（R3）**：生产 `C:\Users\Satanchen\.claude\skills\custom\agent-risk-guard-audit\` 的 `assets/dsh/deny-risk-commands.patch.yml` 35 → 47 条（解释器 one-liner / git 破坏清单 / Windows wrapper），同步仓库最新 patch 与文档（2026-09-10 已同步至 69 条新版，四处副本哈希一致）
+- [x] **DSH 门禁同步（R3）**：`~/.dsh/profiles/web/cordis.patch.yml` 的 deny-risk-commands 35 → 47 条，让新规则在 pre-execute 门禁真实生效（2026-09-10 已升至 69 条含 dd/format 修订，热加载生效）
 
 ## 已授权可执行（待安排）
 
 - [x] **GitHub Release 页面**：v0.2.0（2026-08-21 补建，Pre-release）与 v0.2.1（ACS Schema Conformance Patch，Pre-release）已创建；`v1.0.0` 仍只有 git tag，无 Release 页面（建议带 CHANGELOG 摘要发布）
 - [ ] **macOS / Linux trash 实测**：trash 包 macOS/Linux 分支为 D1（文档级），待真实环境验证
-- [ ] **Codex D3 实测**：codex 额度恢复后做真实会话删除拦截验证
+- [x] **Codex D3 实测**：2026-09-07 CLI 真实会话 git reset 拦截 PASS；2026-09-10 用户语音会话实测 Remove-Item 永久删除被 PreToolUse hook 明确拦截（文件保留），删除类 D3 证据链闭合（已补录 compatibility.json）
 
 ## v0.2.0 遗留（下一阶段，见 docs/devlog-2026-09-05-v0.2.0.md）
 

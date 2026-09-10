@@ -270,6 +270,20 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。v0.3.0 对 5 Agent 生产拦截做全量对抗审查（workflow fan-out 独立判别器），产出 17 findings（P0×10 / P1×6 / P2×1）——大小写变体、fail-open、落盘执行链、引号/反引号插词、`bash -xec` 解包、`arm` 误排除、`os.system` 正则错位、`-EncodedCommand` base64、xargs/-execdir、git 单文件 restore 等——**全部修复并复验**（见 [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md)）。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
 - 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 312/312 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
 
+## 生产接线巡检（日常治理）
+
+历史教训：claude-code `settings.json` 的 PreToolUse 曾多次被**外部还原丢失**（hooks 只剩 Setup、bypassPermissions），防护静默失效（fail-open）；dsh 升级（0.1.1 → 0.1.5-rc.1）后规则修订也出现过「生产已改、仓库未同步」的漂移。提供只读巡检脚本，把「接线在位 + 单一规则源 hash 一致」立为日常动作：
+
+```powershell
+# 只读巡检（缺失/漂移时退出码非 0，输出逐项 [OK]/[!!]）
+pwsh scripts/riskguard-wiring-check.ps1
+
+# 巡检 + 自愈（从仓库单源恢复 ps1 / opencode / dsh patch；claude-code settings.json 合并式补回 PreToolUse；恢复前自动备份到 ~/.risk-guard-backup/）
+pwsh scripts/riskguard-wiring-check.ps1 -Fix
+```
+
+检查范围：ps1 三处生产（claude-code / codex / agy）← 仓库 `assets/hooks/dangerous-commands.ps1`；opencode 生产插件 ← `assets/opencode/agent-risk-guard.ts`；dsh web patch ← `assets/dsh/deny-risk-commands.patch.yml`（headless 为组合文件，仅校验规则数）；以及 cc settings.json / codex hooks.json+config.toml / agy hooks.json 的接线在位。建议每周运行一次，或接入计划任务。
+
 ## 社区与协议
 
 - **License**：[MIT](LICENSE) — Copyright (c) 2026 satan9394
