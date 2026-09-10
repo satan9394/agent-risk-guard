@@ -71,6 +71,15 @@ jobs:
           python3 --version
           git --version
 
+      # 防御：Windows 作者环境的文件可能在 git 中无执行位（100644）；
+      # checkout 后显式加回，保证 "$HOOK" 直接执行（shebang）可用。
+      - name: Ensure hook and suites are executable
+        run: |
+          chmod +x skills/agent-risk-guard/scripts/dangerous-commands.sh
+          chmod +x skills/agent-risk-guard/tests/sh-hook-test.sh
+          chmod +x skills/agent-risk-guard/tests/sh-audit-edge.sh
+          chmod +x skills/agent-risk-guard/tests/sh-audit-bypass.sh
+
       - name: bash syntax check for hook and suites
         run: |
           bash -n skills/agent-risk-guard/scripts/dangerous-commands.sh
