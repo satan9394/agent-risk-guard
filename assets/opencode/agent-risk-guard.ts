@@ -288,6 +288,15 @@ function detectNode(s: string): Block | null {
   return null
 }
 
+// 2026-09-10 跨平台测试补缺口：Perl/Ruby one-liner 删除（-e/-E 参数内的 unlink/rmdir/File.delete）
+function detectPerlRuby(s: string): Block | null {
+  const lo = s.toLowerCase()
+  if (/\b(?:perl|ruby)\s+-(?:e|e)\s+/.test(lo) &&
+      (/\bunlink\b/.test(lo) || /\brmdir\b/.test(lo) || /\bshred\b/.test(lo) || /file\s*::\s*delete/.test(lo)))
+    return { policy: P.PERMANENT_DELETE_POSIX, reason: "Permanent file deletion via Perl/Ruby one-liner is disabled." }
+  return null
+}
+
 function detectGit(s: string): Block | null {
   const lo = s.toLowerCase()
   if (/^git\s+clean\b/.test(lo))
@@ -316,6 +325,9 @@ function detectGit(s: string): Block | null {
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git checkout -- / restore discards file changes." }
   if (/\bgit\s+worktree\s+remove\s+--force/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git worktree remove --force discards changes." }
+  // 2026-09-10 跨平台测试补缺口：git rm（永久删除已跟踪文件）
+  if (/\bgit\s+rm\b/.test(lo))
+    return { policy: P.PERMANENT_DELETE_POSIX, reason: "git rm permanently removes tracked files." }
   return null
 }
 
@@ -398,7 +410,8 @@ function hasDangerousSignal(cmd: string): boolean {
     /\bgit\s+reset\b.*--hard/.test(lo) || /\bformat\b.*[a-z]:/.test(lo) ||
     /\bdiskpart\b/.test(lo) || /\bClear-Disk\b/.test(lo) || /\bdd\b.*of=/.test(lo) ||
     /\bmkfs\b/.test(lo) || /\bfdisk\b/.test(lo) ||
-    /\bclear-recyclebin\b/.test(lo) || /\bcleanmgr\b/.test(lo)
+    /\bclear-recyclebin\b/.test(lo) || /\bcleanmgr\b/.test(lo) ||
+    /\b(?:perl|ruby)\s+-(?:e|e)\s+/.test(lo) || /\bgit\s+rm\b/.test(lo)
 }
 
 // --- 管道到 shell 检测（R16 补齐，审计 B-13）：curl|bash / echo|sh / cat|bash 等远程代码执行 ---
@@ -444,7 +457,7 @@ function analyzeCommand(command: string): AR {
     if (rd) return { blocked: true, policy: rd.policy, reason: rd.reason, command }
 
     // Run all detectors
-    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectRecycleBin, detectPipe]
+    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe]
     for (const det of detectors) {
       const r = det(t)
       if (r) {
@@ -563,4 +576,4 @@ const Guard: Plugin = async (ctx) => {
 export default { id: "agent-risk-guard", server: Guard }
 
 // Export internals for testing (not loaded by V1 plugin loader)
-export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectGit, detectDisk, detectRecycleBin, detectPipe, P }
+export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, P }

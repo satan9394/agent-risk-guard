@@ -237,6 +237,12 @@ if ($cmd -match '\.Delete\s*\(') {
     Deny-Command '.NET 实例方法 Delete() 是永久删除（不进回收站），请改用回收站命令'
 }
 
+# 16b3) Perl/Ruby 解释器 one-liner 删除类（2026-09-10 补：unlink 段首锚定匹配不到 -e/-E 参数中段，
+#        Python 有 os.remove 类、Node 有 fs.* 类兜底，perl/ruby 原先无任何模式）
+if ($cmd -match '(?i)\b(?:perl|ruby)\s+-(?:e|E)\s+["''][^"'']*(?:unlink|rmdir|shred|File::delete)\b') {
+    Deny-Command 'Perl/Ruby one-liner 永久删除（unlink/rmdir 等），请改用回收站命令'
+}
+
 # 16c) 引号插词绕过防护（R8＋HOOK-AUDIT P0-09：rm''-rf / rm"" -rf 任意引号组合；R25 排除 help/version）
 if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*rm\s*["'']*\s*-(?!-?h(?:elp)?\b|version\b|V\b)[a-z]+') {
     Deny-Command '引号插词的 rm 变体是永久删除（不进回收站），请改用回收站命令'
@@ -347,7 +353,11 @@ if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)
 
 # 30) git 破坏性整类（HOOK-AUDIT P0-03 + R3：clean/reset/checkout --/restore/switch -C/worktree rm/stash drop）
 # R4-02 修复：switch 用 -cmatch 精确大写 -C（-c 创建分支是安全操作，不得误拦）
-if ($cmd -match '(?i)\bgit\s+(?:clean\s+-f|reset\s+--hard|checkout\s+--\s*\.|restore\s*\.\s*$|restore\s+--staged)') {
+# 2026-09-10 跨平台测试补缺口：checkout -- <file>、restore <file>（原只匹配整目录形态）；
+# 误伤防线：git restore --help/--version 放行
+if ($cmd -match '(?i)\bgit\s+restore\s+--(?:help|version)\b') {
+    # 帮助/版本 → 放行
+} elseif ($cmd -match '(?i)\bgit\s+(?:clean\s+-f|reset\s+--hard|checkout\s+--(?:\s|$)|restore(?:\s|$))') {
     Deny-Command 'git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止'
 }
 if ($cmd -cmatch '\bgit\s+switch\s+-C\b') {

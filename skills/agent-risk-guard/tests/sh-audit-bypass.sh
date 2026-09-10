@@ -2,6 +2,8 @@
 # sh-audit-bypass.sh — 绕过/误伤/差距的专项审计用例
 # 用法：bash sh-audit-bypass.sh  <path-to-hook.sh>
 set -u
+# 跨平台编码一致性（2026-09-10）：Windows python 默认按 GBK 解码 UTF-8，全角用例在 Git Bash 失真；强制 UTF-8 模式
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 HOOK="${1:-$(dirname "$0")/../scripts/dangerous-commands.sh}"
 pass=0
 fail=0
@@ -214,6 +216,14 @@ run_case "python -c \"print('docs: shutil.rmtree mentioned')\"" allow 'fp-python
 # git safe operations
 run_case 'git checkout feature' allow 'fp-git-checkout-branch'
 run_case 'git checkout -b feature' allow 'fp-git-checkout-b'
+# 2026-09-10 跨平台测试补回归：git 文件形态漏拦（原只匹配整目录）
+run_case 'git checkout -- f' deny 'git-checkout-file'
+run_case 'git restore f' deny 'git-restore-file'
+run_case 'git rm f' deny 'git-rm-file'
+run_case 'git restore --help' allow 'fp-git-restore-help'
+# perl/ruby one-liner 删除（2026-09-10 补）
+run_case "perl -e 'unlink \"x\"'" deny 'perl-unlink-oneliner'
+run_case "ruby -e 'File.delete(\"x\")'" deny 'ruby-file-delete-oneliner'
 # rm -- (end of options)
 run_case 'rm -- /tmp/safe' deny 'fp-rm-end-options'
 # find without -delete

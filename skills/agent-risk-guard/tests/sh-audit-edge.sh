@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # sh-audit-edge.sh — 边界/补充审计用例
 set -u
+# 跨平台编码一致性（2026-09-10）：Windows python 默认按 GBK 解码 UTF-8，全角用例在 Git Bash 失真；强制 UTF-8 模式
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 HOOK="${1:-$(dirname "$0")/../scripts/dangerous-commands.sh}"
 pass=0; fail=0; total=0
 

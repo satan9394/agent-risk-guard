@@ -18,12 +18,20 @@ set -euo pipefail
 inputJson=$(cat 2>/dev/null || true)
 if [ -z "$inputJson" ]; then exit 0; fi
 
+# P0 编码修复（2026-09-10 WSL/Git Bash 跨平台测试发现）：
+# Git Bash 的 python3 常为 Windows 原生 build（Anaconda / msys ucrt），stdin 默认按 ANSI 代码页
+# （GBK/cp936）解码 UTF-8，全角字符进管道即乱码 → NFKC 归一化失效 → 全角危险命令被放行。
+# 强制 UTF-8 模式（对 Linux 无副作用）；并在 python3 内 reconfigure stdin/stdout 兜底。
+export PYTHONUTF8=1
+
 # ---- 提取 JSON 字段（优先 python3，fallback grep）----
 # python3 正确处理转义引号；grep 方案在命令含 \" 时会截断（已实测 bug）
 extract_field() {
     local field="$1"
     if command -v python3 >/dev/null 2>&1; then
         printf '%s' "$inputJson" | python3 -c 'import sys,json
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
 try:
     d=json.load(sys.stdin)
     print(d.get(sys.argv[1], ""), end="")
@@ -43,21 +51,31 @@ case "$tool_name" in
         exit 0 ;;
 esac
 
-cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
+# fail-open 修复（2026-09-10 测试发现）：set -euo pipefail 下 python3 缺失时，命令替换失败会
+# 直接中止脚本（exit 127、无决策输出 → 静默放行），下方 grep 回退是死代码。改用显式 || 回退。
+cmd=""
+if command -v python3 >/dev/null 2>&1; then
+    cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
 try:
     d=json.load(sys.stdin)
     print(d.get("tool_input",{}).get("command",""), end="")
 except Exception:
-    pass' 2>/dev/null)
+    pass' 2>/dev/null) || true
+fi
 if [ -z "$cmd" ]; then
     cmd=$(echo "$inputJson" | grep -o '"command"\s*:\s*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/')
 fi
 if [ -z "$cmd" ]; then exit 0; fi
 
 # R15 修复（对齐 .ps1 与 core normalizeFullWidth）：NFKC 归一化（全角 ｒｍ → rm），防 Unicode 绕过
+# 2026-09-10：加 || true 防 python3 缺失时 fail-open 中止；reconfigure 兜底 GBK 平台
 if command -v python3 >/dev/null 2>&1; then
     cmd=$(printf '%s' "$cmd" | python3 -c 'import sys,unicodedata
-print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")')
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")') || true
 fi
 
 # ---- 纯注释行放行（对齐 .ps1） ----
@@ -150,9 +168,21 @@ if printf '%s' "$cmd" | grep -qE 'fs\.(rmSync|unlinkSync|rmdirSync|rm\(|unlink\(
     deny_command "Node.js permanent deletion detected. Use trash command."
 fi
 
+# 6b) Perl/Ruby 解释器 one-liner 删除类（2026-09-10 补：unlink 段首锚定匹配不到 -e/-E 参数中段）
+if printf '%s' "$cmd" | grep -qE '(perl|ruby)[[:space:]]+-[eE][[:space:]]+["'"'"'][^"'"'"']*(unlink|rmdir|shred|File::delete|rm[[:space:]]*-rf)'; then
+    deny_command "Perl/Ruby one-liner permanent deletion detected."
+fi
+
 # 7) Git 破坏性操作整类（对齐 .ps1 30 + R3：switch -C / worktree / force-with-lease 放宽）
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--[[:space:]]*\.|restore[[:space:]]*\.$|restore[[:space:]]+--staged|switch[[:space:]]+-C)'; then
+# 2026-09-10 跨平台测试补缺口：checkout -- <file>、restore <file>（原只匹配整目录形态）、git rm
+# 误伤防线：git restore --help/-h/--version 放行（restore 后跟 --help 不是破坏性操作）
+if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+restore[[:space:]]+--(help|version)'; then
+    :
+elif printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--([[:space:]]|$)|restore([[:space:]]|$)|switch[[:space:]]+-C)'; then
     deny_command "git irreversible operation (clean/reset/checkout/restore/switch -C) blocked."
+fi
+if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+rm([[:space:]]|$)'; then
+    deny_command "git rm permanently deletes tracked files (no recycle bin)."
 fi
 if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+worktree[[:space:]]+remove[[:space:]]+--force'; then
     deny_command "git worktree remove --force discards changes."

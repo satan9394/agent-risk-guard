@@ -2,6 +2,8 @@
 # sh-hook-test.sh — dangerous-commands.sh（Linux hook）规则验证（对齐 ps1 测试集）
 # 用法：bash sh-hook-test.sh  <path-to-hook.sh>
 set -u
+# 跨平台编码一致性（2026-09-10）：Windows python 默认按 GBK 解码 UTF-8，全角用例在 Git Bash 失真；强制 UTF-8 模式
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 HOOK="${1:-$(dirname "$0")/../scripts/dangerous-commands.sh}"
 pass=0
 total=0
@@ -50,6 +52,15 @@ run_case 'git worktree remove --force' deny
 run_case 'wmic shadowcopy delete' deny
 run_case 'git gc --prune=now --aggressive' deny
 run_case 'git reflog expire --expire=now --all' deny
+# 2026-09-10 跨平台测试补回归：git 文件形态 / git rm / perl-ruby one-liner
+run_case 'git checkout -- f' deny
+run_case 'git restore f' deny
+run_case 'git rm f' deny
+run_case 'git rm --cached f' deny
+run_case 'git restore --help' allow
+run_case 'git checkout --help' allow
+run_case "perl -e 'unlink \"x\"'" deny
+run_case "ruby -e 'File.delete(\"x\")'" deny
 # 磁盘
 run_case 'mkfs.ext4 /dev/sda1' deny
 run_case 'dd if=/dev/zero of=/dev/sda' deny
