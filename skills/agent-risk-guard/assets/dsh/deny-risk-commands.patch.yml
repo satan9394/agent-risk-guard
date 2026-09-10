@@ -89,8 +89,15 @@
           - { re: '\bgit\s+rm\b', reason: '高危：git rm 删除文件/目录（R4）' }
           # [P1] 工具名盲区：git update-ref / filter-branch
           - { re: '\bgit\s+(?:update-ref|filter-branch)\b', reason: '高危：git update-ref/filter-branch 破坏引用/历史（R4）' }
-          # [P1] 磁盘低层写操作 dd/mkfs/fdisk/parted/format
-          - { re: '\b(?:dd|mkfs(?:\.\w+)?|fdisk|parted|format)\s', reason: '高危：磁盘低层写操作 dd/mkfs/fdisk/parted/format（R4）' }
+          # [P1] 磁盘低层写操作。原写法 '\b(?:dd|mkfs|fdisk|parted|format)\s' 把裸单词当命令，
+          #      会误伤 -Format 参数与日期格式里的 dd（如 -Format "yyyy/MM/dd HH:mm"）。
+          #      dd 改为要求 if=/of= 操作数（覆盖 sudo dd / 管道 dd 等常见危险形态）；
+          #      代价：`dd < /dev/zero > /dev/sda` 这类纯重定向写法不再命中，属有意取舍。
+          - { re: '\bdd\s+[^|;&\n]*\b(?:if|of)=', reason: '高危：磁盘低层写操作 dd（R4 修订 2026-09-10：要求 if=/of=，不再误伤日期格式）' }
+          - { re: '\b(?:mkfs(?:\.\w+)?|fdisk|parted)\s', reason: '高危：磁盘低层写操作 mkfs/fdisk/parted（R4）' }
+          # [P1] format 单列：必须带盘符（format C: / format /q D: / format.com C:），
+          #      不再匹配裸 format 单词——原写法会误伤 -Format 参数（Get-Date -Format 等常见排版调用）
+          - { re: '\bformat(?:\.com|\.exe)?\s+(?:/[^\s]+\s+)*[A-Za-z]:', reason: '高危：格式化磁盘分区 format X:（R4 修订 2026-09-10：要求盘符，不再误伤 -Format 参数）' }
           # [P1] Node fs.promises 删除（fs.promises.rm/unlink/rmdir）
           - { re: '\bfs\.promises\.(?:rm(?:Sync)?|unlink(?:Sync)?|rmdir(?:Sync)?)\s*\(', reason: '全局铁律：禁止 Node fs.promises 永久删除（R4）' }
           # [P1] [IO.File]::Delete / [IO.Directory]::Delete（无需 System.IO. 前缀）

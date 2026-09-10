@@ -76,8 +76,11 @@ export function defaultDenyRules(): GuardRules {
     // [P1] 工具名盲区：git rm / git update-ref / filter-branch
     '\\bgit\\s+rm\\b',
     '\\bgit\\s+(?:update-ref|filter-branch)\\b',
-    // [P1] 磁盘低层写操作 dd/mkfs/fdisk/parted/format
-    '\\b(?:dd|mkfs(?:\\.\\w+)?|fdisk|parted|format)\\s',
+    // [P1] 磁盘低层写操作（对齐 assets/dsh/deny-risk-commands.patch.yml R4 修订 2026-09-10：
+    //       dd 要求 if=/of= 操作数、format 要求盘符，避免误伤 -Format 参数与日期里的 dd）
+    '\\bdd\\s+[^|;&\\n]*\\b(?:if|of)=',
+    '\\b(?:mkfs(?:\\.\\w+)?|fdisk|parted)\\s',
+    '\\bformat(?:\\.com|\\.exe)?\\s+(?:/[^\\s]+\\s+)*[A-Za-z]:',
     // [P1] Node fs.promises 删除（fs.promises.rm/unlink/rmdir）
     '\\bfs\\.promises\\.(?:rm(?:Sync)?|unlink(?:Sync)?|rmdir(?:Sync)?)\\s*\\(',
     // [P1] [IO.File]::Delete / [IO.Directory]::Delete（无需 System.IO. 前缀）

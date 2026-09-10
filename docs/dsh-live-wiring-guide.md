@@ -5,7 +5,7 @@
 
 ## 前置确认（本机 2026-08-24 实测）
 
-- DSH CLI：`D:\Technology_application\NVM_Windows\nodejs\dsh.cmd`（v0.1.1-rc.1）
+- DSH CLI：`D:\Technology_application\NVM_Windows\nodejs\dsh.cmd`（v0.1.5-rc.1，2026-09-10 更新；deny-risk-commands 插件现位于 `~/.dsh/profiles/web/node_modules/deny-risk-commands/`）
 - profile：`--profile web`，patch 文件 `~/.dsh/profiles/web/cordis.patch.yml`
 - 现有门禁：`deny-risk-commands`（30 条正则，pre-execute 瀑布最前段）
 - 关键事实：**pre-execute 瀑布先到先得**——deny-risk-commands 返回 deny 后
