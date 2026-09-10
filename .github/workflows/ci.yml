@@ -52,3 +52,37 @@ jobs:
           cd "$ART" && sha256sum -c SHA256SUMS.txt
 
   # ps1 / sh hook 与回收站 D3 实测仅 Windows + 本机环境可跑，保持本地 test-all.ps1
+
+  # sh（Linux/macOS）hook 跨平台验证：GitHub macOS runner 即真 Mac（BSD 工具链），
+  # Ubuntu runner 覆盖 GNU 工具链；2026-09-10 起把 WSL/Git Bash 本地实测固化为 CI。
+  sh-hook:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
+          uname -a
+          bash --version | head -1
+          python3 --version
+          git --version
+
+      - name: bash syntax check for hook and suites
+        run: |
+          bash -n skills/agent-risk-guard/scripts/dangerous-commands.sh
+          bash -n skills/agent-risk-guard/tests/sh-hook-test.sh
+          bash -n skills/agent-risk-guard/tests/sh-audit-edge.sh
+          bash -n skills/agent-risk-guard/tests/sh-audit-bypass.sh
+
+      - name: Run sh hook suite 1 (main rules)
+        run: bash skills/agent-risk-guard/tests/sh-hook-test.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
+
+      - name: Run sh hook suite 2 (edge audit)
+        run: bash skills/agent-risk-guard/tests/sh-audit-edge.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
+
+      - name: Run sh hook suite 3 (bypass / false-positive audit)
+        run: bash skills/agent-risk-guard/tests/sh-audit-bypass.sh skills/agent-risk-guard/scripts/dangerous-commands.sh

@@ -38,7 +38,7 @@ try:
 except Exception:
     pass' "$field" 2>/dev/null && return 0
     fi
-    echo "$inputJson" | grep -o "\"$field\"\s*:\s*\"[^\"]*\"" | head -1 | sed 's/.*"\([^"]*\)"/\1/'
+    echo "$inputJson" | grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"\([^"]*\)"/\1/'
     return 0
 }
 
@@ -65,7 +65,7 @@ except Exception:
     pass' 2>/dev/null) || true
 fi
 if [ -z "$cmd" ]; then
-    cmd=$(echo "$inputJson" | grep -o '"command"\s*:\s*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/')
+    cmd=$(echo "$inputJson" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/')
 fi
 if [ -z "$cmd" ]; then exit 0; fi
 
@@ -125,7 +125,7 @@ if printf '%s' "$cmdtest" | grep -qE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; t
 fi
 
 # 1b) PowerShell 删除类（R15 补齐：Remove-Item/del/erase，-i 大小写不敏感对齐 .ps1；R23 加 Clear-Content/.Delete；R25 加 ri/rd）
-if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}Remove-Item|${CMD_SEG}del([[:space:]]|-)|${CMD_SEG}erase([[:space:]]|-)|${CMD_SEG}ri([[:space:]]|-)|${CMD_SEG}rd([[:space:]]|-)|${CMD_SEG}rmdir([[:space:]]|-)|Clear-Content|\.Delete\s*\("; then
+if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}Remove-Item|${CMD_SEG}del([[:space:]]|-)|${CMD_SEG}erase([[:space:]]|-)|${CMD_SEG}ri([[:space:]]|-)|${CMD_SEG}rd([[:space:]]|-)|${CMD_SEG}rmdir([[:space:]]|-)|Clear-Content|\.Delete[[:space:]]*\("; then
     deny_command "PowerShell/CMD permanent deletion (Remove-Item/del/erase/ri/rd/rmdir/Clear-Content/.Delete). Use trash command."
 fi
 
