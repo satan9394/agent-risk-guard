@@ -1,7 +1,7 @@
 # PRODUCT_STATE — agent-risk-guard
 
-- 更新：2026-09-11 · Orchestrator Round 17（G4 切片闭环）
-- 状态机：AUDIT ✅ → SYNTHESIS ✅ → ROADMAP ✅ → SLICE ✅ → IMPLEMENT ✅ → EVALUATE ✅(ACCEPT) → FIX（无需，验收直接通过）
+- 更新：2026-09-11 · Orchestrator Round 19（切片 #3 = G2 残余 已闭环）
+- 状态机：切片 #1（G4）✅ → 切片 #2（G1+G7）✅ → 切片 #3（G2 残余）✅ ACCEPT（**验收由编排器代执行，见下**）
 
 ## 当前成熟度
 v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 17 GAN findings 修复 + 单一规则源纪律），
@@ -19,12 +19,37 @@ v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 
 5. **IMPLEMENTATION_BRIEF_G4** 落盘；Implementer 已派发（后台 4efc2bd6）
 
 ## 已解决问题（本轮）
+**G2 残余 — doctor 验证深度（P0）已闭环，验收 ACCEPT**（本轮，改动待提交）：
+- **dsh**：子串匹配 → 「规则数 vs 仓库单源条数」比对；条数不足 → `WARN`（不 FAIL、exitCode 仍 0）
+- **claude/codex**：新增「已装 hook 脚本 vs 仓库单源」SHA256 新鲜度；不一致 → `WARN`，且**不降级、实弹 self-test 未削弱**
+- **单源缺失** → 降级"未校验"（不 FAIL、不抛错）
+- **双实现收敛**：`runDoctors` 标 `@deprecated` + 局限说明 + 迁移指引
+- 测试：337/337 → **360/360**
+- **编排器独立复核**（10 项反例矩阵）：dsh 少/等/多 三态正确；claude hook 异/同正确；退出码契约 6/6 无回归；真实 home 无新增 WARN；**变异测试证明新测试真实有效**（破坏新鲜度 → 变红 → 逐字节还原）
+- **裁决 B 反证**：即使同 profile 他插件规则使总量超过单源（60+20=80 > 69），仍正确报陈旧 → 实现者自述的"高估掩盖"风险**未实现**
+- ⚠️ **方法学披露**：独立 Evaluator 本轮**连续 4 次启动失败**（基础设施），验收由**编排器代执行**并在报告显著披露。红线守住（Implementer 未自评），但"独立 Evaluator"理想未达成，**不计为已满足**
+
 **G4 — ps1 规则 16d 死代码（P0）已闭环并经独立验收 ACCEPT**：
 - 修复：`[[:space:]]` → `\s`（.NET 正则有效语法），canonical + universal 双文件
 - 传播：六处 canonical 副本 SHA256 全同（`D6D726D2`）、BOM 全部保留、24004 字节逐字节一致
 - 回归：4 套 ps1（37/20/8/59，pwsh7 + PS5.1 双引擎）+ 3 套 sh（67/40/192）全绿
 - **因果级证据**：回滚实验（POSIX 形态 → 恰 2 条 16d 用例转红 57/59 exit=1；改回 `\s` → 59/59 exit=0；字节级还原无损）
 - 收尾：发布侧（skills）测试副本已同步 G4 用例（53→59 例），套件 59/59 通过
+
+**G1 + G7 — CLI 失败传播与错误语义（P0+P1）已闭环并经独立验收 ACCEPT**（提交 `552fca3`）：
+- 退出码契约：0=成功（**hook 运行时恒 0**，deny 是正常决策）/ 1=操作失败（doctor 有 FAIL、install 中止或回滚、uninstall 被拒、bootstrap 失败）/ 2=用法错误（未知子命令、未知 agent）
+- 实证（before → after）：doctor 有 FAIL `0 → 1` 且 FAIL 行附修复命令；未知子命令 `0 + deny JSON → 2 + Unknown command + help 提示`
+- **hook 契约未被破坏**：无害/危险/空 stdin/坏 JSON 四类输入前后均 exit 0（Evaluator 独立复核）
+- 测试：319/319 → 337/337（+18，17 个真实 `spawnSync(...).status` 断言）；Evaluator 变异测试验证有效性（破坏 2 处断言 → 变红，逐字节还原）
+- **顺带修复真实 fail-open**（新 G25，见下）；旧断言 3 处系**收紧**非削弱（Evaluator 逐条核对）
+
+## 重大修正：审计结论 G2 大部分已被实现覆盖（编排器 Round 18 实证）
+审计报告（C-F3 / D-F6 / A-F1 部分）读的是 **`packages/installer/src/doctor.ts` 的旧 `runDoctors()`**（现仅剩一个测试引用），而 CLI 实际走 **`packages/installer/src/runtime-probe.ts` 的 `probeAgentRuntime()`**，后者**已实现实弹验证**：
+- claude/codex：`verificationMode='dynamic'` —— spawn 真实 hook 喂 无害 payload（必须 allow）+ 危险 payload（必须 deny），**且用子进程 stdin**（正是 G4 评估器强调的正确方法学）
+- opencode：`static` —— 插件引用 + artifact 存在 + **hash 与仓库单源比对**（integrity）
+- 完整状态机：ACTIVE / INSTALLED / BROKEN / DETECTED / NOT_DETECTED（deep vs shallow）
+→ **G2 的真实残余**收窄为：① dsh 仍走旧 `checkDshPatch` 子串匹配（无实弹、无新鲜度）；② claude/codex 缺「已装 hook 脚本 vs 仓库单源」的 hash 新鲜度校验；③ 双 doctor 实现并存本身是隐患（旧 `runDoctors` 应废弃或统一）
+→ 教训沉淀：**审计必须核对调用链实际路径**，否则会评估已废弃实现（本轮差点据此写出错误任务卡）
 
 ## 验收纠偏（独立 Evaluator 带回，任务卡描述已修正）
 1. **"4 个向量全依赖 16d"不准确**：实际只有 2 条承重（`$x=rm`、`$x = rm`）；`$x="rm -rf…"` 由 rule 15 兜底、`$x=Remove-Item` 由 rule 13 兜底。16d 真正独挡：`X=rm`/`CMD=rm`/`$x=rm --recursive --force`/`r\m`/`/rm <无-rf>`
@@ -40,20 +65,19 @@ v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 
 4. **🆕 发布侧测试覆盖缺口**（Evaluator 发现，✅本轮已修）：skills 侧 `hook-audit-reregress.ps1` 曾是 53 例旧版，若 16d 再退化只有 audit 侧报警；已同步为 59 例
 
 ## 仍存在缺口（按优先级，来自 PRODUCT_GAP_MAP）
-- **P0 护栏可信度**：G1 doctor FAIL 却 exit 0｜G2 doctor 不验新鲜度/真实拦截｜G3 规则 5 副本漂移 M7 只锁 2 处｜~~G4 ps1 16d 死代码~~✅本轮已闭环｜G5 sh/agy fail-open｜G15 ps1 密钥明文泄漏
-- **P1 首次使用**：G6 Node 版本无预检｜G7 未知命令静默 exit 0｜G8 install 不支持 dsh/agy｜G9 SKILL.md 路径失效｜G10 误拦无恢复出口｜G12 硬编码路径｜G13 ps1 零 CI｜G16 POSIX 回收站链断｜G17 DSH 无 NFKC+误伤｜G18 opencode 拦截面窄
-- **P2-3 成熟度**：G11 双接线体系｜G19 agy 判决面｜G20 名义分包｜G21 性能 4-5s｜G22 CLI 口径不一｜G23 dist 累积｜**🆕 G24 rule 16 help 豁免泄漏**（`rm --help; rm <file>` ps1 allow / sh deny）
+- **P0 护栏可信度**：~~G1 doctor FAIL 却 exit 0~~✅闭环｜**G2 残余**（dsh 子串验证无实弹/新鲜度；claude/codex 缺 hook 脚本 hash 新鲜度；双 doctor 实现并存）｜G3 规则 5 副本漂移 M7 只锁 2 处｜~~G4 ps1 16d 死代码~~✅闭环｜G5 sh/agy fail-open｜G15 ps1 密钥明文泄漏｜**🆕 G25 hook 运行时入口 fail-open**（本轮已修）
+- **P1 首次使用**：G6 Node 版本无预检｜~~G7 未知命令静默 exit 0~~✅闭环｜G8 install 不支持 dsh/agy｜G9 SKILL.md 路径失效｜G10 误拦无恢复出口｜G12 硬编码路径｜G13 ps1 零 CI｜G16 POSIX 回收站链断｜G17 DSH 无 NFKC+误伤｜G18 opencode 拦截面窄
+- **P2-3 成熟度**：G11 双接线体系｜G19 agy 判决面｜G20 名义分包｜G21 性能 4-5s｜G22 CLI 口径不一｜G23 dist 累积｜**G24 rule 16 help 豁免泄漏**（`rm --help; rm <file>` ps1 allow / sh deny）
 
-## 其他新发现（本轮审计，此前文档未记录）
-- **A-F1 本机 claude-code 实际裸奔**（doctor 报 FAIL 但 exit 0）— 文档警告的场景正在本机发生 → 归入 G1/G2
-- **D-F4 DSH 门禁无 NFKC**（全角 ｒｍ 通过、ASCII rm 误拦）— 四端归一化不一致 + 误伤 → G17
-- **D-F5 ps1 明文记录密钥**（日志 + deny 回显均无脱敏，sh/opencode 有 redact）→ G15
-- **C-F6 版本号撒谎**（root 0.3.0 vs 各包 0.1.0）→ G20
+## 🆕 本轮新发现
+1. **G25（安全，本轮已修）hook 运行时入口 fail-open**：`echo '{"tool_input":{"command":"<危险命令>"}}' | node bin/riskguard.mjs` 在该 JSON 形状下**原为 allow**（可对旧版稳定复现），已加 3 行归一化修复（带守卫、方向 fail-closed、两个入口判定现已一致）。独立 Evaluator 判为**必要修复**并建议作为**独立安全条目记账**（勿混入退出码摘要）
+2. **既有缺口（非本轮引入）**：合法但非对象的 JSON（`null` / `[]` / `123` / `"str"` / `true`）→ 未捕获 TypeError → **exit 1**；旧版同样如此（旧 `cli.ts:45` vs 新 `index.ts:177`，可观测契约一致）。建议并入 fail-closed 分支（未做）
+3. **CLI 细节（非阻塞）**：`--help` / `-h` 现被当作「Unknown command」（建议映射到 help）；`acs` 只给一半时无 `acs evaluate` 提示；`install --agent dsh` 文案仍为 `Unknown agent`（退出码已正确为 2）
 
 ## 当前最高价值下一步
-1. ~~完成 G4 实现与独立验收~~ ✅ 已完成（ACCEPT）
-2. **下一轮（NOW）：G1+G2（doctor 验证闭环）**— 与 G4 同属 P0，是「护栏可信度」的第二块基石：doctor 必须能回答"保护真的生效吗"（实弹探测 + 失败传播 + 新鲜度校验）。**注**：G2 的"实弹探测"必须遵循本轮沉淀的方法学（子进程真实 stdin，勿用同进程管道）
-3. 再下一轮：G15（密钥泄漏）+ G5（fail-open 对齐）+ G3（规则单源收敛）+ G24（rule 16 泄漏）
+1. ~~G4 闭环~~ ✅ ｜ ~~G1+G7 闭环~~ ✅
+2. **下一轮（NOW）：G2 残余** —— ① dsh 换掉子串 `checkDshPatch`，改为「patch 存在 + 规则数 + 实弹探测（NFKC/规则命中）」；② claude/codex 增加「已装 hook 脚本 vs 仓库单源」SHA256 新鲜度（opencode 已有）；③ 处置双 doctor 实现（废弃 `runDoctors` 或统一到 runtime-probe）
+3. 再下一轮候选：G15（ps1 密钥明文泄漏，P0）+ G5（sh/agy fail-open 对齐）+ G3（规则单源收敛）+ G24（rule 16 泄漏）+ G25 的非对象 JSON 加固
 
 ## 暂缓项目（主动拒绝 / NOT_NOW）
 - B 报告"不适合"5 项：OS 沙箱自研、ML 概率拦截、云端 Guardian、数学挑战确认、fail-open 姿态

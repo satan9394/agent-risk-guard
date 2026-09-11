@@ -72,6 +72,11 @@ test('M6 backup/rollback: fixture 文件备份 → 覆盖 → 恢复回路', asy
   assert.deepEqual(after, { hooks: { PreToolUse: [] } });
 });
 
+/**
+ * G2 注意：runDoctors 是**已废弃**的子串级旧实现（见 doctor.ts 的 @deprecated）。
+ * 本用例只作为「不抛错 + 结构不回归」的守门；doctor 的真实语义（实弹 self-test +
+ * 新鲜度）由 runtime-probe-freshness.test.ts 与 tests/e2e/cli-doctor-freshness.e2e.test.ts 覆盖。
+ */
 test('M6 doctor: runDoctors 短路不抛错且有 checks', async () => {
   const report = await runDoctors();
   assert.ok(report.checks.length >= 6);

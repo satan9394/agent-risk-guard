@@ -657,6 +657,10 @@ function describeRuntime(state: string): string {
  * G1/G7：返回值携带 exitCode —— `fail > 0` → 1，否则 0（WARN 只提示，不算失败）。
  * 判定逻辑（runtime-probe 实弹自检）未改动；本轮只增加「失败信号外传」与
  * FAIL 行尾的可执行修复提示（只追加，不重排既有行）。
+ *
+ * G2：新增**新鲜度 WARN**（claude/codex hook 脚本 hash vs 仓库单源；dsh patch 规则数
+ *     vs 仓库单源）。陈旧是「怀疑」不是「损坏」——用户可能有意改过脚本或自加规则，
+ *     因此只计 WARN，**不得**触发 exit 1（退出码契约：有 FAIL→1，无 FAIL→0）。
  */
 export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?: boolean }): Promise<DoctorResult> {
   const home = HOMES.get(opts.home);
@@ -690,7 +694,13 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
       else if (!probe.hookTargetExists) { fail(id, 'hook 目标文件缺失', 'wiring'); }
       else if (!probe.runtimeAvailable) { fail(id, 'node 运行时不可用', 'runtime'); }
       else if (!probe.selfTestPassed) { fail(id, 'runtime self-test 未通过', 'wiring'); }
-      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + runtime self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + runtime self-test' }); }
+      else if (probe.hookScriptFreshness === false) {
+        // G2 新鲜度：拦截链路是好的，只是**可能陈旧**（用户也可能有意改过）→ WARN，绝不 FAIL。
+        counts.warn++;
+        const msg = 'hook 脚本与仓库单源不一致（可能陈旧，详情见 --verbose）';
+        lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
+        checks.push({ level: 'WARN', agent: id, message: msg });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + runtime self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + runtime self-test' }); }
     } else if (id === 'opencode') {
       if (!probe.configValid) { fail(id, '配置损坏', 'config'); }
       else if (!probe.wired) { fail(id, 'plugin 引用缺失', 'wiring'); }
@@ -702,7 +712,13 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
       } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} plugin 注册 + artifact 完整性`); checks.push({ level: 'PASS', agent: id, message: 'plugin 注册 + artifact 完整性' }); }
     } else if (id === 'dsh') {
       if (!probe.wired) { fail(id, 'deny-risk-commands patch 缺失', 'dsh'); }
-      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); checks.push({ level: 'PASS', agent: id, message: 'pre-execute patch（deny-risk-commands）' }); }
+      else if (probe.dshPatchFreshness === false) {
+        // G2 新鲜度：patch 在位但规则条数少于仓库单源 → WARN（不降 BROKEN、不改退出码）
+        counts.warn++;
+        const msg = 'patch 规则数少于仓库单源（可能陈旧，详情见 --verbose）';
+        lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
+        checks.push({ level: 'WARN', agent: id, message: msg });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); checks.push({ level: 'PASS', agent: id, message: 'pre-execute patch（deny-risk-commands）' }); }
     }
     lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
