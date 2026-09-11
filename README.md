@@ -204,6 +204,16 @@ cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS 
 
 > Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
 
+**7. 退出码约定**（脚本 / CI 可依赖；`riskguard help` 亦列出）：
+
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 成功。含 doctor 有 WARN 但无 FAIL、install 幂等（`already installed`）、卸载一个「本来就没装」的 agent。**hook 运行时（无子命令：stdin JSON → decision JSON）恒为 0**——allow 与 deny 都是正常决策，空输入 / 坏 JSON 的 fail-closed deny 也不是错误（Claude Code / Codex 集成依赖此行为）。 |
+| `1` | 失败。doctor 有 ≥1 个 FAIL（FAIL 行尾附带可直接执行的修复提示）；install 被中止（配置损坏 / 插件同名异内容）、回滚或 runtime self-test 未通过、显式指定的 agent 未安装；uninstall 被拒或失败；bootstrap 失败。 |
+| `2` | 用法错误。未知子命令（拼写错误、空参数字符串）——此时输出 `Unknown command: …` + help 提示，**不再**静默落入 hook 运行时；install / uninstall 指定了未知或本 CLI 不支持的 agent。 |
+
+例：`node bin/riskguard.mjs doctor || echo "RiskGuard 未生效"`；CI 健康检查可直接用退出码判定，配合 `doctor --json` 拿到机器可读的 `{pass,warn,fail,skip,exitCode,checks}`。
+
 ### 效果演示
 
 下面是 CLI 对一次「删除重要目录」请求的**真实输出**（未改动）：

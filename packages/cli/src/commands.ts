@@ -92,6 +92,52 @@ function installerKey(raw: string | undefined | null): string | null {
 }
 
 // ============================================================================
+// 命令结果与退出码契约（G1 退出码可信 / G7 错误语义）
+// ============================================================================
+
+/**
+ * 进程退出码契约（help / README 对外承诺，脚本与 CI 可依赖）：
+ *
+ *   0  成功。子命令正常完成（含 doctor 无 FAIL 但有 WARN、install 幂等、
+ *      卸载「本来就没装」）。
+ *      **hook 运行时的 allow 与 deny 都是 0**——deny 是正常决策，不是错误；
+ *      空输入 / 坏 JSON 的 fail-closed deny 亦为 0（CC/Codex 集成依赖此行为）。
+ *   1  操作失败。doctor 有 FAIL；install 中止（abort）/ 回滚 / 验证失败 /
+ *      显式指定的 agent 未安装；uninstall 拒绝或失败；bootstrap 失败。
+ *   2  用法错误。未知子命令（含拼写错误、空字符串参数）；install / uninstall
+ *      指定了未知（或本 CLI 不支持的）agent。
+ */
+export interface CommandOutcome {
+  /** 输出正文（人类可读，或 --json 的 JSON 文本），不含结尾换行 */
+  text: string;
+  /** 建议的进程退出码：0 成功 / 1 操作失败 / 2 用法错误 */
+  exitCode: number;
+}
+
+/** doctor 的单条检查结果（--json 输出用；人类模式简化为 PASS/WARN/FAIL/SKIP 行） */
+export interface DoctorCheckResult {
+  level: 'PASS' | 'WARN' | 'FAIL' | 'SKIP';
+  agent: string;
+  message: string;
+  /** FAIL 行的可执行修复提示（人类模式追加在 FAIL 行尾，--json 下为独立字段） */
+  fix?: string;
+}
+
+export interface DoctorResult extends CommandOutcome {
+  counts: { pass: number; warn: number; fail: number; skip: number };
+  checks: DoctorCheckResult[];
+}
+
+/** doctor FAIL 行的可执行修复提示（G7：只在 FAIL 行尾追加，不重排既有输出） */
+function doctorFixHint(id: string, kind: 'config' | 'wiring' | 'dsh' | 'runtime'): string {
+  if (kind === 'runtime') return `安装 Node >= 22.18（当前 ${process.version}）后重跑: node bin/riskguard.mjs doctor`;
+  // dsh 的接线由 skill / wiring-check 部署，不在本 CLI install 范围（installerKey('dsh') === null）
+  if (kind === 'dsh') return '同步 deny-risk-commands patch（assets/dsh/deny-risk-commands.patch.yml → ~/.dsh/profiles/*/cordis.patch.yml，见 skills/agent-risk-guard/SKILL.md）后重跑: node bin/riskguard.mjs doctor';
+  if (kind === 'config') return `先修复配置文件 JSON，再重跑: node bin/riskguard.mjs install --agent ${id}`;
+  return `重跑: node bin/riskguard.mjs install --agent ${id}`;
+}
+
+// ============================================================================
 // detect
 // ============================================================================
 
@@ -293,15 +339,45 @@ export async function interactiveSelectChoices(
   });
 }
 
-export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
+/** install 结构化执行结果（供退出码判定；lines 即人类输出正文） */
+interface InstallRun {
+  lines: string[];
+  results: InstallOutcome[];
+  /** --agent 里无法解析（或本 CLI 不支持）的原始值 */
+  unknown: string[];
+  /** 是否由 --agent 显式指定目标（决定 skipped 是否算失败） */
+  explicitTargets: boolean;
+}
+
+/**
+ * install 退出码（G1）：
+ *   2 = 用法错误（--agent 含未知/不支持的 agent）
+ *   1 = 有任何一次安装失败：abort（预检拒绝，零写入）/ error（回滚或验证失败），
+ *       或显式指定的 agent 未安装（skipped —— 用户明确要求装它，没装成就是失败）
+ *   0 = 成功 / repaired / already（幂等）/ dry-run / 本机无可安装 agent（环境事实，非错误）
+ *       / 未显式指定目标时的 skipped
+ */
+function installExitCode(run: InstallRun): number {
+  if (run.unknown.length) return 2;
+  let code = 0;
+  for (const r of run.results) {
+    if (r.state === 'error' || r.state === 'aborted') code = 1;
+    else if (r.state === 'skipped' && run.explicitTargets && code === 0) code = 1;
+  }
+  return code;
+}
+
+async function runInstall(opts: InstallAgentOpts): Promise<InstallRun> {
   const home = HOMES.get(opts.home);
   const lines: string[] = ['RiskGuard Install:', ''];
+  const results: InstallOutcome[] = [];
+  const unknownAgents: string[] = [];
   let targets: string[];
 
   if (opts.only) {
     // —— --agent <id> 精确指定（保留现状） ——
     const { targets: t, unknown } = resolveTargets(opts.only);
-    for (const u of unknown) lines.push(`Unknown agent: ${u}. Skipped.`);
+    for (const u of unknown) { lines.push(`Unknown agent: ${u}. Skipped.`); unknownAgents.push(u); }
     targets = t;
   } else {
     // —— T7：检测 → 交互式选择 ——
@@ -312,7 +388,7 @@ export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
       lines.push('No installable agents detected on this machine.');
       lines.push('');
       lines.push(`Backup root: ${backupRoot(home)}`);
-      return lines.join('\n');
+      return { lines, results, unknown: unknownAgents, explicitTargets: !!opts.only, noCandidates: true };
     }
     const interactive = (opts.yes !== true && opts.all !== true) && !!(process.stdin.isTTY);
     if (interactive) {
@@ -334,15 +410,27 @@ export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
 
   for (const id of targets) {
     const inst = installers[id];
-    if (!inst) { lines.push(`Unknown agent: ${id}. Skipped.`); continue; }
+    if (!inst) { lines.push(`Unknown agent: ${id}. Skipped.`); unknownAgents.push(id); continue; }
     const outcome = await installOne(installers[id], home, opts);
+    results.push(outcome);
     lines.push(outcome.message);
   }
 
   lines.push('');
   if (opts.dryRun) lines.push('No files changed (dry-run).');
   lines.push(`Backup root: ${backupRoot(home)}`);
-  return lines.join('\n');
+  return { lines, results, unknown: unknownAgents, explicitTargets: !!opts.only, noCandidates: false };
+}
+
+/** install（人类输出字符串；既有调用方契约不变） */
+export async function cmdInstall(opts: InstallAgentOpts): Promise<string> {
+  return (await runInstall(opts)).lines.join('\n');
+}
+
+/** install（含退出码；供 CLI 入口传播失败） */
+export async function cmdInstallResult(opts: InstallAgentOpts): Promise<CommandOutcome> {
+  const run = await runInstall(opts);
+  return { text: run.lines.join('\n'), exitCode: installExitCode(run) };
 }
 
 /**
@@ -563,37 +651,58 @@ function describeRuntime(state: string): string {
 // doctor
 // ============================================================================
 
-export async function cmdDoctor(opts: { home?: string; verbose?: boolean }): Promise<string> {
+/**
+ * doctor：健康检查（PASS/WARN/FAIL/SKIP）。
+ *
+ * G1/G7：返回值携带 exitCode —— `fail > 0` → 1，否则 0（WARN 只提示，不算失败）。
+ * 判定逻辑（runtime-probe 实弹自检）未改动；本轮只增加「失败信号外传」与
+ * FAIL 行尾的可执行修复提示（只追加，不重排既有行）。
+ */
+export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?: boolean }): Promise<DoctorResult> {
   const home = HOMES.get(opts.home);
   const lines = ['RiskGuard Doctor:', ''];
+  const checks: DoctorCheckResult[] = [];
   // 统一 probe：status / doctor / install-verification 共用同一 runtime 判定
   const order = ['claude-code', 'codex', 'opencode', 'dsh'];
   const counts = { pass: 0, warn: 0, fail: 0, skip: 0 };
+
+  /** 记一条 FAIL：行尾追加可执行修复提示（原 FAIL 行文本保持原样，仅追加） */
+  const fail = (id: string, message: string, kind: 'config' | 'wiring' | 'dsh' | 'runtime') => {
+    const fix = doctorFixHint(id, kind);
+    counts.fail++;
+    lines.push(`FAIL  ${id.padEnd(14)} ${message}  → ${fix}`);
+    checks.push({ level: 'FAIL', agent: id, message, fix });
+  };
+
   for (const id of order) {
     const probe = await probeAgentRuntime(id, { home, deep: true });
     const display = loadCompatibility().agents[id]?.display ?? id;
     if (!probe.detected) {
       counts.skip++;
       lines.push(`SKIP  ${id.padEnd(14)} agent 未安装`);
+      checks.push({ level: 'SKIP', agent: id, message: 'agent 未安装' });
       continue;
     }
     // claude/codex：核心检查是 wiring + hook target + self-test
     if (id === 'claude-code' || id === 'codex') {
-      if (!probe.configValid) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 配置损坏`); }
-      else if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} RiskGuard hook 注入缺失`); }
-      else if (!probe.hookTargetExists) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} hook 目标文件缺失`); }
-      else if (!probe.runtimeAvailable) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} node 运行时不可用`); }
-      else if (!probe.selfTestPassed) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} runtime self-test 未通过`); }
-      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + runtime self-test`); }
+      if (!probe.configValid) { fail(id, '配置损坏', 'config'); }
+      else if (!probe.wired) { fail(id, 'RiskGuard hook 注入缺失', 'wiring'); }
+      else if (!probe.hookTargetExists) { fail(id, 'hook 目标文件缺失', 'wiring'); }
+      else if (!probe.runtimeAvailable) { fail(id, 'node 运行时不可用', 'runtime'); }
+      else if (!probe.selfTestPassed) { fail(id, 'runtime self-test 未通过', 'wiring'); }
+      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + runtime self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + runtime self-test' }); }
     } else if (id === 'opencode') {
-      if (!probe.configValid) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 配置损坏`); }
-      else if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} plugin 引用缺失`); }
-      else if (!probe.artifactPresent) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} 插件文件缺失`); }
-      else if (probe.artifactIntegrity === false) { counts.warn++; lines.push(`WARN  ${id.padEnd(14)} 插件文件 hash 与仓库不符（可能被改）`); }
-      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} plugin 注册 + artifact 完整性`); }
+      if (!probe.configValid) { fail(id, '配置损坏', 'config'); }
+      else if (!probe.wired) { fail(id, 'plugin 引用缺失', 'wiring'); }
+      else if (!probe.artifactPresent) { fail(id, '插件文件缺失', 'wiring'); }
+      else if (probe.artifactIntegrity === false) {
+        counts.warn++;
+        lines.push(`WARN  ${id.padEnd(14)} 插件文件 hash 与仓库不符（可能被改）`);
+        checks.push({ level: 'WARN', agent: id, message: '插件文件 hash 与仓库不符（可能被改）' });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} plugin 注册 + artifact 完整性`); checks.push({ level: 'PASS', agent: id, message: 'plugin 注册 + artifact 完整性' }); }
     } else if (id === 'dsh') {
-      if (!probe.wired) { counts.fail++; lines.push(`FAIL  ${id.padEnd(14)} deny-risk-commands patch 缺失`); }
-      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); }
+      if (!probe.wired) { fail(id, 'deny-risk-commands patch 缺失', 'dsh'); }
+      else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); checks.push({ level: 'PASS', agent: id, message: 'pre-execute patch（deny-risk-commands）' }); }
     }
     lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
@@ -602,11 +711,21 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean }): Pro
   for (const desc of AGENT_REGISTRY) {
     if (['claude-code', 'codex', 'opencode', 'dsh'].includes(desc.id)) continue;
     const inst = detectAgent(desc, { home });
-    if (!inst.installed) { counts.skip++; lines.push(`SKIP  ${desc.id.padEnd(14)} agent 未安装`); }
+    if (!inst.installed) {
+      counts.skip++;
+      lines.push(`SKIP  ${desc.id.padEnd(14)} agent 未安装`);
+      checks.push({ level: 'SKIP', agent: desc.id, message: 'agent 未安装' });
+    }
   }
   lines.push('');
   lines.push(`Summary: ${counts.pass} PASS / ${counts.warn} WARN / ${counts.fail} FAIL / ${counts.skip} SKIP`);
-  return lines.join('\n');
+
+  const exitCode = counts.fail > 0 ? 1 : 0; // G1：FAIL → 非零；WARN 不算失败
+  if (exitCode !== 0) lines.push(`Exit code ${exitCode} (${counts.fail} FAIL). Fix the FAIL item(s) above, then re-run doctor.`);
+  const text = opts.json
+    ? JSON.stringify({ product: 'riskguard', version: VERSION, pass: counts.pass, warn: counts.warn, fail: counts.fail, skip: counts.skip, exitCode, checks }, null, 2)
+    : lines.join('\n');
+  return { text, exitCode, counts, checks };
 }
 
 // ============================================================================
@@ -616,30 +735,64 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean }): Pro
 export interface UninstallOutcome {
   agent: string;
   display: string;
-  state: 'uninstalled' | 'not-installed' | 'error';
+  state: 'uninstalled' | 'not-installed' | 'dry-run' | 'error';
   message: string;
 }
 
-export async function cmdUninstall(opts: { home?: string; only?: string; dryRun?: boolean }): Promise<string> {
+interface UninstallRun {
+  lines: string[];
+  outcomes: UninstallOutcome[];
+  unknown: string[];
+}
+
+/**
+ * uninstall 退出码（G1）：
+ *   2 = 用法错误（--agent 含未知/不支持的 agent）
+ *   1 = 有任一 agent 卸载失败或拒绝（状态 error）
+ *   0 = 成功 / 本来就没装（幂等）/ dry-run
+ */
+function uninstallExitCode(run: UninstallRun): number {
+  if (run.unknown.length) return 2;
+  return run.outcomes.some((o) => o.state === 'error') ? 1 : 0;
+}
+
+async function runUninstall(opts: { home?: string; only?: string; dryRun?: boolean }): Promise<UninstallRun> {
   const home = HOMES.get(opts.home);
   const dry = opts.dryRun === true;
   const { targets, unknown } = resolveTargets(opts.only);
+  const unknownAgents: string[] = [...unknown];
   const lines = ['RiskGuard Uninstall:', ''];
+  const outcomes: UninstallOutcome[] = [];
 
   for (const u of unknown) lines.push(`Unknown agent: ${u}. Skipped.`);
   for (const id of targets) {
     const inst = installers[id];
-    if (!inst) { lines.push(`Unknown agent: ${id}. Skipped.`); continue; }
+    if (!inst) { lines.push(`Unknown agent: ${id}. Skipped.`); unknownAgents.push(id); continue; }
     const m = await loadManifest(id, home);
-    if (!m) { lines.push(`${inst.display}: not installed (no manifest). Nothing to do.`); continue; }
+    if (!m) {
+      lines.push(`${inst.display}: not installed (no manifest). Nothing to do.`);
+      outcomes.push({ agent: id, display: inst.display, state: 'not-installed', message: 'not installed (no manifest)' });
+      continue;
+    }
     // 仅当有 manifest 才允许卸载；若 manifest 缺失但配置里明显有注入 → 提示用 restore
-    if (dry) { lines.push(`${inst.display}: would remove RiskGuard hook/plugin entries and ${m.modifiedConfig.length} config change(s).`); continue; }
+    if (dry) {
+      lines.push(`${inst.display}: would remove RiskGuard hook/plugin entries and ${m.modifiedConfig.length} config change(s).`);
+      outcomes.push({ agent: id, display: inst.display, state: 'dry-run', message: 'dry-run' });
+      continue;
+    }
     const outcome = await uninstallOne(id, inst.display, home);
+    outcomes.push(outcome);
     lines.push(outcome.message);
   }
   lines.push('');
   if (dry) lines.push('No files changed (dry-run).');
-  return lines.join('\n');
+  return { lines, outcomes, unknown: unknownAgents };
+}
+
+/** uninstall（含退出码；CLI 入口据此传播失败） */
+export async function cmdUninstall(opts: { home?: string; only?: string; dryRun?: boolean }): Promise<CommandOutcome> {
+  const run = await runUninstall(opts);
+  return { text: run.lines.join('\n'), exitCode: uninstallExitCode(run) };
 }
 
 async function uninstallOne(id: string, display: string, home: string): Promise<UninstallOutcome> {
@@ -738,23 +891,30 @@ function removeInjection(id: string, cfg: Record<string, unknown>): { config: Re
 // bootstrap（Phase B：portable runtime 安装）
 // ============================================================================
 
-export async function cmdBootstrap(opts: { home?: string; force?: boolean }): Promise<string> {
+/**
+ * bootstrap（Phase B：portable runtime 安装）。
+ * G1：返回 CommandOutcome —— 失败（安装异常 / 装完校验仍不完整 / 已装但 INCOMPLETE）→ 1。
+ */
+export async function cmdBootstrap(opts: { home?: string; force?: boolean }): Promise<CommandOutcome> {
   const home = HOMES.get(opts.home);
   const installed = isRuntimeInstalled(home);
   if (installed && opts.force !== true) {
     // 已装：校验完整性
     const v = await verifyRuntime({ home });
     const dir = runtimeVersionDir(home);
-    if (v.ok) return `RiskGuard runtime already installed and verified.\n  Runtime: ${dir}\n  Version: ${PRODUCT_VERSION}\n\nUse --force to reinstall.`;
-    return `RiskGuard runtime exists but is INCOMPLETE (${v.issues.length} issue(s)):\n${v.issues.slice(0, 10).map((i) => `  - ${i}`).join('\n')}\n\nRun 'riskguard bootstrap --force' to repair.`;
+    if (v.ok) return { text: `RiskGuard runtime already installed and verified.\n  Runtime: ${dir}\n  Version: ${PRODUCT_VERSION}\n\nUse --force to reinstall.`, exitCode: 0 };
+    return { text: `RiskGuard runtime exists but is INCOMPLETE (${v.issues.length} issue(s)):\n${v.issues.slice(0, 10).map((i) => `  - ${i}`).join('\n')}\n\nRun 'riskguard bootstrap --force' to repair.`, exitCode: 1 };
   }
   try {
     const r = await installRuntime({ home, force: opts.force });
     const v = await verifyRuntime({ home });
     const integrity = v.ok ? 'OK' : `ISSUES: ${v.issues.join('; ')}`;
-    return `RiskGuard runtime installed.\n  Runtime: ${r.dir}\n  Version: ${PRODUCT_VERSION}\n  Files: ${r.files}\n  Integrity: ${integrity}`;
+    return {
+      text: `RiskGuard runtime installed.\n  Runtime: ${r.dir}\n  Version: ${PRODUCT_VERSION}\n  Files: ${r.files}\n  Integrity: ${integrity}`,
+      exitCode: v.ok ? 0 : 1, // 装完自校验不通过 = 失败（不留给用户一个「看似成功」的 runtime）
+    };
   } catch (e) {
-    return `RiskGuard bootstrap failed.\n  Reason: ${(e as Error).message}\nNo changes to agent configs were made.`;
+    return { text: `RiskGuard bootstrap failed.\n  Reason: ${(e as Error).message}\nNo changes to agent configs were made.`, exitCode: 1 };
   }
 }
 
@@ -780,8 +940,9 @@ export function cmdHelp(): string {
     '    --dry-run        show changes without writing',
     '    --verbose        show detail',
     '  status            Per-agent Runtime state (NOT_DETECTED/DETECTED/INSTALLED/ACTIVE/BROKEN) + Capability (D0–D4)',
-    '  doctor            Health-check RiskGuard wiring (PASS/WARN/FAIL/SKIP)',
+    '  doctor            Health-check RiskGuard wiring (PASS/WARN/FAIL/SKIP); exits 1 if any FAIL',
     '    --verbose       show evidence detail',
+    '    --json          machine-readable report ({pass,warn,fail,skip,exitCode,checks})',
     '  uninstall         Remove RiskGuard entries based on manifest (precise inverse op, keeps user changes)',
     '    --agent <id>    only uninstall one agent',
     '    --dry-run       show changes without writing',
@@ -792,6 +953,19 @@ export function cmdHelp(): string {
     '    --audit            append redacted SecurityAuditEvent JSONL line',
     '  version           Show version',
     '  help              Show this help',
+    '',
+    'Exit codes:',
+    '  0   success. Includes doctor with WARN but no FAIL, idempotent install, and uninstall of',
+    '      something that was never installed. The hook runtime (no command: stdin JSON →',
+    '      decision JSON) ALWAYS exits 0 — an allow or a deny are both normal decisions, and a',
+    '      fail-closed deny for empty/invalid input is not an error.',
+    '  1   failed. doctor has ≥1 FAIL; install was aborted (e.g. corrupted config, foreign file),',
+    '      rolled back, or failed verification; uninstall was refused/failed; bootstrap failed.',
+    '  2   usage error. Unknown command (typo, empty argument); unknown or unsupported --agent.',
+    '',
+    'Hook runtime (no command):',
+    '  echo \'{"tool_name":"Bash","tool_input":{"command":"echo hi"}}\' | node bin/riskguard.mjs',
+    '      → decision JSON on stdout, always exit 0 (Claude Code / Codex integration contract).',
   ].join('\n');
 }
 

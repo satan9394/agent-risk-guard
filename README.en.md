@@ -205,6 +205,16 @@ cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS 
 
 > Windows PowerShell: `Get-Content … -Raw | node packages/cli/src/index.ts` remains usable as the low-level stdin-JSON → Decision-JSON entry; advanced agent wiring lives in `packages/adapters/<agent>/src` and `docs/deployment-status.md`.
 
+**7. Exit codes** (contract for scripts / CI; also listed by `riskguard help`):
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success. Includes doctor with WARN but no FAIL, idempotent install (`already installed`), and uninstalling an agent that was never installed. **The hook runtime (no command: stdin JSON → decision JSON) ALWAYS exits 0** — allow and deny are both normal decisions, and a fail-closed deny for empty/invalid input is not an error (Claude Code / Codex integration depends on this). |
+| `1` | Failed. doctor has ≥1 FAIL (the FAIL line carries an executable fix hint); install was aborted (corrupt config / foreign plugin file), rolled back or failed its runtime self-test, or an explicitly requested agent was not installed; uninstall was refused or failed; bootstrap failed. |
+| `2` | Usage error. Unknown command (typo, empty argument) — prints `Unknown command: …` plus a help hint instead of silently falling through to the hook runtime; install / uninstall was given an unknown or unsupported agent. |
+
+Example: `node bin/riskguard.mjs doctor || echo "RiskGuard is not active"`; CI health checks can use the exit code directly and pair it with `doctor --json` for the machine-readable `{pass,warn,fail,skip,exitCode,checks}`.
+
 ### Example output
 
 A real (unedited) CLI response to a "delete an important directory" request:

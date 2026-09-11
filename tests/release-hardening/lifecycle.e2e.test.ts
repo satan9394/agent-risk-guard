@@ -173,7 +173,8 @@ test('lifecycle: invalid JSON 配置 → install 拒绝且零写入（P0-2）', 
     writeFileSync(CLAUDE_SETTINGS(home), '{"broken": ,,,}', 'utf8');
     const before = readFileSync(CLAUDE_SETTINGS(home), 'utf8');
     const r = rg(['install', '--agent', 'claude'], home);
-    assert.equal(r.status, 0);
+    // G1：安装被中止（预检拒绝、零写入）= 失败 → 非零退出码（v0.3.0 起；此前恒为 0）
+    assert.equal(r.status, 1);
     assert.match(r.stdout, /installation aborted/);
     assert.match(r.stdout, /contains invalid JSON/);
     assert.match(r.stdout, /made no changes/);
@@ -193,9 +194,9 @@ test('lifecycle: alias 安装（--agent claude / oc / codex 等价 canonical）'
     // 只有 claude 被装，opencode 未被装
     const oc = JSON.parse(readFileSync(OPENCODE_CFG(home), 'utf8'));
     assert.equal(oc.plugin.includes('./plugins/agent-risk-guard.ts'), false);
-    // 未知 alias → 提示跳过，不崩
+    // 未知 alias → 提示跳过，不崩；G7：这是用法错误 → exit 2（v0.3.0 起；此前恒为 0）
     const u = rg(['install', '--agent', 'nonsense'], home);
-    assert.equal(u.status, 0);
+    assert.equal(u.status, 2);
     assert.match(u.stdout, /Unknown agent: nonsense/);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
@@ -222,7 +223,8 @@ test('lifecycle: OpenCode 插件同名异内容 → 拒绝安装（P0-3）', () 
     writeFileSync(join(plugDir, 'agent-risk-guard.ts'), '// user owns this file\n', 'utf8');
     const before = readFileSync(join(plugDir, 'agent-risk-guard.ts'), 'utf8');
     const r = rg(['install', '--agent', 'oc'], home);
-    assert.equal(r.status, 0);
+    // G1：同名异内容 → 拒绝安装（abort）= 失败 → 非零退出码（v0.3.0 起；此前恒为 0）
+    assert.equal(r.status, 1);
     assert.match(r.stdout, /plugin installation aborted/);
     assert.match(r.stdout, /not owned by this RiskGuard installation/);
     assert.match(r.stdout, /No files were overwritten/);
