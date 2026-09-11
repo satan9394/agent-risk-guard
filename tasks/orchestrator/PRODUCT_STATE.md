@@ -1,7 +1,7 @@
 # PRODUCT_STATE — agent-risk-guard
 
-- 更新：2026-09-11 · Orchestrator Round 19（切片 #3 = G2 残余 已闭环）
-- 状态机：切片 #1（G4）✅ → 切片 #2（G1+G7）✅ → 切片 #3（G2 残余）✅ ACCEPT（**验收由编排器代执行，见下**）
+- 更新：2026-09-11 · Orchestrator Round 21（切片 #4 = G15 已闭环）
+- 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → **G15 ✅（ACCEPT）** → 下一轮：G15b（脱敏残留）或 G5（sh/agy fail-open）
 
 ## 当前成熟度
 v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 17 GAN findings 修复 + 单一规则源纪律），
@@ -19,7 +19,19 @@ v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 
 5. **IMPLEMENTATION_BRIEF_G4** 落盘；Implementer 已派发（后台 4efc2bd6）
 
 ## 已解决问题（本轮）
-**G2 残余 — doctor 验证深度（P0）已闭环，验收 ACCEPT**（本轮，改动待提交）：
+**G15 — ps1 hook 密钥明文泄漏（P0 安全）已闭环并经独立验收 ACCEPT**（提交 `a9177c3`）：
+- 修复：新增 `Redact-Secrets`（10 条模式对齐 `packages/core/src/redact.ts`）；脱敏收口在 `Write-HookLog` 内部 → allow（L492）与 deny（L105）**两条出口同时覆盖**；deny 的 `systemMessage` 改用脱敏后命令；**判定逻辑零改动**
+- 日志卫生：1 MiB 上限（`RG_HOOK_LOG_MAX_BYTES` 可覆盖）+ 轮转 + 写盘失败静默降级
+- 测试：新增 `hook-redact-test.ps1` **60/60**（双引擎）；**对改前 hook 跑同一套件 → 30 条 FAIL**（证明测试真实）；四套既有套件不变（37/20/8/59）；sh 三套件 67/40/192 无回归
+- 六副本 SHA 全同 `252D9CF7`、BOM 全 True；发布侧测试副本已同步并 60/60
+- **编排器处置**：清理含明文密钥的生产日志（911KB/6723 行）+ 旧残留（`~/.codex/hooks/hook-calls.log`）→ **回收站**（按删除铁律，可恢复）
+
+### ⚠️ 独立验收的重要纠错（Evaluator 用时间戳取证推翻实现者结论）
+实现者称"生产日志已含 5 处明文密钥 → 证明泄漏已实际发生"。**Evaluator 查证为假**：那些明文行时间戳为 **09:32:36**，恰是实现者自己跑 A/B 对照（改前镜像树）时**写进真实 TEMP 的测试夹具**，非生产流量。同一日志中已出现 `[REDACTED]` 行，才是修复生效的真证据。
+→ **新纪律**：A/B 对照脚本**必须隔离 TEMP**（否则会污染生产日志并制造假证据）
+
+## 已解决问题（前几轮）
+**G2 残余 — doctor 验证深度（P0）已闭环，验收 ACCEPT**（提交 `25e658d`）：
 - **dsh**：子串匹配 → 「规则数 vs 仓库单源条数」比对；条数不足 → `WARN`（不 FAIL、exitCode 仍 0）
 - **claude/codex**：新增「已装 hook 脚本 vs 仓库单源」SHA256 新鲜度；不一致 → `WARN`，且**不降级、实弹 self-test 未削弱**
 - **单源缺失** → 降级"未校验"（不 FAIL、不抛错）
@@ -65,7 +77,7 @@ v0.3.0 Developer Preview。产品骨架完整（5 agent 接线 + 三平台 CI + 
 4. **🆕 发布侧测试覆盖缺口**（Evaluator 发现，✅本轮已修）：skills 侧 `hook-audit-reregress.ps1` 曾是 53 例旧版，若 16d 再退化只有 audit 侧报警；已同步为 59 例
 
 ## 仍存在缺口（按优先级，来自 PRODUCT_GAP_MAP）
-- **P0 护栏可信度**：~~G1 doctor FAIL 却 exit 0~~✅闭环｜**G2 残余**（dsh 子串验证无实弹/新鲜度；claude/codex 缺 hook 脚本 hash 新鲜度；双 doctor 实现并存）｜G3 规则 5 副本漂移 M7 只锁 2 处｜~~G4 ps1 16d 死代码~~✅闭环｜G5 sh/agy fail-open｜G15 ps1 密钥明文泄漏｜**🆕 G25 hook 运行时入口 fail-open**（本轮已修）
+- **P0 护栏可信度**：~~G1 doctor FAIL 却 exit 0~~✅｜~~G4 ps1 16d 死代码~~✅｜~~G15 ps1 密钥明文~~✅（ps1 侧）；**🆕 G15b 脱敏残留**（`aws configure set aws_secret_access_key`、带引号 `--password="…"`、`mysql -p<pass>`、`curl -u user:pass` 仍未覆盖，**core 与 sh 同缺口**；且 **sh 覆盖面现已弱于 ps1**——sh 缺 `sk-`/JWT/≥40 位）；G2 残余（cmdStatus 不展示新鲜度、legacy doctor 仍在导出面）｜G3 规则 5 副本漂移 M7 只锁 2 处｜G5 sh/agy fail-open
 - **P1 首次使用**：G6 Node 版本无预检｜~~G7 未知命令静默 exit 0~~✅闭环｜G8 install 不支持 dsh/agy｜G9 SKILL.md 路径失效｜G10 误拦无恢复出口｜G12 硬编码路径｜G13 ps1 零 CI｜G16 POSIX 回收站链断｜G17 DSH 无 NFKC+误伤｜G18 opencode 拦截面窄
 - **P2-3 成熟度**：G11 双接线体系｜G19 agy 判决面｜G20 名义分包｜G21 性能 4-5s｜G22 CLI 口径不一｜G23 dist 累积｜**G24 rule 16 help 豁免泄漏**（`rm --help; rm <file>` ps1 allow / sh deny）
 
