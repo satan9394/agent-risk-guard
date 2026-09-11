@@ -35,7 +35,8 @@
 - `agent-risk-guard-audit/scripts/dangerous-commands.sh`（`redact_cmd`，POSIX ERE —— **不含 lookaround/`\b` 的 GNU 依赖**，需用 `[[:space:]]` 等可移植写法）
 - `agent-risk-guard-audit/scripts/dangerous-commands.ps1`（`RedactPatterns`，.NET 正则）
 - 测试：`packages/core/test/*.test.ts`（新增 parity 测试）、`agent-risk-guard-audit/tests/hook-redact-test.ps1`（扩用例）、sh 套件
-- 同步：ps1 六副本、sh 四副本（含发布侧）
+- 同步：ps1 **六副本**（audit/scripts、assets/hooks、skills/…/scripts、~/.claude/hooks、~/.codex/hooks、~/.gemini/config/hooks）；sh **三副本**（audit/scripts、skills/agent-risk-guard/scripts、audit-xhs-publish/scripts）
+  - **勘误（Round 25，由 Implementer 实测纠正）**：本卡初稿写"sh 四副本"有误，实测全工作区只有 **3 份** sh（同为 `0A742936472A` / 15522 B）。以实测为准。
 
 ## 不能破坏什么
 1. **判定逻辑零改动**（脱敏只在输出出口）——G15 已建立的 72 次 before/after 判定对照必须仍然 CHANGED=0。
