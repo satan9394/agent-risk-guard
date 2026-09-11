@@ -17,6 +17,16 @@
 > - **G26（P2）**：legacy doctor（`runDoctors` + 子串级 `checkClaudeHook/checkCodexHook/checkOpencodePlugin`）仍在导出面 —— **两份审计被其误导的根因**，建议删除或移出导出
 > - **G27（P3）**：`cmdStatus` 不展示新鲜度（只跑 status 的用户看不到陈旧提示）
 >
+> **G4 第二轮独立复验新增发现（Round 98，Evaluator #2）** —— G4 双轮验收结论一致 ACCEPT；以下为两轮报告均未覆盖的新缺口：
+> - **N1（方法学，重要）**：G4 的验收对象已在会话期间被 G15b 改写（`D6D726D2`/24004 B → `EA71C7CB`/31397 B）→ **历史报告中的 SHA/字节断言不可复现，引用时必须标注时点**。已据此调整纪律。
+> - **N2（P1，两端同源漏拦）**：`$x="r\m"; $x -rf /tmp/t` → ps1 与 sh **均 allow**。成因：16d 分支 `r[\\/]m(\s|-)` 要求 `m` 后紧跟空白或 `-`，而此处 `m` 后是引号。非 G4 引入，为既有缺口。
+> - **N3（P1，跨端不一致）**：`$X=RM; $X -RF /tmp/t` → ps1 **deny**、sh **allow**（sh 侧 grep 大小写敏感）。
+> - **N4（P1，跨端不一致）**：`rm'' --help` → ps1 **allow**、sh **deny**（ps1 的 help 豁免可被引号插词复用）。与既有 **G24** 同源。
+> - N5（P3）：`agent-risk-guard-audit-xhs-publish\scripts\*.ps1` 仍有 6+6 处 POSIX 类（范围外快照）。
+>
+> **裁决 B 更正**：G4 的 help 豁免**不是 ps1 单端误伤**——Evaluator 实跑证明 sh 端对 `$x=rm --help` 同样 deny、`git restore --help` allow，属**跨端一致的设计结果**。任务卡「应 allow」是描述偏差。项目惯例：help 豁免只挂在「直接调用」类规则，删除类主力规则一律不豁免。
+
+
 > **本轮沉淀的方法学（防再次误判）**
 > 1. 审计/验证**必须核对调用链实际路径**，否则会评估已废弃实现（G2 的教训）
 > 2. ps1 hook 用 `[Console]::In.ReadToEnd()` 读**进程 stdin** —— 同进程管道探测会得假阳性"全 deny"
