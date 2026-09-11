@@ -213,7 +213,7 @@ if ($cmd -match '(?:^|[;&|\r\n])\s*rm\s*["'']*\s*-(?!-?h(?:elp)?\b|version\b|V\b
 }
 
 # 16d) 变量赋值危险 + 反斜杠/前导斜杠 rm（R25 对齐 sh 10b：X=rm; $X -rf / r\m / \rm / /rm）
-if ($cmd -match '=[[:space:]]*"?rm([[:space:]]|"|;|$)' -or $cmd -match '=[[:space:]]*"?Remove-Item([[:space:]]|"|;|$)' -or $cmd -match '(?:^|[;&|\r\n])[\\/]{1,2}rm([[:space:]]|-)' -or $cmd -match 'r[\\/]m([[:space:]]|-)') {
+if ($cmd -match '=\s*"?rm(\s|"|;|$)' -or $cmd -match '=\s*"?Remove-Item(\s|"|;|$)' -or $cmd -match '(?:^|[;&|\r\n])[\\/]{1,2}rm(\s|-)' -or $cmd -match 'r[\\/]m(\s|-)') {
     Deny-Command '变量赋值/反斜杠前缀的 rm 是间接永久删除（不进回收站），请改用回收站命令'
 }
 

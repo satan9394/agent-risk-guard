@@ -69,6 +69,14 @@ $out += ,@(Test-Cmd "python -c `"print('use os.remove() to delete')`"" 'allow')
 $out += ,@(Test-Cmd "python -c `"print('docs: shutil.rmtree mentioned')`"" 'allow')
 $out += ,@(Test-Cmd "python -c `"import os; os.remove('/tmp/f')`"" 'deny')
 $out += ,@(Test-Cmd "python -c `"import shutil; shutil.rmtree('/tmp/b')`"" 'deny')
+# G4（2026-09-11）规则 16d 死代码修复回归：变量赋值/间接删除
+# 根因：16d 四分支原用 POSIX 字符类（.NET 正则不支持），在 pwsh7 下恒不命中 = 放行
+$out += ,@(Test-Cmd '$x=rm; $x -rf /tmp/t' 'deny')
+$out += ,@(Test-Cmd '$x = rm; $x -rf /tmp/t' 'deny')
+$out += ,@(Test-Cmd '$x="rm -rf /tmp/t"; $x' 'deny')
+$out += ,@(Test-Cmd '$x=Remove-Item; $x -Path C:\temp -Recurse -Force' 'deny')
+$out += ,@(Test-Cmd 'echo hello' 'allow')
+$out += ,@(Test-Cmd 'git status' 'allow')
 
 $pass = 0
 foreach ($r in $out) {
