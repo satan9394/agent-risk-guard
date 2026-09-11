@@ -17,6 +17,11 @@
 #           [F18-回收站清空] Clear-RecycleBin（含 -Force/-DriveLetter 各变体）、cleanmgr（含 /sagerun 等）、
 #                直删 $Recycle.Bin 存储（C:\$Recycle.Bin 等任意盘 × 删除动词，含引号插词变体）→ deny，
 #                reason 统一「回收站清空不可逆，如需清理请用户手动操作」；拦 Agent 工具调用，不拦用户手动清空。
+# 改动记录（G15 密钥明文泄漏修复，2026-09-11）：
+#           [G15-输出脱敏] 日志与 deny 的 systemMessage 出口统一过 Redact-Secrets（10 条模式逐条对齐
+#               packages/core/src/redact.ts 的 SECRET_PATTERNS，整段命中 → [REDACTED]）；判定逻辑零改动。
+#           [G15-日志卫生] %TEMP%\riskguard-hook-calls.log 默认上限 1 MiB（RG_HOOK_LOG_MAX_BYTES 可覆盖，
+#               0=不限），超限轮转为 .1（最多两份）；写入失败静默降级，不影响判定。
 # 安装：在 settings.json / hooks.json PreToolUse 中引用此脚本
 # 输入：stdin JSON { tool_name, tool_input: { command }, ... }
 # 输出：stdout JSON { hookSpecificOutput: { permissionDecision }, systemMessage }
@@ -34,23 +39,79 @@ $script:curCmd = ''
 # ---- 辅助函数：返回拒绝（全部硬拦截，不询问）----
 # 日志写到 %TEMP%（不污染 skill 发布目录；生产调试时查看 %TEMP%\riskguard-hook-calls.log）
 $hookLog = Join-Path $env:TEMP 'riskguard-hook-calls.log'
+
+# ---- G15（2026-09-11）输出侧脱敏：日志与 systemMessage 一律先脱敏；判定逻辑不受影响 ----
+# 模式逐条对齐 packages/core/src/redact.ts 的 SECRET_PATTERNS（顺序与替换语义一致：整段命中 → [REDACTED]）。
+# 与 sh dangerous-commands.sh 的 redact_cmd 的差异（三端同源纪律，差异在此说明）：
+#   1) sh 只覆盖 api_key/token/secret/password/credential/authorization 键值 + AKIA/gh?/sk-/xox/Bearer；
+#      本版对齐 core，另含 JWT、PEM 私钥块、client_secret、≥40 位长随机串四类；
+#   2) sh 键值替换保留键名（password=[REDACTED]），本版对齐 core 为整体替换 [REDACTED]；
+#   3) sh 的 Bearer 需 ≥20 位、AKIA 固定 16 位、xox 有专类；本版与 core 一致（Bearer 为 [A-Za-z0-9._-]+，无 xox 专类）。
+# 较 core 的三处「只增不减」增补（均为覆盖任务卡点名的类 / 对齐 sh，不放松任何既有拦截）：
+#   a) 键值类补裸 token / credential —— core 无此二者，但任务卡 G15 明确要求 `token=`，sh 亦有；
+#   b) gh[pousr]_ 下界 36 → 20 —— 与 sh 一致（core 为 36，真实 PAT 均 ≥36，收窄下界只增命中）；
+#   c) 其余 9 条与 core 完全一致（含顺序与替换语义）。
+# 注：core 为 JS 正则，本版为 .NET 正则，逐条语义等价且均为全局替换；差异仅在 \b —— .NET 的 \b 是
+#     Unicode 感知、JS 为 ASCII 感知，对本组全 ASCII 模式无实际影响。脱敏只作用于输出侧，判定不变。
+$script:Redacted = '[REDACTED]'
+$script:RedactPatterns = @(
+    '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b',
+    '\bgh[pousr]_[A-Za-z0-9]{20,255}\b',
+    '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b',
+    '\bsk-ant-[A-Za-z0-9_-]{20,}\b',
+    '\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b',
+    '-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----',
+    '(?i)(?:"?password"?\s*[:=]\s*)([''"]?)([^\s''",;}\]]+)\1',
+    '(?i)(?:"?(?:api[_-]?key|access[_-]?token|token|secret[_-]?key|client[_-]?secret|credential)"?\s*[:=]\s*)([''"]?)([^\s''",;}\]]+)\1',
+    '(?i)(?:authorization\s*[:=]\s*(?:bearer|basic)\s+)([A-Za-z0-9._-]+)',
+    '\b[A-Za-z0-9_-]{40,}\b'
+)
+function Redact-Secrets {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $out = $Text
+    foreach ($p in $script:RedactPatterns) {
+        try { $out = [regex]::Replace($out, $p, $script:Redacted) } catch { }
+    }
+    return $out
+}
+
+# ---- G15 日志卫生：大小上限（默认 1 MiB；RG_HOOK_LOG_MAX_BYTES 可覆盖，0=不限）+ 轮转 ----
+# 超限时把当前日志轮转为 <日志>.1 再重新开始（最多两份，总量 ≤ 2×上限），避免长期累积成明文凭据库。
+$script:HookLogMaxBytes = 1048576
+if ($env:RG_HOOK_LOG_MAX_BYTES) {
+    try { $v = [int]$env:RG_HOOK_LOG_MAX_BYTES; if ($v -ge 0) { $script:HookLogMaxBytes = $v } } catch { }
+}
 function Write-HookLog {
     param([string]$Decision, [string]$Reason)
     try {
-        $line = '{0}  [HookInvoked] decision={1} reason={2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Decision, $Reason
+        $line = '{0}  [HookInvoked] decision={1} reason={2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Decision, (Redact-Secrets $Reason)
+        $max = $script:HookLogMaxBytes
+        if ($max -gt 0) {
+            $item = Get-Item -LiteralPath $hookLog -ErrorAction SilentlyContinue
+            $size = 0
+            if ($item) { $size = $item.Length }
+            $lineBytes = $line.Length
+            try { $lineBytes = [System.Text.Encoding]::UTF8.GetByteCount($line) } catch { }
+            if ($item -and (($size + $lineBytes) -ge $max)) {
+                Move-Item -LiteralPath $hookLog -Destination ($hookLog + '.1') -Force -ErrorAction SilentlyContinue
+            }
+        }
         Add-Content -LiteralPath $hookLog -Value $line -Encoding UTF8
     } catch { }
 }
 function Deny-Command($reason) {
-    Write-HookLog 'deny' $reason
+    $safeReason = Redact-Secrets $reason
+    Write-HookLog 'deny' $safeReason
+    $safeCmd = Redact-Secrets $script:curCmd
     $result = @{
         hookSpecificOutput = @{
             hookEventName = 'PreToolUse'
             permissionDecision = 'deny'
-            permissionDecisionReason = "⛔ HOOK 已拦截危险命令：$reason"
+            permissionDecisionReason = "⛔ HOOK 已拦截危险命令：$safeReason"
             updatedInput = $null
         }
-        systemMessage = "⛔ HOOK 已拦截危险命令：$reason`n命令：$($script:curCmd)`n如确需执行，请在 Agent 外部手动操作。"
+        systemMessage = "⛔ HOOK 已拦截危险命令：$safeReason`n命令：$safeCmd`n如确需执行，请在 Agent 外部手动操作。"
     }
     Write-Output ($result | ConvertTo-Json -Depth 10 -Compress)
     exit 0
