@@ -1,5 +1,29 @@
 # PRODUCT_GAP_MAP — agent-risk-guard（Orchestrator 第三阶段综合）
 
+> **状态更新（2026-09-11 · Round 23）** — 本文件是 Round 1-6 的原始合成，**保留不改写**（历史可追溯）；
+> 下列为已发生的状态变化，权威现状以 `PRODUCT_STATE.md` 为准：
+>
+> **已闭环（4 个切片，均经独立验收）**
+> - ~~**G4**~~ ✅ ps1 规则 16d 死代码（`[[:space:]]` 在 .NET 正则无效）— 提交 `67faab8`
+> - ~~**G1 + G7**~~ ✅ CLI 退出码契约（doctor FAIL→1 / 未知命令→2 / hook 运行时恒 0）— 提交 `552fca3`
+> - ~~**G2**~~ ✅（大部分）doctor 验证深度：dsh 规则数新鲜度 + hook 脚本 hash 新鲜度 + `runDoctors` 标 deprecated — 提交 `25e658d`
+>   - **重要修正**：G2 原始描述（"doctor 只查字符串在位、无实弹"）**大部分不成立** —— 审计读的是已废弃的 `doctor.ts`；CLI 实际走 `runtime-probe.ts`，**早已实现实弹自检**（子进程 stdin 喂无害/危险 payload）。真实残余已收窄并闭环
+> - ~~**G15**~~ ✅ ps1 密钥明文泄漏（日志 + deny 回显）— 提交 `a9177c3`；生产含密钥日志已回收站清理
+> - ~~**G25**~~ ✅ hook 运行时入口 fail-open（`tool_input.command` 形状）— 随 `552fca3` 修复
+>
+> **新增缺口（原表未含）**
+> - **G15b（P0 安全，进行中）**：脱敏残留 —— `aws configure set aws_secret_access_key <值>`（空格分隔）、带引号含空格密码、`mysql -p<值>`、`curl -u user:pass` 仍泄漏；**三端已漂移**（core 9 / ps1 10 / sh 2），sh 覆盖面弱于 ps1。修复方案含**跨端 parity 测试**防漂移
+> - **G24（P2）**：rule 16 的 help 豁免为**整条命令级抑制** → `rm --help; rm <file>` 在 ps1 下 allow、sh 下 deny（独立 Evaluator 发现）
+> - **G26（P2）**：legacy doctor（`runDoctors` + 子串级 `checkClaudeHook/checkCodexHook/checkOpencodePlugin`）仍在导出面 —— **两份审计被其误导的根因**，建议删除或移出导出
+> - **G27（P3）**：`cmdStatus` 不展示新鲜度（只跑 status 的用户看不到陈旧提示）
+>
+> **本轮沉淀的方法学（防再次误判）**
+> 1. 审计/验证**必须核对调用链实际路径**，否则会评估已废弃实现（G2 的教训）
+> 2. ps1 hook 用 `[Console]::In.ReadToEnd()` 读**进程 stdin** —— 同进程管道探测会得假阳性"全 deny"
+> 3. **A/B 对照脚本必须隔离 TEMP** —— 否则污染生产日志并制造假泄漏证据（G15 的教训）
+> 4. **独立 Evaluator 不可省略**：它两次推翻实现者结论（G15 的假泄漏证据；G4 的"4 向量全依赖 16d"）
+
+
 - 生成：2026-09-11 · Round 1-6（四份独立审计已全部读完：A-UX / B-竞品 / C-架构 / D-可靠性）
 - 方法：去重（A/C/D 多处同一根因三面）、冲突检测、依赖分析、成本/收益判断，非简单合并
 - 优先级：P0=阻碍核心使用/严重安全/数据风险；P1=明显破坏核心体验；P2=显著提升成熟度；P3=高级；P4=可选
