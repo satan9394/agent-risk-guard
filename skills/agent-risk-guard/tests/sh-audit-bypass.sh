@@ -295,27 +295,29 @@ fi
 total=$((total+1))
 # Missing tool_name entirely - hard to test with run_case, skip
 # JSON parse failure - test with malformed JSON
-echo "--- 16b. JSON parse failure ---"
+# ⚠️ G5（2026-09-11）**期望已反转**：16b/16c 原为「fail-open（放行）」的现状记录，
+#    G5 修复后这两条按 ps1 的 fail-closed 语义必须 deny，且 exit 0（拒绝是决策不是错误）。
+echo "--- 16b. JSON parse failure (G5: 期望 deny + exit 0) ---"
 bad_json='{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x}'
-result=$(printf '%s' "$bad_json" | "$HOOK" 2>/dev/null)
-if printf '%s' "$result" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"'; then
-    echo "  DENY on malformed JSON (should be allow for fail-open)"
-    fail=$((fail+1))
-else
-    echo "  PASS [fail-open] malformed JSON -> allow"
+result=$(printf '%s' "$bad_json" | "$HOOK" 2>/dev/null); rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$result" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"'; then
+    echo "  PASS [fail-closed] malformed JSON -> deny (exit 0)"
     pass=$((pass+1))
+else
+    echo "  FAIL [fail-closed] malformed JSON -> exit=$rc out=$(printf '%s' "$result" | head -c 80)"
+    fail=$((fail+1))
 fi
 total=$((total+1))
 
 # Empty stdin
-echo "--- 16c. Empty stdin ---"
-result=$(printf '' | "$HOOK" 2>/dev/null)
-if printf '%s' "$result" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"'; then
-    echo "  DENY on empty stdin (should be allow for fail-open)"
-    fail=$((fail+1))
-else
-    echo "  PASS [fail-open] empty stdin -> allow"
+echo "--- 16c. Empty stdin (G5: 期望 deny + exit 0) ---"
+result=$(printf '' | "$HOOK" 2>/dev/null); rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$result" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"'; then
+    echo "  PASS [fail-closed] empty stdin -> deny (exit 0)"
     pass=$((pass+1))
+else
+    echo "  FAIL [fail-closed] empty stdin -> exit=$rc out=$(printf '%s' "$result" | head -c 80)"
+    fail=$((fail+1))
 fi
 total=$((total+1))
 
