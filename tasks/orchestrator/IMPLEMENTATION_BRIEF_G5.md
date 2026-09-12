@@ -57,3 +57,52 @@
 
 ## 测试要求
 畸形输入矩阵 × 三端 + 变异验证 + 正常路径判定对照 + sh 三套回归 + parity 扩展。
+
+---
+
+# 【Round 258 更新】新增两条缺陷证据 + 纪律要求
+
+> 编排者在 G15b-FIX3 复验后重跑现状（脚本 `tasks/orchestrator/_probe_g5_state.mjs`，真实 spawn + 进程 stdin：**sh 走 `wsl.exe -e bash`**、ps1 走 `powershell.exe -File`）。**原表 L90/L141 行号在 FIX2/FIX3 后已变，以实测为准。**
+
+## 新增证据（两条，均为 FIX3 复验挖出、pre-FIX2 同样存在）
+
+| 场景 | sh 现状 | ps1（目标） |
+|---|---|---|
+| **命令含 TAB**（`rm -rf /tmp/t` + TAB + `extra`） | **输出非法 JSON**（`JSON.parse` 失败） | deny |
+| **首行危险 + 次行 `#` 注释**（`rm -rf /tmp/t\n# note`） | **exit 0、无输出 → 放行** | deny |
+
+连带刷新后的完整现状表：
+
+| 场景 | sh | ps1 |
+|---|---|---|
+| 空 stdin | exit=0 无输出（放行） | deny |
+| 非法 JSON | exit=0 无输出（放行） | deny |
+| 缺 `command` 字段 | **exit=1** 无输出 | deny |
+| **含 TAB** | **非法 JSON** | deny |
+| **首行危险+次行 `#`** | exit=0 无输出（**放行**） | deny |
+| 正常危险命令 | deny ✅ | deny ✅ |
+
+## 新增要求（并入验收）
+
+1. **含 TAB / 控制字符 / 引号 / 换行的命令必须输出合法 JSON**（正确转义）；测试需断言 `JSON.parse` 成功。
+2. **多行命令必须评估整条**：不得因某行以 `#` 开头而提前放行（`rm -rf /tmp/t\n# note` → deny）。
+3. `systemMessage` 文本可与 ps1 不同，但 **`permissionDecision` 必须与 ps1 一致**。
+
+## 纪律（硬要求，来自本会话已固化的 D6–D9）
+
+- **D6 攻击面**：验证一律**真实 spawn + 进程 stdin**；sh 必须用 `wsl.exe -e bash`（**Git Bash 路径会因反斜杠失败**，且不是生产形态）。
+- **D7 邻居面**：构造邻居并钉进测试——`#` 出现在**命令中间/末尾**、TAB 在**引号内**、command 为**空字符串**、命令**末尾带换行**（真实调用形态，**最大回归风险**）。
+- **D8 对照面**：凡声称"修好/回归"，给 **before/after 并列**。
+- **D9 引擎面**：若改 ps1，逐份复核 **BOM=True**（编辑工具会丢 BOM）。
+- 每条改动声明**可指代码行**；交付顺序：改 → 测 → **同步副本** → 复核 distinct/BOM/行尾 → **最后**更新报告；同步后不得再改主源。
+
+## 范围纪律（重要）
+
+本卡**只做 sh 的失败语义与 JSON 合法性**。**不要**顺手改判定规则、**不要**碰 G3（跨端规则收敛，如 `rm'' --help`、`$X=RM` 等既有分歧）、**不要**动 `-p`/`--user`/PEM 锚点规则（G15b-FIX3 刚 ACCEPT，回退即 P0）。
+
+## 交付补充
+
+- `tasks/orchestrator/IMPLEMENTATION_RESULT_G5.md`
+- 证据工件 `tasks/orchestrator/_g5_*`
+- 报告须含：§改动逐条对照（可指代码行）→ §上表 5 条 before/after 实证 → §sh 三套 + parity A/B/C 回归数字 → §副本表（含 BOM/行尾）→ §未解决问题
+
