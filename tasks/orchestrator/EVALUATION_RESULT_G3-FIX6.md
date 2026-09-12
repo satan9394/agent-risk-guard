@@ -13,7 +13,8 @@
 
 **必须首先、明确肯定这一轮做对了什么**（这一半证据非常干净，不应被下面的 REJECT 掩盖）：
 
-1. **FIX5 的 8 条回归是真收回，不是重建的**。我用 `git show 6ea0342:…ps1` 取冻结字节（`fb85cc0e…`，与 `git show 4c94b90:…ps1` **逐字节相同** → 再次确认「pre-G3 ≡ FIX4」），三列实测 `pre=deny → FIX5=allow → FIX6=deny`：任务卡 §1 点名的 **12/12 全部成立**（含换行形态），全语料共 **76 条**满足该三列模式；**`ps1` 端 `pre=deny → FIX6=allow` 只剩 11 条，其中 9 条是应然 allow**（`x <词>` 反向守卫族、`grep -i diskpart`、引号内散文），**真实危险放松 2 条**（见 §4，属 FIX5 遗留、非本卡新造）。
+1. **FIX5 的 8 条回归是真收回，不是重建的**。我用 `git show 6ea0342:…ps1` 取冻结字节（`fb85cc0e…`，与 `git show 4c94b90:…ps1` **逐字节相同** → 再次确认「pre-G3 ≡ FIX4」），三列实测 `pre=deny → FIX5=allow → FIX6=deny`：任务卡 §1 点名的 **12/12 全部成立**（含换行形态），全语料共 **76 条**满足该三列模式；`ps1` 端 `pre=deny → FIX6=allow` 只剩 11 条，其中 9 条是应然 allow（`x <词>` 反向守卫族、`grep -i diskpart`、引号内散文），**真实危险放松 2 条**（`command time diskpart` / `env nice diskpart`；聚焦探针再找到同族 8 条，共 10 条 —— 属 FIX5 遗留、**非本卡新造**，见 §9-4）。
+1b. ⚠️ **重要前提（请先读）**：验收期间**产品树被并行开工的 G3-FIX7 改写**（11:34 起，11:37 重写测试文件、11:41/11:43 重写两端 hook）。我把受影响的闸门证据**全部作废并用 `git show e62d721:` 冻结字节重跑**；§11.0 有完整时间线与处置。**本报告不对 FIX7 作任何评价。**
 2. **「单一定义」是真的、且可复算**。我从**冻结终版字节**独立生成变异体，只改 **1 行**定义：
    `MA-ps1` = `3fa08a9e0910945e` / 39846 B / BOM=True，`MA-sh` = `42226e5204aa4bbc` / 45739 B —— **与实现者报告 §5.2 的哈希逐字相同**。一行改动即可同时回退 19/11 处引用，这就是「单一定义」的直接证据。
 3. **合并没有意外改变任何规则体**：把两端「旧前缀 / `$CMD_PRE`」归一为 `@PRE@` 后做**代码行**级 LCS 比对，`ps1` 的差异**只有** 1 行定义 + 18 条规则的**前缀改写**（规则后缀逐字相同），`sh` 的差异**只有** 1 行定义 + 11 条规则引用；**没有一条规则被顺手改了别的**（实现者报告 §1.3/§1.4 的行号清单与我的复算**逐行一致**）。
@@ -30,8 +31,8 @@
 | 2 | **合并新风险面**：逐规则比对「引用前后」（规则被意外改变？） | **PASS** ✅（归一化 LCS：**无一条规则体被改**；仅前缀扩宽；两端 `deny→allow` = 0） |
 | 3 | **过拦面（反向邻居，D7）** | **FAIL ❌ → REJECT 依据**：9 条 `(`/`{` 散文形态**新过拦**（两端），含任务卡点名的 `printf '{ diskpart }'` |
 | 4 | **7 处例外是否正当** | **PASS** ✅（逐处读源码核实：确为脱敏组号契约 / 插词补查 / 词内插词 / 回收站合取 / 变形词头，**不该引用** CMD_PRE） |
-| 5 | **闸门**：base 绿 / 身份断言真实有效 / 变异必红 | 见 §6（自跑） |
-| 6 | **红线不回退** | 见 §7（自跑） |
+| 5 | **闸门**：base 绿 / 身份断言真实有效 / 变异必红 | **PASS** ✅（**冻结语料+冻结 hook**：base 第 1 次有 1 条 wsl 伪影 → **D10 全量重跑 `2/2/0` 绿**；A 面回退红 **18/168**；身份断言正常绿、**错配 8/16 红**） |
+| 6 | **红线不回退** | **PASS** ✅（sh 12/12、ps1 10/10、redact A/B/C 绿、M4 红 3/3、M2 红 31/34 于 `sh-failclosed-test`）；**node 全量未做**（产品树被并行改写，见 §11.0） |
 | 7 | **副本 ×3 / ×6、BOM、行尾、distinct（D9）** | **PASS** ✅（逐份复核，见 §8） |
 | 8 | 报告占位符 / 已知分歧归属 | **基本 PASS**：FIX5 §5 占位符**确已补实**（有真实数字，非空壳）；但 §8-3 口径**与实测相反**（= 项 3 的一半） |
 
@@ -216,15 +217,72 @@ e62d721:…    → ec8c419bd2cf65f7 / 75dce9a0c75a676b   ← FIX6（= 工作树�
 
 **变异体哈希与实现者声明逐字一致 → 「单一定义」不是文字声明，是可复算的性质** ✅
 
-### 6.3 自跑结果（**串行**，`node --test packages/core/test/decision-parity.test.ts`）
+### 6.3 自跑结果（**串行**，且**只对冻结 FIX6 字节**）
 
-见 §11「自跑日志」——本节数字由下方 **§11.1** 给出（若某格标 `未完成` 即为时间盒外未跑，不臆测）。
+> ⚠️ 见 §11.0：我第一次跑闸门时**产品树正在被并行改动**（G3-FIX7 开工，11:37–11:43 重写了 `decision-parity.test.ts` 与两端 hook），该次运行**全部作废**。下表是我**改用 `git show e62d721:` 取出的冻结语料 + 冻结 hook/自造变异体**重跑的结果。
+
+| # | 被测体 | 环境变量 | rc | tests/pass/fail | 红点 | 判定 |
+|---|---|---|---|---|---|---|
+| ① | **冻结 FIX6 主源**（ps1 `ec8c419b…` / sh `75dce9a0…`） | `RG_PARITY_*` → `frozen/` | **1 → 0** | 第 1 次 2/1/1；**D10 重跑 2 / 2 / 0** | 第 1 次 **1 / 168**：`T18 分句串联` = `echo a; rm -rf /tmp/t`，ps1=deny / **sh=INVALID-JSON** | **D10 复核后判绿 ✅**：单条重跑 **6/6** 均为合法 JSON `deny`；**全量重跑 = `tests 2 / pass 2 / fail 0`**（`logs\fix6_gate_base_rerun.log`）→ 该条是 wsl 间歇伪影 |
+| ② | **A 面回退**（**我自造**：`MA-ps1-prefix-fix5.ps1` / `MA-sh-prefix-fix5.sh`，各只改 1 行定义） | 同上 → `mutants/` | **1** | 2 / 1 / 1 | **18 / 168** | **红 ✅** —— 与实现者 §5.3 的「18 条 = `K39`–`K56`」**逐数吻合** |
+| ③ | **身份断言 · 正常**（两端=冻结 FIX6） | 同上 | **0** | 1 / **1** / 0 | — | **绿 ✅** |
+| ④ | **身份断言 · 错配**（`RG_PARITY_PS1`=**FIX5 ps1**，`RG_PARITY_SH`=冻结 FIX6 sh；**只有一端漂移**） | 同上 | **1** | 1 / 0 / **1** | **8 / 16** | **红 ✅ 身份断言真实有效**（只有一端漂移即被抓住） |
+
+**① 的 D10 复核（我实跑，`rerun_t18.mjs`）**：对 `echo a; rm -rf /tmp/t` 连跑 6 次，**6/6 都是 `rc=0` + 合法 JSON + `deny`**：
+
+```
+#0..#5 "echo a; rm -rf /tmp/t" rc=0 decision=deny
+  stdout={"hookSpecificOutput":{"permissionDecision":"deny",…},"systemMessage":"HOOK BLOCKED: rm is permanent deletion…"}
+```
+
+→ 那 1 条 `INVALID-JSON` **不可复现**，属 D10 记载的 `wsl.exe` 间歇伪影（G3 实测 21/66 假红同源），**不是 FIX6 的缺陷**。按 D10「单次红先重跑」，我**做了全量重跑**：
+`node --test <冻结 dp6.ts>` + `RG_PARITY_*` → frozen → **`ℹ tests 2 / ℹ pass 2 / ℹ fail 0`**（`logs\fix6_gate_base_rerun.log`）→ **闸门 base 判定为绿 ✅**（与实现者 §5.3 的「2/2 绿」一致）。
+
+**② 的意义**：这一格同时钉死两件事——(a) 闸门对**本卡唯一改动**（前缀定义）**有独立捕获力**；(b) 变异体**只改 1 行定义**即红，反证「单一定义」成立（若前缀仍是散落的 18/11 份副本，改 1 行不会红）。
+
+**③/④ 的意义**：身份断言在正常态绿、在**只有一端漂移**时红（8/16）—— 任务卡 §1「跨端身份断言」的验收点**成立**，且与实现者 §5.3 的「A 面变异时身份断言仍绿（两端一起错）」互为补证：**两条测试各司其职，必须并存**。
+
+**闸门覆盖缺口（与本轮 REJECT 直接相关）**：168 条语料**对 §4.1 的「括号散文」面零覆盖** —— 若覆盖，① 会因 `echo '(rm -rf)'` 多红 1 条（该形态我实测 ps1=deny / sh=allow）。
+
+**关于报告的「A 面回退红 18 条」**：我另有一次**被污染但方向可用**的旁证——在我发现污染前运行的 `gate_A.log`（11:39:46–11:44:57，语料已是 FIX7 版 196 条、hook 用**我的**变异体），结果是 `tests 2 / pass 1 / fail 1`：主测试**红 33/196**、**身份断言绿**——与实现者 §5.3 的定性结论（A 面回退必红；且「两端一起错」时身份断言不红，故两条测试必须并存）**一致**，但该次数值**不属于 FIX6 语料**，我不采信其条数。
 
 ---
 
-## 7. 项目 6：红线不回退（自跑）
+## 7. 项目 6：红线不回退（自跑，**全部有效**：运行时刻 11:24–11:35，早于 11:37 的并行改写**）
 
-见 **§11.2**。
+### 7.1 sh 四套 × 三棵树 —— **12/12 rc=0 ✅**
+
+| 树 | sh-hook-test | sh-audit-bypass | sh-audit-edge | sh-failclosed-test |
+|---|---|---|---|---|
+| audit | 67/67 rc=0 | **TOTAL 192 / PASS 192 / FAIL 0** rc=0 | **TOTAL 40 / PASS 40 / FAIL 0** rc=0 | **TOTAL 34 / PASS 34 / FAIL 0** rc=0 |
+| skills | 67/67 rc=0 | 192/192 FAIL 0 rc=0 | 40/40 FAIL 0 rc=0 | 34/34 rc=0 |
+| xhs-publish | 67/67 rc=0 | 192/192 FAIL 0 rc=0 | 40/40 FAIL 0 rc=0 | 34/34 rc=0 |
+
+**12/12 次 rc=0、FAIL=0**（每棵树用**自己的** hook + 自己的 tests 目录）✅ —— 与实现者 §6.1 逐格一致。
+
+### 7.2 ps1 五套 × 两棵同步树 —— **10/10 rc=0 ✅**
+
+| 树（隔离临时树，挂该树的 ps1） | hook-audit-reregress | hook-bypass-regression | hook-fp-regression | hook-redact-test | hook-rules-test |
+|---|---|---|---|---|---|
+| audit | **59/59** rc=0 | **18/18** rc=0 | **8/8** rc=0 | **119/119** rc=0 | **37/37** rc=0 |
+| skills | **59/59** rc=0 | **18/18** rc=0 | **8/8** rc=0 | **119/119** rc=0 | **37/37** rc=0 |
+
+`hook-fp-regression` 第 5 条 `rmdir /tmp/empty_dir` 仍 allow ✅；`hook-bypass-regression` 的 `cmd /c del /f C:\x\y` 仍 deny ✅ —— 与实现者 §6.2 逐格一致。
+
+### 7.3 redact parity 与红线变异（G15b）
+
+| 被测体 | 要求 | 我的实测 | 结论 |
+|---|---|---|---|
+| **冻结 FIX6 主源** A/B/C | 绿 | `tests 3 / pass 3 / fail 0` rc=0 | **✅** |
+| **M4**（**我自造**：`redact_text()` 直通，冻结基底 +1 行，`bafa7eba74185897`） | 必红 | `tests 3 / pass 0 / fail 3` rc=1 | **✅ 红** |
+| **M2**（**我自造**：TAB 不再转义，1 行，`92aabc4d1b19a189`）→ `redact-parity` | — | （实现者口径：不红；我未重复该格） | 见下 |
+| **M2** 同一变异体 → **`sh-failclosed-test`** | 必红 | **`TOTAL 34 / PASS 31 / FAIL 3`** rc=1 | **✅ 红** |
+
+**归属核实（任务卡要求核实「M2 由 `sh-failclosed-test` 持有」是否成立）：成立 ✅** —— 我用**自己从冻结终版派生**的 TAB 变异体，在 `sh-failclosed-test` 上得到 **31/34**（3 条 TAB 用例红），与实现者 §6.3 的数字**独立复现一致**；而 `redact-parity` 语料对其不敏感（FIX5 轮已查明该文件对 TAB **零覆盖**，本轮未见补语料）。故「M2 红线由 G5 套件持有、而非 G15b parity」这一归属**正确**。
+
+### 7.4 node 全量 —— **未完成（污染）**
+
+实现者称 `380/380`。我在污染发现前**未执行**该项；发现后产品树已非 FIX6，**再跑无意义**（会测到 FIX7 中间态）。→ **我未独立验证此项**，不采信也不否认。
 
 ---
 
@@ -266,7 +324,8 @@ e62d721:…    → ec8c419bd2cf65f7 / 75dce9a0c75a676b   ← FIX6（= 工作树�
 | **新过拦** | **有，9 条，两端都有**（= REJECT 依据）：`printf '{ diskpart }'`、`echo "(diskpart)"`、`echo "{ diskpart }"`、`echo '(rm -rf)'`、`echo "(rm -rf /)"`、`git commit -m "fix (rm -rf)"`、`grep -r "(rm -rf)" .`、`sed -n 's/(rm -rf)/x/p' f`、`ls (rm -rf)`。**其中 `printf '{ diskpart }'` 是验收清单点名的合法命令** |
 | **规则被意外改变** | **未发生**：归一化 LCS 证明两端除前缀外零改动；唯一「非同形」处是 ps1 16e 的**向上**扩宽（实现者已登记）✅ |
 | **向下对齐** | **未发生**。FIX6 相对 FIX5 纯收紧（ps1 +83 / sh +82，放松 0）；4 条「FIX5 两端 allow」的既存分歧（`nohup shutdown /s`、`time find /tmp -delete`、`time xargs rm`、`time chmod 777 /x`）被**两端一起 deny**，方向为**向上** ✅ |
-| **闸门无效** | 身份断言**真实有效**（结构 + 我自跑的错配实验，见 §11.1）；但**对 §4.1 的括号散文面零覆盖**（同 FIX5 的结构性缺口，只是换了一类） |
+| **闸门无效** | 身份断言**真实有效**（结构 + 我自跑的错配实验 8/16 红 ✅）；A 面回退**红 18/168** ✅；但**对 §4.1 的括号散文面零覆盖**（168 条语料一条未含，同 FIX5 的结构性缺口，只是换了一类） |
+| **闸门 base 的 1 条红** | `echo a; rm -rf /tmp/t` 的 sh 端出现 **1/168 `INVALID-JSON`**，**6/6 重跑均不可复现** → wsl 间歇伪影（D10 已登记现象），**非 FIX6 缺陷**；实现者「base 2/2 绿」的口径与我实测量级一致 |
 | **副本或 BOM 错** | **未发生** ✅（9/9 同 sha、ps1 6/6 BOM=True、全 LF、distinct=1） |
 | **报告口径** | §8-3「`(`/`{` … 故不是新增过拦」**与实测相反**（§4.2）；§1.2 关于 `then/do/else` 的等价性论证**经我实测成立** ✅ |
 
@@ -274,25 +333,61 @@ e62d721:…    → ec8c419bd2cf65f7 / 75dce9a0c75a676b   ← FIX6（= 工作树�
 
 ## 11. 自跑日志与证据
 
-### 11.1 闸门（串行）
+### 11.0 ⚠️ 重大方法论事件：**验收期间产品树被并行改写（G3-FIX7）**
 
-（占位：由下方 run 结果填充）
+这是本轮必须先声明的事实，它影响了 2 项证据的可信度，并已按 D10 精神处置：
 
-### 11.2 红线（串行）
+```
+（我）10:5x  复核主源 sha256 = ps1 ec8c419bd2cf65f7 / sh 75dce9a0c75a676b（= git HEAD e62d721）
+（我）11:14–11:23:43  966 次串行探针（ps1F6/shF6 列读实时文件）      ← 全程在改写之前 ✅
+（我）11:24:18–11:33:41  sh 12 套 + ps1 10 套红线                    ← 全程在改写之前 ✅
+（我）11:34:30 / 11:35:06 / 11:35:14  redact base / M4 / failclosed-M2 ← 在改写之前 ✅
+（他）11:34:29  tasks/orchestrator/_g3fix7_extract_frozen.mjs 出现    ← FIX7 开工
+（我）11:35:2x–11:39:46  gate_base（读实时 hook）                     ← ❌ 期间 hook 被改写
+（他）11:37:44  decision-parity.test.ts 被改写（465 行 → 490 行，语料 168 → 196）
+（他）11:41:xx / 11:43:53  sh / ps1 hook 被改写
+（我）11:39:46–11:44:57  gate_A（用我自己的变异体，但语料已是 FIX7 版）← ❌ 语料错代
+（我）11:45  发现并 kill 后台作业，改用冻结字节重跑
+```
 
-（占位：由下方 run 结果填充）
+**佐证**：该次 `gate_base.log` 里 **168 条里 119 条 `ps1 = EXIT-1`** —— 即 ps1 hook **整份解析失败**（`edit` 写入丢 BOM → PowerShell 按 ANSI 读中文源；这正是实现者 §7 自己记录的 D9 现象）。它是**并行改写造成的中间态**，**不是 FIX6 的缺陷**：同一支 hook 在 11:32–11:33 的 ps1 五套 ×2 里 **10/10 全绿**。
+
+**处置（D10：单次全红先重跑，且必须重跑在正确的被测体上）**：
+* 作废 `logs\gate_base.log`、`logs\gate_A.log`（语料/被测体错代）；
+* 用 **`git show e62d721:packages/core/test/decision-parity.test.ts`**（465 行、语料 168 条、含 L 段身份断言，**imports 仅 node 内建**）取出**冻结语料**，落到 `.eval-tmp\g6fix6eval\gate6\dp6.ts`；
+* 用 **`frozen/ps1_FIX6.ps1` / `frozen/sh_FIX6.sh`**（`git show e62d721` 取字节）作为被测 hook，**完全绕开被改写的产品树**；变异体用我自己从冻结终版生成的那两份；
+* 重跑见 §11.1（`run_gate6.ps1`）。
+
+**结论**：本报告的**全部结论**（§2–§5、§8）与**红线数字**（§7）都建立在**改写之前**取得的证据或 **`git show` 冻结字节**之上；唯一受影响的是**闸门一项**，已重跑取证。**我不对 FIX7 的任何内容作评价**（不在本卡范围）。
+
+### 11.1 闸门（冻结语料 + 冻结/自造变异体，串行）
+
+| 运行 | 命令 | 结果 |
+|---|---|---|
+| base（第 1 次） | `node --test <frozen dp6.ts>`，`RG_PARITY_*`→`frozen/` | 2 / 1 / 1（1 条 wsl `INVALID-JSON` 伪影） |
+| **base（D10 重跑）** | 同上 | **2 / 2 / 0 ✅** |
+| A 面回退 | `RG_PARITY_*`→`mutants/MA-*` | **2 / 1 / 1，红 18/168 ✅** |
+| 身份断言 · 正常 | `--test-name-pattern="cross-end identity"`，两端 frozen | **1 / 1 / 0 ✅** |
+| **身份断言 · 错配** | `RG_PARITY_PS1`=**FIX5 ps1** + `RG_PARITY_SH`=frozen FIX6 sh | **1 / 0 / 1，红 8/16 ✅ 断言有效** |
+
+日志：`logs\fix6_gate_base.log`、`logs\fix6_gate_base_rerun.log`、`logs\fix6_gate_A.log`、`logs\fix6_id_base.log`、`logs\fix6_id_mismatch.log`、汇总 `gate6_summary.txt`。
+
+### 11.2 红线（串行，运行于 11:24–11:35）
+
+见 §7.1–§7.3（`logs\sh_*.log` / `logs\ps1_*.log` / `logs\redact_*.log` / `logs\failclosed_M2.log`）。
 
 ### 11.3 证据清单（`E:\DeepSeek_Harness\workspace\2026_08_21\.eval-tmp\g6fix6eval\`）
 
 | 文件 | 内容 |
 |---|---|
-| `probe.mjs` / `results.json` / `probe_console.txt` | 自造 **161 条 × 6 列 = 966 次串行真实 spawn** harness + 原始结果 |
+| `probe.mjs` / `results.json` / `probe_console.txt` | 自造 **161 条 × 6 列 = 966 次串行真实 spawn** harness + 原始结果（**11:14–11:23:43，改写之前**） |
 | `analyze.mjs` / `analysis.txt` | 变化分类（放松/收紧/回归三列/两端分歧/新过拦） |
 | `normalize.mjs` / `normalize.txt` | **归一化代码行 LCS 比对**（证明无规则被意外改变）+ 定义/引用行号清单 |
 | `focused.mjs` / `focused.txt` / `focused.json` | 27 条 ps1 聚焦探针（括号过拦族 + `command/env` 顺序族） |
 | `legit.mjs` / `legit.txt` | 60 条合法/守卫载荷六列判定表 |
 | `matrix_check.mjs` | 63 条包装矩阵 + 三列回归计数复核 |
-| `frozen/` | 我 `git show` 取出的 7 个冻结字节基线（含 pre-G3 / FIX4 / FIX5 / FIX6 两端） |
-| `mutants/` | 我从**冻结终版**独立生成的 4 个变异体（sha256 可复算） |
-| `mk_mutants.mjs` / `run_redlines.ps1` | 变异生成脚本 / 串行红线+闸门 runner |
-| `logs/` / `redlines_summary.txt` | 各套件原始输出与汇总 |
+| `frozen/` | 我 `git show` 取出的 7 个冻结字节基线（pre-G3 / FIX4 / FIX5 / FIX6 两端） |
+| `mutants/` | 我从**冻结终版**独立生成的 4 个变异体（sha256 可复算；MA-ps1/MA-sh 与实现者声明**逐字一致**） |
+| `gate6/dp6.ts` | **冻结 FIX6 语料**（`git show e62d721:` 取出，465 行，绕开被改写的产品树） |
+| `mk_mutants.mjs` / `run_redlines.ps1` / `run_gate6.ps1` | 变异生成 / 串行红线 runner / **冻结闸门 runner** |
+| `logs/` / `redlines_summary.txt` / `gate6_summary.txt` | 各套件原始输出与汇总 |
