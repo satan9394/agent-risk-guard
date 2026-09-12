@@ -341,3 +341,209 @@ $json | powershell.exe -File hook →  $x=rm; $x -rf /tmp/t  : deny   parsed-ok
   （POSIX→红、`\s`→绿、字节级还原无损），6 副本一致、BOM 完好、PS 5.1 可解析、跨端判定与 sh 对齐。
 - **裁决 B：可接受保守取舍，记录不阻塞。** `$x=rm --help` 的 deny 与 sh 孪生规则一致、
   代价可逆、且给它加豁免会复制 rule 16 已实测存在的泄漏模式。任务卡的 allow 期望属描述偏差。
+
+---
+---
+
+# 附录 E — 第二轮独立复验（Evaluator #2）
+
+- Evaluator：另一独立 Agent（第二轮），**未参与 G4 实现**，未引用第 1 轮任何数字
+- 日期：2026-09-11
+- 复验时点被审文件状态：`agent-risk-guard-audit\scripts\dangerous-commands.ps1`
+  **SHA256 `EA71C7CBF32251BB285ACBD5B2BB1981330BC768259C25485E8459A45AFCAA9B` / 31397 B / 526 行 / BOM=True**
+  （mtime 2026-09-11 10:37:56）
+- 自建证据目录：`agent-risk-guard\tasks\.tmp\g4eval\`
+
+> **⚠ 复验前提变更（第 1 轮报告未涵盖）**：本文件正文（第 1 轮）全部哈希基于
+> `D6D726D2…` / 24004 B。第 2 轮开工后实测该文件已在会话期间**被 G15b 切片改写**为
+> `EA71C7CB…` / 31397 B（G15b 新增密钥脱敏规则，六副本同步为同一新哈希）。
+> 因此第 1 轮的 SHA/字节数断言（§2、§3、§3b 中的 `D6D726D2…`、`40185A84…`、24004/24058 B）
+> **在当前工作区已不可复现**，属"证据快照过期"，非实现缺陷。
+> 第 2 轮在**新哈希状态**下独立重做了全部关键实验，16d 规则行本身语义未变（仍为 `\s` 形态，见下）。
+
+## E1. 裁决（第 2 轮，独立结论）
+
+| 裁决 | 第 2 轮结论 |
+|---|---|
+| **A. 总体** | **ACCEPT**（针对 16d 修复本身；与第 1 轮一致，但附加下方 N1 时效性条件） |
+| **B. `$x=rm --help`** | **可接受保守取舍**（非误伤缺陷；理由见 E4，含第 2 轮自跑的 sh 对照） |
+
+## E2. 逐项检查表（PASS/FAIL + 第 2 轮自跑证据）
+
+| # | 检查项 | 结果 | 第 2 轮独立证据 |
+|---|---|---|---|
+| 1 | 16d `[[:space:]]` → `\s` 已修，`.NET` 语义等价 | **PASS** | 当前 L346 实测为 `(?i)=\s*"?rm(\s\|"\|\|;\|$)` 四分支形态；文件内 `\[\[:` 匹配数 = **0** |
+| 2 | 原语义保持（变量赋值三种写法 / Remove-Item / `r\m` / `\rm` / `/rm`） | **PASS** | 子进程真实 stdin 喂 hook，pwsh7 与 ps5.1 **双双 deny**（10 条向量，见 E3） |
+| 3 | 允许组无误伤（`echo hello` / `git status` / `ls -la` / `pwd`） | **PASS** | 4/4 `allow`（stdout 空 + exit 0 = 放行），两引擎一致（E3） |
+| 4 | 空/畸形输入不崩且 fail-closed | **PASS** | 空 stdin / 纯空白 / 坏 JSON / 缺 command / null command / 空 command → 全部 `deny`，exit=0，无 stderr（E3） |
+| 5 | 测试有效性：回滚变红、还原变绿 | **PASS（决定性）** | 隔离 TEMP 副本回滚 → `57/59` + exit=1（恰 2 条变红）；还原 → `59/59` + exit=0（E5） |
+| 6 | 6 处 canonical 副本 SHA256 一致 + BOM | **PASS（新哈希）** | 6/6 = `EA71C7CB…`，`distinct-hashes = 1`，`all-BOM = True`，均 31397 B（E6） |
+| 7 | `scripts\` 全部 .ps1 无 POSIX 类 | **PASS** | 4 个 .ps1 命中数 **0/0/0/0**；`[[:` 扫描器经自检有效（E6） |
+| 8 | 语法检查（Parser::ParseFile） | **PASS** | canonical 与 universal 在 pwsh7 下 `syntaxErrors = 0` |
+| 9 | 4 套 ps1 回归全绿 | **PASS** | pwsh7：37 / 8 / **20** / 59，全 exit=0；ps5.1：37 / 8 / **18** / 59，全 exit=0（E6） |
+| 10 | sh 三套件不回归 | **PASS** | `sh-hook-test` 67/67、`sh-audit-edge` 40/40 FAIL 0、`sh-audit-bypass` 192/192 ALL PASS，全 exit=0 |
+| 11 | 补的用例是真用例（断言 hook 实际输出） | **PASS** | reregress L74-79 经 `Test-Cmd` 实际调用 hook 并读 `permissionDecision`；回滚实验证明其可失败 |
+| 12 | 未越界改动 | **PASS（有条件）** | 16d 相关行 + 测试文件；但见 **N1**：文件已被 G15b 覆盖，无法在 G4 时点复核 `git diff` 边界 |
+| 13 | 跨端（sh↔ps1）判定一致 | **FAIL（部分）** | 主体向量一致，但 3 个向量不一致，见 **N2/N3/N4** |
+
+## E3. 第 2 轮独立探测（子进程真实 stdin，pwsh7 + PS 5.1 双引擎）
+
+方式：`{"tool_name":"Bash","tool_input":{"command":"<cmd>"}}` 写入子进程 stdin（`Start-Process` +
+`RedirectStandardInput`），只读 hook 的 stdout JSON。**全程未执行任何危险命令。**
+判定口径：stdout 为空且 exit 0 = **allow**（对应 hook L430-432 `Write-HookLog 'allow'; exit 0`）；
+含 `"permissionDecision":"deny"` = deny。
+
+| 组 | 命令 | pwsh7 | ps5.1 |
+|---|---|---|---|
+| deny | `$x=rm; $x -rf /tmp/t` | deny | deny |
+| deny | `$x = rm; $x -rf /tmp/t` | deny | deny |
+| deny | `$x="rm -rf /tmp/t"; $x` | deny | deny |
+| deny | `$x=Remove-Item; $x -Path C:\temp -Recurse -Force` | deny | deny |
+| deny | `$x = Remove-Item ; $x -Path C:\temp` | deny | deny |
+| deny | `r\m -rf /tmp/t` | deny | deny |
+| deny | `\rm -rf /tmp/t` | deny | deny |
+| deny | `/rm -rf /tmp/t` | deny | deny |
+| deny | `$X=RM; $X -RF /tmp/t` | deny | deny |
+| deny | `$x='Remove-Item'; $x -Path C:\temp` | deny | deny |
+| deny | `Remove-Item -Recurse -Force C:\temp` | deny | deny |
+| **allow(未覆盖)** | **`$x="r\m"; $x -rf /tmp/t`** | **allow** | **allow** |
+| allow | `echo hello` / `git status` / `ls -la` / `pwd` | allow | allow |
+
+畸形输入（pwsh7）：空 stdin、纯空白、`{not json`、缺 `tool_input.command`、`command: null`、
+`command: ""` → **全部 deny、exit=0、无异常输出**；`tool_name` 缺失或非 shell 类（`Read`）→ allow（设计意图）。
+
+> 方法学注记（与第 1 轮 §0 一致，本轮独立复现）：同进程管道 `$json | & $hook` 会让
+> `[Console]::In.ReadToEnd()` 读到 EOF，从而**所有**用例（含 `echo hello`）都被 fail-closed 判 deny。
+> 本轮全部探测均走独立子进程 stdin，未落入该假阳性陷阱。
+
+## E4. 裁决 B 复核：`$x=rm --help` 的 deny
+
+第 2 轮自跑，ps1 与 sh 均用**子进程真实 stdin / 真实 bash 调用**：
+
+| 命令 | pwsh7 | ps5.1 | **sh（WSL bash）** |
+|---|---|---|---|
+| `$x=rm --help` | deny | deny | **deny** |
+| `$x = rm -h` | deny | deny | **deny** |
+| `rm --help` | allow | allow | **allow** |
+| `rm --version` | allow | allow | **allow** |
+| `rm'' --help` | allow | allow | **deny** |
+| `$x=rm --help; $x -rf /` | deny | deny | （deny） |
+| `Remove-Item --help` | deny | deny | — |
+| `del /?` | deny | deny | — |
+| `git restore --help` / `git checkout --help` | allow | allow | allow |
+
+**理由（含 sh 端同类规则行为 + 项目既有 help 豁免惯例）**：
+
+1. **sh 端同类规则行为**：`dangerous-commands.sh:230`（10b）对 `$x=rm --help` **同样是 deny**，
+   与 ps1 16d 逐字对齐。该 deny **不是 ps1 单端误伤**，而是跨端一致的设计结果；任务卡把它列为
+   "应 allow"属于**任务卡描述与 sh 孪生规则矛盾**，不是实现错误。单改 ps1 加豁免会立刻制造
+   新的跨端不一致，直接违反任务卡"ps1 修复不得改变 sh 判定"的约束。
+2. **项目既有 help 豁免惯例确实存在，但只挂在"直接调用"类规则上，16d 属"变量间接执行"类，不在其列**：
+   - 有豁免：`rm --help` → allow（rule 16 显式豁免）；`rm'' --help` → ps1 allow（16c 的
+     `(?!-?h(?:elp)?\b|version\b|V\b)`）；`git restore --help` / `git checkout --help` → allow
+     （回归套件 L22-23 明文钉死为 allow 预期）。
+   - 无豁免：`Remove-Item --help` → deny、`del /?` → deny，均实测。
+   - 即"删除动词 + help"并非项目通用豁免；16d 沿用"变量别名删除动词一律拦"的口径与惯例自洽。
+3. **代价可逆、信息不丢失**：deny 附 reason 且提示在 Agent 外部手动执行；正常查帮助的写法
+   `rm --help` 实测 allow，可用性损失极小。
+4. **反方向风险更高**：`$x=rm --help` 与真实攻击形态 `$x=rm --help; $x -rf /` 仅差一个后缀；
+   给 16d 加 help 豁免等于为"别名 + 无害尾巴"的绕过预留静默放行口（第 1 轮 §7 已实证 rule 16
+   存在同型泄漏 `rm --help; rm <file>`；本轮独立复现 `rm'' --help` 在 ps1 放行、sh 拦截）。
+
+**结论：可接受保守取舍。** 建议把 `$x=rm --help` 作为**预期 deny** 写入回归套件并修正任务卡
+「错误场景」文字，而不是给它加豁免。
+
+## E5. 测试有效性（决定性实验，第 2 轮自跑）
+
+> **方法改进**：第 1 轮直接改写 canonical 再还原；第 2 轮改为**隔离 TEMP 副本实验**——
+> 整棵 `scripts\` + `tests\` 复制到 `%TEMP%\g4eval_iso_<rand>\`，只改副本。canonical 全程零写入，
+> 从机制上排除"还原不彻底"的可能。
+
+```
+CANONICAL-BEFORE sha=EA71C7CBF32251BB285ACBD5B2BB1981330BC768259C25485E8459A45AFCAA9B bytes=31397 bom=True
+
+A. BASELINE（canonical 只读）  hook-audit-reregress.ps1 :: PASS: 59/59   exit=0
+B. ISO 副本未改动              PASS: 59/59            exit=0            （GREEN）
+C. 16d 行回滚为 POSIX 形态     命中 1 处（预期 1）
+   ISO-HOOK after rollback: sha=B9E9DBAD… bytes=31451 bom=True（+54 B = 6 处 × 9 B，与 6 次替换吻合）
+   POSIX-class count in rolled-back 16d line = 6
+D. ISO 副本 16d 回滚后          FAIL [expect deny] got allow  <- $x=rm; $x -rf /tmp/t
+                                FAIL [expect deny] got allow  <- $x = rm; $x -rf /tmp/t
+                                PASS: 57/59            exit=1            （RED）
+E. ISO 副本按 canonical 字节还原 sha=EA71C7CB…  byte-identical-to-canonical=True  bom=True
+                                PASS: 59/59            exit=0            （GREEN，闭环）
+F. CANONICAL-AFTER             sha=EA71C7CB… bytes=31397 bom=True   CANONICAL-UNTOUCHED = True
+```
+
+**因果链闭合**：POSIX 形态 → 恰 2 条 16d 用例转红 + exit=1；改回 `\s` → 全绿。
+新用例**真的会失败**，非恒真断言。同时 canonical 前后 SHA 完全相同，实验零污染。
+
+## E6. 副本一致性 / POSIX 残留 / 回归（第 2 轮自跑原始数字）
+
+**6 处 canonical 副本**（全部 `EA71C7CB…` / 31397 B / BOM=True，`distinct-hashes = 1`）：
+`agent-risk-guard-audit\scripts\` · `agent-risk-guard\assets\hooks\` ·
+`agent-risk-guard\skills\agent-risk-guard\scripts\` · `~/.claude/hooks\` · `~/.codex/hooks\` ·
+`~/.gemini/config\hooks\`。
+universal 2 处同为 `13FEB6CCA35710909783EAD23DCD73C6CAA8CDAA899616DC0205DFB93D9796BB` / 17685 B / BOM=True。
+
+**POSIX 括号类精确计数**（`[regex]::Matches` 计数，非行数）：
+
+| 文件 | `\[\[:` 计数 |
+|---|---|
+| `agent-risk-guard-audit\scripts\dangerous-commands.ps1` | **0** |
+| `agent-risk-guard-audit\scripts\dangerous-commands-universal.ps1` | **0** |
+| `agent-risk-guard-audit\scripts\agy-dangerous-commands.ps1` | **0** |
+| `agent-risk-guard-audit\scripts\dangerous-commands-agy.ps1` | **0** |
+| `agent-risk-guard-audit-xhs-publish\scripts\dangerous-commands.ps1` | **6**（不在本卡 6 份清单内，见 N5） |
+| `agent-risk-guard-audit-xhs-publish\scripts\dangerous-commands-universal.ps1` | **6**（同上） |
+
+**回归套件（第 2 轮自跑，PASS 行计数）**：
+`hook-rules-test` 37 / `hook-fp-regression` 8 / `hook-bypass-regression` **20(pwsh7) · 18(ps5.1)** /
+`hook-audit-reregress` 59，双引擎 exit 全 0；sh：67 / 40 / 192，全 exit 0。
+
+第 2 轮**独立复现**了 bypass 套件 18 vs 20 的成因：ps5.1 下该测试文件因**无 BOM** 且**首行非注释**，
+按 GBK(936) 解码时中文注释末字节吞掉 CRLF，静默丢 3 行（含 `echo hi\nrm -rf /tmp` 与 `RM -rf /tmp` 两例），
+故 `$cases.Count` = 18。属沿袭技术债，G4 前后一致，非本次引入。
+
+## E7. 第 2 轮新增发现（第 1 轮未涵盖）
+
+| 编号 | 发现 | 严重度 | 处置建议 |
+|---|---|---|---|
+| **N1** | **被审文件在 G4 验收后已被 G15b 改写**（`D6D726D2…`/24004 → `EA71C7CB…`/31397）。第 1 轮全部 SHA/字节断言已过期，无法在当前工作区复现。 | 中（证据时效） | G4 结论仍成立于 16d 语义（本轮已在新哈希下重验）；但**任何引用 G4 哈希的下游文档需标注时点**。 |
+| **N2** | **`$x="r\m"; $x -rf /tmp/t` → ps1 allow 且 sh allow**（跨端一致地漏拦）。16d 分支 `r[\\/]m(\s\|-)` 要求 `m` 后紧跟空白或 `-`，此处为 `"`，故不命中；裸 `r\m` 已拦，引号包裹形态未拦。 | 中（残留绕过，**两端同源、非 G4 引入**） | 超出 G4 范围；建议后续把该分支改为容忍引号/引号剥离后复查（`$cmdNaked` 已在 16e 使用，可复用）。 |
+| **N3** | **`$X=RM; $X -RF /tmp/t` → ps1 deny，sh allow**（跨端不一致，ps1 更严）。ps1 16d 带 `(?i)`，sh `:230` 为 `grep -qE`（大小写敏感），故大写变量名漏拦。 | 中（sh 侧漏拦缺口） | 属 sh 侧既有缺口，建议 sh 端补 `-i` 或在 10b 加大小写变体；**不得**通过放宽 ps1 来对齐。 |
+| **N4** | **`rm'' --help` → ps1 allow，sh deny**（跨端不一致，ps1 更宽）。ps1 16c 的 help 豁免被引号插词形态复用，sh 同位置无豁免。 | 低-中 | 与第 1 轮 §7 发现的 rule 16 豁免泄漏同族；建议统一豁免实现。 |
+| **N5** | `agent-risk-guard-audit-xhs-publish\scripts\*.ps1` 仍有 6+6 处 POSIX 类。 | 低（范围外） | 与第 1 轮 §7.3 判定一致：发布快照、非活镜像。**若验收口径为"工作区内所有 ps1 归零"则须 Orchestrator 明确授权**（会改动其它任务产物哈希）。 |
+
+> 范围口径提醒（同意第 1 轮 §7.4）：`tasks\.tmp\`、`tasks\eval-g4\`、`_eval_g4\` 等**评估器自建目录**
+> 中的 `[[:space:]]` 是**刻意保存的测试数据**（回滚实验必须写入该字面量），不是 hook 规则文件。
+> 本附录 E6 的残留扫描口径限定为**hook 规则文件与分发包**，不含评估器临时目录。
+
+## E8. 第 2 轮证据文件清单
+
+全部位于 `agent-risk-guard\tasks\.tmp\g4eval\`（评估器自建，非交付物）：
+
+| 文件 | 用途 |
+|---|---|
+| `probe-stdin.ps1` | 双引擎子进程真实 stdin 探测（18 向量 + 9 畸形输入） |
+| `out-probe-both.txt` / `summary-both.csv` | 上述原始输出 |
+| `rollback-iso.ps1` | **隔离 TEMP** 回滚实验（canonical 零写入）+ 4 套件基线 |
+| `out-rollback-iso.txt` | 回滚实验原始输出（含 SHA/BOM 前后比对） |
+| `copies-check.ps1` / `out-copies.txt` | 6 副本 + universal 2 副本 SHA256/BOM/字节 |
+| `help-convention-probe.ps1` / `out-help-convention.txt` | help/version 豁免惯例双引擎取证 |
+| `sh-probe.sh` / `out-sh-probe.txt` | sh 端 20 向量跨端对照（真实 bash） |
+| `t3-regex.ps1` | 16d 分支正则语义核对 |
+
+## E9. 第 2 轮最终裁决
+
+- **裁决 A：ACCEPT。** 16d 修复在**当前哈希 `EA71C7CB…`/31397 B** 状态下独立重验通过：
+  POSIX 类归零、双引擎 deny/allow 组全对、畸形输入 fail-closed、6 副本一致且 BOM 完好、
+  4 套 ps1 与 3 套 sh 全绿；**隔离 TEMP 回滚实验给出因果级证据**（57/59 变红 → 59/59 变绿，
+  canonical 零污染）。与第 1 轮结论一致。
+  *附加条件*：第 1 轮报告中的 SHA/字节数已因 G15b 改写而过期（N1），引用时须标注时点。
+- **裁决 B：可接受保守取舍，记录不阻塞。** 第 2 轮以真实 bash 调用 sh 钩子独立取证：
+  sh 端对 `$x=rm --help` **同样 deny**，与 ps1 一致；项目 help 豁免惯例仅覆盖"直接调用"类规则
+  （`rm --help`、`git restore --help` 等实测 allow），删除类规则（`Remove-Item --help`、`del /?`）
+  一律不豁免，16d 属后者。加豁免反而会复制已知的静默放行模式。**属任务卡描述偏差，非实现缺陷。**
+- **遗留（不阻塞 G4，建议另开卡）**：N2（两端同源漏拦 `$x="r\m"`）、N3（sh 大小写漏拦）、
+  N4（ps1 `rm'' --help` 比 sh 宽）、N5（xhs-publish 快照 6 处 POSIX）、bypass 套件无 BOM 致 ps5.1 丢 3 例。

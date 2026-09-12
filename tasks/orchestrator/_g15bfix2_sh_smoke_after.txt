@@ -1,0 +1,84 @@
+--- syntax check ---
+bash -n OK
+--- payloads ---
+in = curl -u alice:123456 https://example.com
+out= curl [REDACTED] https://example.com
+
+in = curl -u alice:123456
+out= curl [REDACTED]
+
+in = curl -u alice:hunter2 https://example.com
+out= curl [REDACTED] https://example.com
+
+in = curl --user alice:hunter2 https://example.com
+out= curl --user [REDACTED] https://example.com
+
+in = ssh mysql -p2222 host
+out= ssh mysql -p2222 host
+
+in = ssh mysql-prod -p2222
+out= ssh mysql-prod -p2222
+
+in = psql -h mysql -p5432 -U postgres
+out= psql -h mysql -p5432 -U postgres
+
+in = docker run --user nginx:nginx nginx
+out= docker run --user nginx:nginx nginx
+
+in = npm install --user alice:hunter2
+out= npm install --user alice:hunter2
+
+in = chown --user alice:hunter2 f
+out= chown --user alice:hunter2 f
+
+in = docker run --user 1000:1000 nginx
+out= docker run --user 1000:1000 nginx
+
+in = docker run --name mysql -p 3306:3306 mysql
+out= docker run --name mysql -p 3306:3306 mysql
+
+in = docker run --name mysql -p3306:3306 mysql
+out= docker run --name mysql [REDACTED] mysql
+
+in = mysql -p12345678 -e "select 1"
+out= mysql [REDACTED] -e "select 1"
+
+in = mariadb -p99887766 -e "select 1"
+out= mariadb [REDACTED] -e "select 1"
+
+in = mysql -pSup3rS3cret -e "select 1"
+out= mysql [REDACTED] -e "select 1"
+
+in = rm -rf /tmp/t && mysql -p12345678 -e "select 1"
+out= rm -rf /tmp/t && mysql [REDACTED] -e "select 1"
+
+in = sudo mysql -p12345678 -e "select 1"
+out= sudo mysql [REDACTED] -e "select 1"
+
+in = env mysql -p12345678 -e "select 1"
+out= env mysql [REDACTED] -e "select 1"
+
+in = docker exec db mysql -p12345678 -e "select 1"
+out= docker exec db mysql -p12345678 -e "select 1"
+
+in = ssh -p2222 host
+out= ssh -p2222 host
+
+in = docker run -p 8080:80 nginx
+out= docker run -p 8080:80 nginx
+
+in = mkdir -p /tmp/empty_dir
+out= mkdir -p /tmp/empty_dir
+
+in = npm run build --prefix packages/core
+out= npm run build --prefix packages/core
+
+in = sudo -u root whoami
+out= sudo -u root whoami
+
+in = ssh -i /home/u/.ssh/id_rsa host
+out= ssh -i /home/u/.ssh/id_rsa host
+
+in = echo hello
+out= echo hello
+

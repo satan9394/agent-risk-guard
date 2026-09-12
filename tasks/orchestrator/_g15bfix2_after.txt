@@ -1,0 +1,238 @@
+PROBE RUN  ps1=E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard-audit\scripts\dangerous-commands.ps1
+           sh =E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard-audit\scripts\dangerous-commands.sh
+
+=== 单行载荷（三端入口 + 生产出口） ===
+[R1-curl-u-numeric] expect=redact
+  in       = "curl -u alice:123456 https://example.com"
+  core     = "curl [REDACTED] https://example.com"
+  ps1A     = "curl [REDACTED] https://example.com"
+  shA      = "curl [REDACTED] https://example.com"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R1-curl-u-bare-num] expect=redact
+  in       = "curl -u alice:123456"
+  core     = "curl [REDACTED]"
+  ps1A     = "curl [REDACTED]"
+  shA      = "curl [REDACTED]"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R1-curl-u-mixed] expect=redact
+  in       = "curl -u alice:hunter2 https://example.com"
+  core     = "curl [REDACTED] https://example.com"
+  ps1A     = "curl [REDACTED] https://example.com"
+  shA      = "curl [REDACTED] https://example.com"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R1-curl-user-mixed] expect=redact
+  in       = "curl --user alice:hunter2 https://example.com"
+  core     = "curl --user [REDACTED] https://example.com"
+  ps1A     = "curl --user [REDACTED] https://example.com"
+  shA      = "curl --user [REDACTED] https://example.com"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-ssh-mysql-host] expect=keep
+  in       = "ssh mysql -p2222 host"
+  core     = "ssh mysql -p2222 host"
+  ps1A     = "ssh mysql -p2222 host"
+  shA      = "ssh mysql -p2222 host"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-ssh-mysqlprod] expect=keep
+  in       = "ssh mysql-prod -p2222"
+  core     = "ssh mysql-prod -p2222"
+  ps1A     = "ssh mysql-prod -p2222"
+  shA      = "ssh mysql-prod -p2222"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-psql-h-mysql] expect=keep
+  in       = "psql -h mysql -p5432 -U postgres"
+  core     = "psql -h mysql -p5432 -U postgres"
+  ps1A     = "psql -h mysql -p5432 -U postgres"
+  shA      = "psql -h mysql -p5432 -U postgres"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-docker-user-name] expect=keep
+  in       = "docker run --user nginx:nginx nginx"
+  core     = "docker run --user nginx:nginx nginx"
+  ps1A     = "docker run --user nginx:nginx nginx"
+  shA      = "docker run --user nginx:nginx nginx"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-npm-user] expect=keep
+  in       = "npm install --user alice:hunter2"
+  core     = "npm install --user alice:hunter2"
+  ps1A     = "npm install --user alice:hunter2"
+  shA      = "npm install --user alice:hunter2"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-chown-user] expect=keep
+  in       = "chown --user alice:hunter2 f"
+  core     = "chown --user alice:hunter2 f"
+  ps1A     = "chown --user alice:hunter2 f"
+  shA      = "chown --user alice:hunter2 f"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-docker-user-num] expect=keep
+  in       = "docker run --user 1000:1000 nginx"
+  core     = "docker run --user 1000:1000 nginx"
+  ps1A     = "docker run --user 1000:1000 nginx"
+  shA      = "docker run --user 1000:1000 nginx"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-docker-mysql-space] expect=keep
+  in       = "docker run --name mysql -p 3306:3306 mysql"
+  core     = "docker run --name mysql -p 3306:3306 mysql"
+  ps1A     = "docker run --name mysql -p 3306:3306 mysql"
+  shA      = "docker run --name mysql -p 3306:3306 mysql"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[R2-docker-mysql-nospace] expect=KNOWN-OLD-OVER
+  in       = "docker run --name mysql -p3306:3306 mysql"
+  core     = "docker run --name mysql [REDACTED] mysql"
+  ps1A     = "docker run --name mysql [REDACTED] mysql"
+  shA      = "docker run --name mysql [REDACTED] mysql"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-mysql-num] expect=redact
+  in       = "mysql -p12345678 -e \"select 1\""
+  core     = "mysql [REDACTED] -e \"select 1\""
+  ps1A     = "mysql [REDACTED] -e \"select 1\""
+  shA      = "mysql [REDACTED] -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-mariadb-num] expect=redact
+  in       = "mariadb -p99887766 -e \"select 1\""
+  core     = "mariadb [REDACTED] -e \"select 1\""
+  ps1A     = "mariadb [REDACTED] -e \"select 1\""
+  shA      = "mariadb [REDACTED] -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-mysql-mixed] expect=redact
+  in       = "mysql -pSup3rS3cret -e \"select 1\""
+  core     = "mysql [REDACTED] -e \"select 1\""
+  ps1A     = "mysql [REDACTED] -e \"select 1\""
+  shA      = "mysql [REDACTED] -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-mysql-after-and] expect=redact
+  in       = "rm -rf /tmp/t && mysql -p12345678 -e \"select 1\""
+  core     = "rm -rf /tmp/t && mysql [REDACTED] -e \"select 1\""
+  ps1A     = "rm -rf /tmp/t && mysql [REDACTED] -e \"select 1\""
+  shA      = "rm -rf /tmp/t && mysql [REDACTED] -e \"select 1\""
+  ps1B     = "rm -rf /tmp/t && mysql [REDACTED] -e \"select 1\""
+  shB      = "rm -rf /tmp/t && mysql [REDACTED] -e \"select 1\""
+
+[F4-sudo-mysql] expect=redact
+  in       = "sudo mysql -p12345678 -e \"select 1\""
+  core     = "sudo mysql [REDACTED] -e \"select 1\""
+  ps1A     = "sudo mysql [REDACTED] -e \"select 1\""
+  shA      = "sudo mysql [REDACTED] -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-env-mysql] expect=redact
+  in       = "env mysql -p12345678 -e \"select 1\""
+  core     = "env mysql [REDACTED] -e \"select 1\""
+  ps1A     = "env mysql [REDACTED] -e \"select 1\""
+  shA      = "env mysql [REDACTED] -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[F4-docker-exec-mysql] expect=KNOWN-GAP
+  in       = "docker exec db mysql -p12345678 -e \"select 1\""
+  core     = "docker exec db mysql -p12345678 -e \"select 1\""
+  ps1A     = "docker exec db mysql -p12345678 -e \"select 1\""
+  shA      = "docker exec db mysql -p12345678 -e \"select 1\""
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-ssh-p] expect=keep
+  in       = "ssh -p2222 host"
+  core     = "ssh -p2222 host"
+  ps1A     = "ssh -p2222 host"
+  shA      = "ssh -p2222 host"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-docker-p] expect=keep
+  in       = "docker run -p 8080:80 nginx"
+  core     = "docker run -p 8080:80 nginx"
+  ps1A     = "docker run -p 8080:80 nginx"
+  shA      = "docker run -p 8080:80 nginx"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-mkdir-p] expect=keep
+  in       = "mkdir -p /tmp/empty_dir"
+  core     = "mkdir -p /tmp/empty_dir"
+  ps1A     = "mkdir -p /tmp/empty_dir"
+  shA      = "mkdir -p /tmp/empty_dir"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-prefix] expect=keep
+  in       = "npm run build --prefix packages/core"
+  core     = "npm run build --prefix packages/core"
+  ps1A     = "npm run build --prefix packages/core"
+  shA      = "npm run build --prefix packages/core"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-sudo-u] expect=keep
+  in       = "sudo -u root whoami"
+  core     = "sudo -u root whoami"
+  ps1A     = "sudo -u root whoami"
+  shA      = "sudo -u root whoami"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-ssh-i] expect=keep
+  in       = "ssh -i /home/u/.ssh/id_rsa host"
+  core     = "ssh -i /home/u/.ssh/id_rsa host"
+  ps1A     = "ssh -i /home/u/.ssh/id_rsa host"
+  shA      = "ssh -i /home/u/.ssh/id_rsa host"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+[NEIGH-echo] expect=keep
+  in       = "echo hello"
+  core     = "echo hello"
+  ps1A     = "echo hello"
+  shA      = "echo hello"
+  ps1B     = "<EMPTY>"
+  shB      = "<EMPTY>"
+
+=== 多行载荷（仅生产出口可比：测试入口 sh 为逐行、core/ps1 为整串） ===
+[ML-secret-line] expect=redact
+  in       = "rm -rf /tmp/t --password=hunter2SuperSecret\nmysql -e \"select 1\"\nssh host -p2222"
+  core     = "rm -rf /tmp/t --[REDACTED]\nmysql -e \"select 1\"\nssh host -p2222"
+  ps1B     = "rm -rf /tmp/t --[REDACTED]\nmysql -e \"select 1\"\nssh host -p2222"
+  shB      = "rm -rf /tmp/t --[REDACTED]\nmysql -e \"select 1\"\nssh host -p2222"
+
+[ML-mysql-first] expect=redact
+  in       = "mysql -e \"select 1\"\nrm -rf /tmp/t\nssh host -p2222"
+  core     = "mysql -e \"select 1\"\nrm -rf /tmp/t\nssh host -p2222"
+  ps1B     = "mysql -e \"select 1\"\nrm -rf /tmp/t\nssh host -p2222"
+  shB      = "mysql -e \"select 1\"\nrm -rf /tmp/t\nssh host -p2222"
+
+[ML-echo-mysql] expect=redact
+  in       = "echo mysql\npsql -p5432 -U postgres\nrm -rf /tmp/t"
+  core     = "echo mysql\npsql -p5432 -U postgres\nrm -rf /tmp/t"
+  ps1B     = "echo mysql\npsql -p5432 -U postgres\nrm -rf /tmp/t"
+  shB      = "echo mysql\npsql -p5432 -U postgres\nrm -rf /tmp/t"
