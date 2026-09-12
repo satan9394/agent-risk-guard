@@ -23,6 +23,7 @@
   - 新增：**修复会引入新缺陷**——R1/R2 都不是"旧 bug 没修"，而是**修复动作的副作用**；三者必须同时具备才能发现
 - **当前最高价值下一步**：FIX2 完成 → **第四个独立 Evaluator** 复验 → 通过后提交并转入 **G5**（sh fail-open）或 **G3**（规则单源收敛，已升级为"存在实际漏拦"）
 - **FIX2 在途进展（Round 252，实现者 `962dfa5f` 运行中）**：**三端 + 两项测试均已改动**——sh `3E3EBF173D`、ps1 `2943C99250`、core `26F2D11B2A`、`redact.test.ts` `371D4777ED`、`redact-parity.test.ts` `C481873E83`；**sh 冒烟已验证 R1/R2 生效**（`curl -u alice:123456` → `curl [REDACTED]`；`ssh mysql -p2222 host` **逐字不变**；`curl --user alice:hunter2` → `--user [REDACTED]`；`bash -n` OK）；正在跑九套回归 + M2 变异 + 判定差。**副本尚未同步**（三份 sh / 六份 ps1 仍是旧值），验收前必须确认 distinct=1。
+- **FIX2 实证摘要（据 `_g15bfix2_after.txt` / `_g15bfix2_sh_smoke_after.txt`）**：R1 `curl -u alice:123456`→`curl [REDACTED]`；R2 邻居 `ssh mysql -p2222 host`、`psql -h mysql -p5432`、`docker --name mysql` **逐字不变**，且 `npm install --user alice:hunter2` 与 `chown --user alice:hunter2 f` 在 **core/ps1/sh 三端逐字一致且不变**（R2 修法目标达成）；`docker --name mysql -p3306:3306`（无空格）被正确标注为 **KNOWN-OLD-OVER**（按 D8 归为既有、非本次回归）；多行载荷已入 R4 语料。**尚未完成**：九套回归数字、M2 变异结果、`CHANGED=0`、副本同步、`IMPLEMENTATION_RESULT_G15b-FIX2.md`。
 
 ---
 
