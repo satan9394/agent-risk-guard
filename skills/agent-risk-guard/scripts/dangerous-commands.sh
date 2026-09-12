@@ -17,6 +17,12 @@
 #        消除 `ssh mysql -p2222 host`、`psql -h mysql -p5432` 的端口误伤。
 #   [R2-生产路径] redact_cmd() 不再折叠换行（改为逐行脱敏 + 跨行 PEM 补脱敏 + JSON \n 转义），
 #        使多行命令的生产输出与 core/ps1 逐字一致（旧实现会跨行命中别的命令的端口）。判定逻辑零改动。
+# 2026-09-11 G5（P0 安全：sh 端畸形输入 fail-open → fail-closed）：
+#   [F1] 空 stdin / 畸形 JSON / 缺 command 字段一律输出 **deny JSON 并 exit 0**（旧实现：前两者静默放行，
+#        后者因 grep 回退在 `set -e` 下退出 1 而中止 → 无决策输出）。判定规则零改动。
+#   [F2] `redact_cmd()` 步骤 3 的 JSON 转义补齐**全部 C0 控制字符（含 TAB）**——旧实现只转义 \ " CR 与换行，
+#        命令含 TAB 时输出非法 JSON（调用方 JSON.parse 失败 → 相当于放行）。
+#   [F3] 纯注释放行改为「整串第一个非空白字符是 #」（旧实现用逐行锚点，`危险命令\n# 注释` 被提前放行）。
 # 注意：这与 .ps1 不同之处仅在平台相关项（reg delete / icacls / certutil 等 Windows 工具不在此列）
 
 set -euo pipefail
@@ -104,86 +110,10 @@ redact_text() {
         -e "s#${REDACT_SENTINEL}#[REDACTED]#g"
 }
 
-# G15b 测试入口：--redact-stdin 从 stdin 读纯文本，输出脱敏结果后退出。
-# 走的是**真实生产函数** redact_text（而非测试内复制的模式表），供跨端 parity 测试调用。
-if [ "${1:-}" = "--redact-stdin" ]; then
-    redact_text
-    exit 0
-fi
-
-# ---- 读取 stdin ----
-inputJson=$(cat 2>/dev/null || true)
-if [ -z "$inputJson" ]; then exit 0; fi
-
-# P0 编码修复（2026-09-10 WSL/Git Bash 跨平台测试发现）：
-# Git Bash 的 python3 常为 Windows 原生 build（Anaconda / msys ucrt），stdin 默认按 ANSI 代码页
-# （GBK/cp936）解码 UTF-8，全角字符进管道即乱码 → NFKC 归一化失效 → 全角危险命令被放行。
-# 强制 UTF-8 模式（对 Linux 无副作用）；并在 python3 内 reconfigure stdin/stdout 兜底。
-export PYTHONUTF8=1
-
-# ---- 提取 JSON 字段（优先 python3，fallback grep）----
-# python3 正确处理转义引号；grep 方案在命令含 \" 时会截断（已实测 bug）
-extract_field() {
-    local field="$1"
-    if command -v python3 >/dev/null 2>&1; then
-        printf '%s' "$inputJson" | python3 -c 'import sys,json
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
-try:
-    d=json.load(sys.stdin)
-    print(d.get(sys.argv[1], ""), end="")
-except Exception:
-    pass' "$field" 2>/dev/null && return 0
-    fi
-    echo "$inputJson" | grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*"\([^"]*\)"/\1/'
-    return 0
-}
-
-tool_name=$(extract_field tool_name <<< "$inputJson")
-# 只拦截 shell 类工具（对应 .ps1 的 P0-12 修复：Bash/Shell/Command/Execute 等）
-case "$tool_name" in
-    Bash|Shell|Command|Execute|bash|shell|command|execute|zsh|fish|cmd)
-        ;;
-    *)
-        exit 0 ;;
-esac
-
-# fail-open 修复（2026-09-10 测试发现）：set -euo pipefail 下 python3 缺失时，命令替换失败会
-# 直接中止脚本（exit 127、无决策输出 → 静默放行），下方 grep 回退是死代码。改用显式 || 回退。
-cmd=""
-if command -v python3 >/dev/null 2>&1; then
-    cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
-try:
-    d=json.load(sys.stdin)
-    print(d.get("tool_input",{}).get("command",""), end="")
-except Exception:
-    pass' 2>/dev/null) || true
-fi
-if [ -z "$cmd" ]; then
-    cmd=$(echo "$inputJson" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/')
-fi
-if [ -z "$cmd" ]; then exit 0; fi
-
-# R15 修复（对齐 .ps1 与 core normalizeFullWidth）：NFKC 归一化（全角 ｒｍ → rm），防 Unicode 绕过
-# 2026-09-10：加 || true 防 python3 缺失时 fail-open 中止；reconfigure 兜底 GBK 平台
-if command -v python3 >/dev/null 2>&1; then
-    cmd=$(printf '%s' "$cmd" | python3 -c 'import sys,unicodedata
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
-print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")') || true
-fi
-
-# ---- 纯注释行放行（对齐 .ps1） ----
-case "$cmd" in
-    ' '*|'#'*) if [ "${cmd%%[![:space:]]*}" = "#" ]; then exit 0; fi ;;
-esac
-# 简化：整行以 # 开头（允许前导空白）放行
-if printf '%s' "$cmd" | grep -qE '^[[:space:]]*#'; then exit 0; fi
-
-# ---- 辅助函数：返回拒绝（含脱敏 + JSON 转义）----
-# 脱敏：回显命令前替换密钥/token；转义：\ -> \\, " -> \", 换行 -> \n，保证合法 JSON
+# ---- 辅助函数：拒绝出口（含脱敏 + JSON 转义）----------------------------------------
+# G5 重排：本块**必须在读取 stdin 之前定义**——空输入 / 畸形 JSON 也要经由 deny_command 输出决策
+#   JSON；旧实现这两条路径落在函数定义之前（`exit 0` 无输出）→ 静默放行。
+# 脱敏：回显命令前替换密钥/token；转义：见 json_escape_text()（\ " 与全部 C0 控制字符）
 # G15b-FIX（F1，2026-09-11）：**生产出口真正接到 redact_text()**（旧实现只有 2 条 sed，四类残留全泄漏）。
 # G15b-FIX2（R2，2026-09-11）：**不再先折叠换行**——旧的 `tr '\n' ' '` 会让「命令词锚定」在生产路径失效，
 #   使 `mysql …` 那一行把下一行 `ssh host -p2222` 的端口脱敏，而 ps1 不折叠 → 两端在同一份多行命令上发散
@@ -202,12 +132,41 @@ redact_cmd() {
         | sed -E "s#-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[^-]*-----END (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----#${REDACT_SENTINEL}#g" \
         | sed -e "s#${REDACT_SENTINEL}#[REDACTED]#g" \
         | tr '\002' '\n')
-    # 3) JSON 转义：\ -> \\、" -> \"、CR -> \r（sed）；换行 -> \n（awk：sed 的模式空间不含换行，
-    #    只能逐行补写）。换行保留为 JSON 的 \n 转义（而非折叠成空格），与 core/ps1 一致。
-    safe=$(printf '%s' "$safe" \
-        | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r/\\r/g' \
-        | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')
-    printf '%s' "$safe"
+    # 3) JSON 转义（G5：原为「\ \" CR + 换行」四条，TAB 等 C0 控制字符原样输出 → JSON 非法）
+    json_escape_text "$safe"
+}
+
+# JSON 字符串转义（G5 新增，POSIX awk，不依赖 GNU 扩展）。
+# 旧实现只处理 `\`、`"`、CR、换行；**TAB 以及其余 C0 控制字符（U+0000–U+001F）按 JSON 规范必须转义**，
+# 否则 deny JSON 无法被 JSON.parse 解析——调用方拿不到 permissionDecision，等价于放行（实测复现）。
+# 换行仍写成 \n 转义（而非折叠成空格），与 core/ps1 的生产语义逐字一致（G15b-FIX2 不变量）。
+json_escape_text() {
+    printf '%s' "$1" | awk '
+    BEGIN {
+        for (i = 1; i <= 31; i++) {
+            c = sprintf("%c", i)
+            if (i == 8) e = "\\b"
+            else if (i == 9) e = "\\t"
+            else if (i == 10) e = "\\n"
+            else if (i == 12) e = "\\f"
+            else if (i == 13) e = "\\r"
+            else e = sprintf("\\u%04x", i)
+            m[c] = e
+        }
+    }
+    {
+        out = ""
+        n = length($0)
+        for (j = 1; j <= n; j++) {
+            ch = substr($0, j, 1)
+            if (ch == "\\") out = out "\\\\"
+            else if (ch == "\"") out = out "\\\""
+            else if (ch in m) out = out m[ch]
+            else out = out ch
+        }
+        if (NR > 1) printf "\\n"
+        printf "%s", out
+    }'
 }
 
 deny_command() {
@@ -219,6 +178,131 @@ deny_command() {
 EOF
     exit 0
 }
+
+# G15b 测试入口：--redact-stdin 从 stdin 读纯文本，输出脱敏结果后退出。
+# 走的是**真实生产函数** redact_text（而非测试内复制的模式表），供跨端 parity 测试调用。
+if [ "${1:-}" = "--redact-stdin" ]; then
+    redact_text
+    exit 0
+fi
+
+# ---- 读取 stdin（G5：空输入不再放行，交由下方 fail-closed 状态机处理）----
+cmd=""
+tool_name=""
+inputJson=$(cat 2>/dev/null || true)
+
+# P0 编码修复（2026-09-10 WSL/Git Bash 跨平台测试发现）：
+# Git Bash 的 python3 常为 Windows 原生 build（Anaconda / msys ucrt），stdin 默认按 ANSI 代码页
+# （GBK/cp936）解码 UTF-8，全角字符进管道即乱码 → NFKC 归一化失效 → 全角危险命令被放行。
+# 强制 UTF-8 模式（对 Linux 无副作用）；并在 python3 内 reconfigure stdin/stdout 兜底。
+export PYTHONUTF8=1
+
+# ===== G5（2026-09-11）：输入解析 fail-closed 状态机（对齐 .ps1 L177-206）=================
+# 旧实现的三个出口都不合格（编排者 + 本轮实测复现，见 _g5_before_probe.txt）：
+#   ① 空 stdin：`if [ -z "$inputJson" ]; then exit 0; fi` → 无输出、exit 0 = **静默放行**；
+#   ② 畸形 JSON：python 分支 `except: pass` 吞掉异常 → cmd 为空 → 同一出口 **静默放行**；
+#   ③ 缺 command 字段：grep 回退无匹配时 grep 退出 1，`set -euo pipefail` 直接中止 → **exit 1、无输出**
+#      （decision JSON 没产出，调用方同样拿不到 deny）——即「裸 exit 1」违反 exit-0 契约。
+# 现按 ps1 语义：**解析成功才谈判定**；解析失败一律 deny，且 deny 也 exit 0（拒绝是决策，不是错误）。
+#
+# p_status 取值（一次 python3 调用给出单行两字段 "状态<TAB>tool_name"）：
+#   OK        解析成功且 tool_input.command 存在
+#   NO_TI     tool_input 缺失或不是对象            → shell 工具则 deny
+#   NO_CMD    tool_input 是对象但没有 command 键   → shell 工具则 deny
+#   NOT_OBJ   合法 JSON 但不是对象（ps1 取不到 tool_name → 放行，此处保持一致）
+#   PARSE_ERR 解析失败（含空输入、python3 崩溃）→ deny
+#   GREP      无 python3，走 grep 回退（**不得放宽**：解析不了 command 就不放行）
+if command -v python3 >/dev/null 2>&1; then
+    parsed=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+def sane(v):
+    return (v if isinstance(v,str) else ("" if v is None else str(v))).replace("\t"," ").replace("\n"," ").replace("\r"," ")
+try:
+    d=json.loads(sys.stdin.read())
+except Exception:
+    print("PARSE_ERR\t", end=""); sys.exit(0)
+if not isinstance(d,dict):
+    print("NOT_OBJ\t", end=""); sys.exit(0)
+tn=sane(d.get("tool_name"))
+ti=d.get("tool_input")
+if not isinstance(ti,dict):
+    print("NO_TI\t"+tn, end=""); sys.exit(0)
+if "command" not in ti:
+    print("NO_CMD\t"+tn, end=""); sys.exit(0)
+print("OK\t"+tn, end="")' 2>/dev/null) || parsed=""
+    # 协议字段用 TAB 分隔；python3 已把 tool_name 内的 TAB/换行折叠为空格，故解析仍是单行两字段
+    tab=$(printf '\t')
+    p_status=${parsed%%"$tab"*}
+    tool_name=${parsed#*"$tab"}
+    tool_name=${tool_name%%"$tab"*}
+    # python3 崩溃/无输出 → 视为解析失败（fail-closed，与 ps1 L187/L193 的 except 分支同义）
+    [ -n "$p_status" ] || p_status="PARSE_ERR"
+else
+    # ---- 无 python3：grep 回退（保留原有能力，且不得放宽）----
+    p_status="GREP"
+    tool_name=$(echo "$inputJson" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/') || true
+fi
+
+# ① 解析失败 → deny（ps1 L189/L193；空输入另给更具体的文案）
+if [ "$p_status" = "PARSE_ERR" ]; then
+    if [ -z "$(printf '%s' "$inputJson" | tr -d '[:space:]')" ]; then
+        deny_command "hook 收到空输入（未提供命令）"
+    fi
+    deny_command "JSON 解析失败，无法确认命令安全"
+fi
+
+# ② 只拦截 shell 类工具（对应 .ps1 的 P0-12 与 L199-201：未知/缺失 tool_name → 放行）
+case "$tool_name" in
+    Bash|Shell|Command|Execute|bash|shell|command|execute|zsh|fish|cmd)
+        ;;
+    *)
+        exit 0 ;;
+esac
+
+# ③ shell 工具：command 缺失/为空 → deny（ps1 L204/L206；旧实现分别是 exit 1 与 exit 0 放行）
+if [ "$p_status" = "NO_TI" ] || [ "$p_status" = "NO_CMD" ]; then
+    deny_command "shell 工具 (${tool_name}) 缺少 command 字段"
+fi
+
+# fail-open 修复（2026-09-10 测试发现）：set -euo pipefail 下 python3 缺失时，命令替换失败会
+# 直接中止脚本（exit 127、无决策输出 → 静默放行），下方 grep 回退是死代码。改用显式 || 回退。
+if command -v python3 >/dev/null 2>&1; then
+    cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+try:
+    d=json.load(sys.stdin)
+    print(d.get("tool_input",{}).get("command",""), end="")
+except Exception:
+    pass' 2>/dev/null) || true
+fi
+if [ -z "$cmd" ]; then
+    # G5：补 `|| true`——旧实现此行没有保护，grep 无匹配时返回 1，`set -e` 直接中止脚本（裸 exit 1）
+    cmd=$(echo "$inputJson" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"/\1/') || true
+fi
+# shell 工具但 command 为空/仅空白 → deny（旧实现 exit 0 放行）
+if [ -z "$(printf '%s' "$cmd" | tr -d '[:space:]')" ]; then
+    deny_command "shell 工具 (${tool_name}) 的 command 为空"
+fi
+
+# R15 修复（对齐 .ps1 与 core normalizeFullWidth）：NFKC 归一化（全角 ｒｍ → rm），防 Unicode 绕过
+# 2026-09-10：加 || true 防 python3 缺失时 fail-open 中止；reconfigure 兜底 GBK 平台
+if command -v python3 >/dev/null 2>&1; then
+    cmd=$(printf '%s' "$cmd" | python3 -c 'import sys,unicodedata
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")') || true
+fi
+
+# ---- 纯注释命令放行（对齐 .ps1 L215 的「整串开头 `\s*#`」语义）----
+# G5：旧实现用 grep 的**逐行**锚点 `^[[:space:]]*#`，任一行以 # 开头即放行，于是
+#   `rm -rf /tmp/t\n# note`（首行危险、次行注释）被提前放行 = fail-open（ps1 为 deny）。
+#   `tr -d '[:space:]'` 去掉全部空白（含换行）后取首字符，即「整串第一个非空白字符」，
+#   与 ps1 的 `^\s*#`（`^`=字符串开头，`\s*` 可跨行）等价。判定结果对单行命令逐字不变。
+case "$(printf '%s' "$cmd" | tr -d '[:space:]' | cut -c1)" in
+    '#') exit 0 ;;
+esac
 
 # ---- 命令边界匹配（对齐 .ps1：段首/分隔符锚定，防 echo rm 字符串误伤）----
 # CMD_SEG：行首 或 分隔符(; & |) + 可选前导空白（含换行作为空格）
