@@ -296,3 +296,18 @@ CMD_PRE='(^|[;&|])[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|bus
 **报告口径更正（必修 C-6 的另一半）**：`IMPLEMENTATION_RESULT_G3-FIX6.md` **§8-3** 已改写——原文「`(`/`{` … **故不是新增过拦**」改为实测事实：
 ps1 的 `rm` 族在 pre-G3 **本来就是命令位锚**（无锚的只有 `format/diskpart/del/erase/ri/rd/rmdir` 的 `\b…\b`），sh 端 `\(` `\{` **历来不存在**，
 故 A 面 9 条（含验收清单点名的 `printf '{ diskpart }'`）**确属 FIX6 新造过拦**；连同 D7 邻居共 **16 条**已由 G3-FIX7/A 修复（`_g3fix7_before_after.md` 逐条三列）。
+
+---
+
+## 10. 冻结声明（供 Evaluator 复算）
+
+* 提交：**`5e51b06`**（`fix(g3): G3-FIX7 move parens out of the command-position anchor + make wrapper/cmd|command|env interleavable`），
+  含 `assets/hooks/dangerous-commands.ps1`、`skills/agent-risk-guard/scripts/dangerous-commands.{ps1,sh}`、`packages/core/test/decision-parity.test.ts`、本报告与 FIX6 §8-3 更正。
+* **`git show HEAD:<path>` 的冻结字节 == 工作树 audit 源 == 全部副本**（`_g3fix7_final_check.mjs`，**FINAL-CHECK=PASS**）：
+
+| 端 | `git show HEAD` | bytes | BOM | 副本 distinct | BOM/CRLF |
+|---|---|---|---|---|---|
+| sh | `f80dabf048c3e98a` | 47937 | False | **1**（含 HEAD 共 3 份） | BOM=False ×3、CRLF=0 ×3 ✅ |
+| ps1 | `4dfe66cb2e310933` | 41329 | True | **1**（含 HEAD 共 6 份） | BOM=True ×6、CRLF=0 ×6 ✅ |
+
+* 变异体验证可复算：`node tasks/orchestrator/_g3fix7_mutants.mjs`（常数与终版前缀不一致时**主动报错**，不会静默产出不忠实变异体）。
