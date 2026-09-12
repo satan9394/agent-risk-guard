@@ -22,6 +22,7 @@
   - **D8 对照面**：报"新回归"前必须**重建基线对照**，区分「新引入 / 既有未修 / 已修复」
   - 新增：**修复会引入新缺陷**——R1/R2 都不是"旧 bug 没修"，而是**修复动作的副作用**；三者必须同时具备才能发现
 - **当前最高价值下一步**：FIX2 完成 → **第四个独立 Evaluator** 复验 → 通过后提交并转入 **G5**（sh fail-open）或 **G3**（规则单源收敛，已升级为"存在实际漏拦"）
+- **FIX2 在途进展（Round 252，实现者 `962dfa5f` 运行中）**：**三端 + 两项测试均已改动**——sh `3E3EBF173D`、ps1 `2943C99250`、core `26F2D11B2A`、`redact.test.ts` `371D4777ED`、`redact-parity.test.ts` `C481873E83`；**sh 冒烟已验证 R1/R2 生效**（`curl -u alice:123456` → `curl [REDACTED]`；`ssh mysql -p2222 host` **逐字不变**；`curl --user alice:hunter2` → `--user [REDACTED]`；`bash -n` OK）；正在跑九套回归 + M2 变异 + 判定差。**副本尚未同步**（三份 sh / 六份 ps1 仍是旧值），验收前必须确认 distinct=1。
 
 ---
 
