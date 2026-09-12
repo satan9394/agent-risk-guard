@@ -10,9 +10,102 @@
 # 依赖：python3（JSON 解析，正确处理含转义引号的命令）；无 python3 时回退 grep（引号截断有 bug）
 # 安装：chmod +x dangerous-commands.sh，然后在 hooks 配置中引用
 # 2026-08-24：规则集与 dangerous-commands.ps1（Windows 版）同步（R2 向量 + git 破坏整类 + 子展开/管道防绕过）
+# 2026-09-11 G15b-FIX2（复验打回后的修复）：
+#   [R1] `-u` 与 `--user` 拆成两条规则（旧实现把「密码段须含非数字」守卫加在共用分支上，令
+#        `curl -u alice:123456` 明文泄漏）；`--user` 额外锚定 curl/wget，非认证用法逐字不变。
+#   [R2] mysql/mariadb 的全数字 `-p` 规则改为**命令词锚定**（段首/;&| 之后/sudo|env|command 之后），
+#        消除 `ssh mysql -p2222 host`、`psql -h mysql -p5432` 的端口误伤。
+#   [R2-生产路径] redact_cmd() 不再折叠换行（改为逐行脱敏 + 跨行 PEM 补脱敏 + JSON \n 转义），
+#        使多行命令的生产输出与 core/ps1 逐字一致（旧实现会跨行命中别的命令的端口）。判定逻辑零改动。
 # 注意：这与 .ps1 不同之处仅在平台相关项（reg delete / icacls / certutil 等 Windows 工具不在此列）
 
 set -euo pipefail
+
+# ===== 脱敏（G15b，2026-09-11）=======================================================
+# canonical = packages/core/src/redact.ts 的 SECRET_RULES（14 条）。本段是它的 POSIX ERE 等价实现，
+# 三端（core / ps1 / sh）语义一致性由 packages/core/test/redact-parity.test.ts 守住。
+#
+# 可移植性纪律（BSD/macOS 亦须工作）——本段不出现「词边界锚点」「空白类转义」「lookaround」这类
+# GNU 扩展，也不使用 sed 的 GNU-only 大小写标志（下方注释用中文/英文名指代这些记号，以免机械 grep 误判）：
+#   1) 词边界：三端**一律去掉词边界锚点**，改用「独特前缀 + 贪婪量词」；确需左边界者（-p/-u）
+#      三端同形写作 (^|[^-A-Za-z0-9_])。去掉词边界锚点只增加命中，不减少 G15 既有覆盖。
+#   2) 大小写不敏感：用运行时生成的 [Pp][Aa]… 字符类（一次 tr + bash 循环，兼容 macOS 自带 bash 3.2，
+#      不依赖 bash4 的 ${var^^}）。
+#   3) 空白类：一律 [[:space:]]。
+# 与 ps1 的已知写法差异：跨行 PEM 在 ps1 用「惰性通配（可跨行、非贪婪）」，本侧 sed 逐行处理，
+#   故在 redact_cmd() 内先把换行临时映射为 \002（非 '-'、非空白），再用 [^-]* 跨行匹配 PEM
+#   （PEM 正文是 base64，不含 '-'，等价于「匹配到下一个 -----END 为止」的惰性语义）——这样**多块/多行
+#   PEM 也能逐块替换**，与 core 的惰性量词结果一致（G15b-FIX 前为贪婪 .*，多块时会从第一个 BEGIN
+#   吞到最后一个 END，与 core 不一致）。G15b-FIX2 起 redact_cmd() **不再**把换行折叠成空格（见该函数）。
+# 注：本文件**判定规则段**另有一处 GNU 风格的词边界锚点（diskpart 那条 grep，属 G15 之前的既有代码、
+#   不在脱敏路径上）；本卡不动它，以免改变判定结果（判定 CHANGED=0 是硬约束）。
+
+# ci <word> → 大小写不敏感 ERE 片段：ci password → [Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]
+ci() {
+    local w="$1" up i out=""
+    up=$(printf '%s' "$w" | tr '[:lower:]' '[:upper:]')
+    for (( i = 0; i < ${#w}; i++ )); do
+        out="${out}[${up:i:1}${w:i:1}]"
+    done
+    printf '%s' "$out"
+}
+
+# 键值对的「值」：双引号（可含空格）| 单引号（可含空格）| 不带引号的连续非空白（对齐 core 的 V）
+REDACT_DQ='"'
+REDACT_SQ="'"
+# ⚠️ 可移植性陷阱（本轮实测踩到，勿改回）：POSIX 括号表达式内**反斜杠不是转义符**，`\]` 会被解析为
+#    「排除反斜杠」+ 字面 `]`，令整条规则静默失效（aws_secret_access_key 空格形态因此漏脱敏）。
+#    排除 `]` 的 POSIX 写法是把 `]` 放在 `^` 之后的首位：[^]'"'"'",;}[:space:]]（.NET/JS 用 \] 是对的）。
+REDACT_VALUE="(${REDACT_DQ}[^${REDACT_DQ}]*${REDACT_DQ}|${REDACT_SQ}[^${REDACT_SQ}]*${REDACT_SQ}|[^]${REDACT_SQ}${REDACT_DQ},;}[:space:]]+)"
+
+REDACT_CI_PASSWORD=$(ci password)
+REDACT_CI_AUTHORIZATION=$(ci authorization)
+REDACT_CI_BEARER=$(ci bearer)
+REDACT_CI_BASIC=$(ci basic)
+REDACT_CI_MYSQL=$(ci mysql)
+REDACT_CI_MARIADB=$(ci mariadb)
+# G15b-FIX2：mysql/mariadb 与 curl/wget 的**命令词锚定**前缀（对齐 core/ps1 的 ^|[;&|]\s*|sudo\s+|env\s+|command\s+）
+REDACT_CI_SUDO=$(ci sudo)
+REDACT_CI_ENV=$(ci env)
+REDACT_CI_COMMAND=$(ci command)
+REDACT_ANCHOR="(^|[;&|][[:space:]]*|${REDACT_CI_SUDO}[[:space:]]+|${REDACT_CI_ENV}[[:space:]]+|${REDACT_CI_COMMAND}[[:space:]]+)"
+# generic-kv 键名（对齐 core：api_key|access_token|token|secret_key|client_secret|credential|secret|passwd）
+REDACT_KEYS_GENERIC="$(ci api)[_-]?$(ci key)|$(ci access)[_-]?$(ci token)|$(ci token)|$(ci secret)[_-]?$(ci key)|$(ci client)[_-]?$(ci secret)|$(ci credential)|$(ci secret)|$(ci passwd)"
+# aws-space-kv 键名（对齐 core：(aws_)?(secret_access_key|access_key_id|session_token)）
+REDACT_KEYS_AWS="(($(ci aws)_)?)($(ci secret)_$(ci access)_$(ci key)|$(ci access)_$(ci key)_$(ci id)|$(ci session)_$(ci token))"
+
+# 内部哨兵：规则替换先写入它，全部规则跑完后再统一映射为 [REDACTED]（sed 列表的最后一条）。
+# 原因：若直接用 [REDACTED]，后一条键值规则会把前一条产出的 `[REDACTED`（值类排除 ]）再匹配一次，
+# 留下多余的 `]`（实测 aws configure set aws_access_key_id AKIA… → `[REDACTED]]`）。三端同此处理。
+REDACT_SENTINEL='@@RG_REDACTED@@'
+
+# 对 stdin 文本做脱敏并输出（顺序与 core SECRET_RULES 完全一致：先专用后通用）
+redact_text() {
+    sed -E \
+        -e "s#(AKIA|ASIA)[0-9A-Z]{16}#${REDACT_SENTINEL}#g" \
+        -e "s#gh[pousr]_[A-Za-z0-9]{20,255}#${REDACT_SENTINEL}#g" \
+        -e "s#sk-(proj-)?[A-Za-z0-9_-]{20,}#${REDACT_SENTINEL}#g" \
+        -e "s#sk-ant-[A-Za-z0-9_-]{20,}#${REDACT_SENTINEL}#g" \
+        -e "s#eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}#${REDACT_SENTINEL}#g" \
+        -e "s#-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[^-]*-----END (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----#${REDACT_SENTINEL}#g" \
+        -e "s#\"?${REDACT_CI_PASSWORD}\"?[[:space:]]*[:=][[:space:]]*${REDACT_VALUE}#${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_KEYS_AWS}([[:space:]]*[:=][[:space:]]*|[[:space:]]+)${REDACT_VALUE}#${REDACT_SENTINEL}#g" \
+        -e "s#\"?(${REDACT_KEYS_GENERIC})\"?[[:space:]]*[:=][[:space:]]*${REDACT_VALUE}#${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_CI_AUTHORIZATION}[[:space:]]*[:=][[:space:]]*(${REDACT_CI_BEARER}|${REDACT_CI_BASIC})[[:space:]]+[A-Za-z0-9._-]+#${REDACT_SENTINEL}#g" \
+        -e "s#(^|[^-A-Za-z0-9_])-p[^[:space:]]*[^0-9[:space:]][^[:space:]]*#\1${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_ANCHOR}(${REDACT_CI_MYSQL}|${REDACT_CI_MARIADB})([^;&|]*)([[:space:]])-p[0-9]+#\1\2\3\4${REDACT_SENTINEL}#g" \
+        -e "s#(^|[^-A-Za-z0-9_])-u[[:space:]]+[^[:space:]:]+:[^[:space:]]+#\1${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_ANCHOR}(curl|wget)([^;&|]*)([[:space:]]--user[[:space:]]+)[^[:space:]:]+:[^[:space:]]*[^0-9[:space:]:][^[:space:]]*#\1\2\3\4${REDACT_SENTINEL}#g" \
+        -e "s#[A-Za-z0-9_-]{40,}#${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_SENTINEL}#[REDACTED]#g"
+}
+
+# G15b 测试入口：--redact-stdin 从 stdin 读纯文本，输出脱敏结果后退出。
+# 走的是**真实生产函数** redact_text（而非测试内复制的模式表），供跨端 parity 测试调用。
+if [ "${1:-}" = "--redact-stdin" ]; then
+    redact_text
+    exit 0
+fi
 
 # ---- 读取 stdin ----
 inputJson=$(cat 2>/dev/null || true)
@@ -87,11 +180,29 @@ if printf '%s' "$cmd" | grep -qE '^[[:space:]]*#'; then exit 0; fi
 
 # ---- 辅助函数：返回拒绝（含脱敏 + JSON 转义）----
 # 脱敏：回显命令前替换密钥/token；转义：\ -> \\, " -> \", 换行 -> \n，保证合法 JSON
+# G15b-FIX（F1，2026-09-11）：**生产出口真正接到 redact_text()**（旧实现只有 2 条 sed，四类残留全泄漏）。
+# G15b-FIX2（R2，2026-09-11）：**不再先折叠换行**——旧的 `tr '\n' ' '` 会让「命令词锚定」在生产路径失效，
+#   使 `mysql …` 那一行把下一行 `ssh host -p2222` 的端口脱敏，而 ps1 不折叠 → 两端在同一份多行命令上发散
+#   （且没有任何闸门覆盖：语料全是单行）。现改为「逐行脱敏 → 跨行 PEM 补脱敏 → JSON 转义时把换行写成
+#   \n 转义」，生产出口与 core/ps1 的换行语义逐字一致。
+# ⚠️ 教训：G15b 首轮只把新规则接进了 `--redact-stdin` 测试入口，生产出口漏接，导致 parity 恒绿而真实泄漏。
+#    本函数是 deny_command() 的唯一出口，改动后必须由「生产出口断言 + M2 变异」把关（见 parity 测试）。
 redact_cmd() {
     local safe
-    safe=$(printf '%s' "$cmd" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r/\\r/g' | tr '\n' ' ')
-    safe=$(printf '%s' "$safe" | sed -E 's/(api[_-]?key|token|secret|password|credential|authorization)[=:][[:space:]]*[A-Za-z0-9._~+\/-]{4,}/\1=[REDACTED]/Ig')
-    safe=$(printf '%s' "$safe" | sed -E 's/(AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{16,}|sk_live-[A-Za-z0-9]{16,}|pk_live-[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{8,}|Bearer[[:space:]]+[A-Za-z0-9._~+\/-]{20,})/[REDACTED]/g')
+    # 1) 逐行脱敏：sed 天然按行处理，故命令词锚定的规则（-p / --user）不会跨原始行命中别的命令
+    safe=$(printf '%s' "$cmd" | redact_text)
+    # 2) 跨行 PEM 补脱敏：PEM 是三端唯一允许跨行的规则，而步骤 1 的逐行处理必然漏掉它。
+    #    把换行临时映射为 \002（非 '-'、非空白）以便 [^-]* 跨过，跑完立即还原为换行；
+    #    本趟只跑 PEM 规则，其余规则保持「不跨行」的语义。
+    safe=$(printf '%s' "$safe" | tr '\n' '\002' \
+        | sed -E "s#-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[^-]*-----END (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----#${REDACT_SENTINEL}#g" \
+        | sed -e "s#${REDACT_SENTINEL}#[REDACTED]#g" \
+        | tr '\002' '\n')
+    # 3) JSON 转义：\ -> \\、" -> \"、CR -> \r（sed）；换行 -> \n（awk：sed 的模式空间不含换行，
+    #    只能逐行补写）。换行保留为 JSON 的 \n 转义（而非折叠成空格），与 core/ps1 一致。
+    safe=$(printf '%s' "$safe" \
+        | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r/\\r/g' \
+        | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')
     printf '%s' "$safe"
 }
 

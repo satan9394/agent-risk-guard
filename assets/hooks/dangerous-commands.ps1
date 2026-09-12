@@ -22,6 +22,20 @@
 #               packages/core/src/redact.ts 的 SECRET_PATTERNS，整段命中 → [REDACTED]）；判定逻辑零改动。
 #           [G15-日志卫生] %TEMP%\riskguard-hook-calls.log 默认上限 1 MiB（RG_HOOK_LOG_MAX_BYTES 可覆盖，
 #               0=不限），超限轮转为 .1（最多两份）；写入失败静默降级，不影响判定。
+# 改动记录（G15b 脱敏残留与三端对齐，2026-09-11）：
+#           [G15b-补齐四类残留] 键值对支持空格分隔（aws configure set aws_secret_access_key VALUE）、
+#               值支持引号内含空格（--password="a b c"）、新增 CLI 短参 -p<pass> 与 -u user:pass。
+#           [G15b-三端同源] 模式表改为带 id 的 $script:RedactRules（13 条，逐条对齐 canonical
+#               packages/core/src/redact.ts），去掉 \b，新增 repl 以支持需保留左边界的模式；
+#               与 sh 的语义一致性由 packages/core/test/redact-parity.test.ts 守住。判定逻辑零改动。
+# 改动记录（G15b-FIX2 复验打回后的修复，2026-09-11）：
+#           [R1-拆分 -u/--user] G15b-FIX 把「密码段须含非数字」守卫加在 `-u|--user` **共用分支**上，
+#               令 `curl -u alice:123456`（全数字口令）明文泄漏（G15b 时是脱敏的）→ 拆成两条规则：
+#               cli-basic-auth-u（恢复 G15b 旧写法、无值限制）、cli-basic-auth-user（保留守卫 + 锚定 curl/wget，
+#               使 `docker run --user nginx:nginx` / `npm install --user a:b` 逐字不变）。
+#           [R2-命令词锚定] cli-mysql-password-numeric 由「同段出现过 mysql 这个词」改为「段首 / ;&| 之后 /
+#               sudo|env|command 之后的 mysql|mariadb 本次调用」，消除 `ssh mysql -p2222 host`、
+#               `psql -h mysql -p5432 -U postgres` 的**端口**被当密码脱敏。判定逻辑零改动。
 # 安装：在 settings.json / hooks.json PreToolUse 中引用此脚本
 # 输入：stdin JSON { tool_name, tool_input: { command }, ... }
 # 输出：stdout JSON { hookSpecificOutput: { permissionDecision }, systemMessage }
@@ -29,7 +43,9 @@
 # 编码：UTF-8 with BOM（Windows PowerShell 5.1 必须）
 
 # 测试钩子：-Cmd 参数或 RG_CMD 环境变量提供命令时跳过 stdin（生产走 stdin；测试用此路径避免 stdin EOF 慢）
-param([string]$Cmd = '')
+# 测试钩子（G15b）：-RedactFile <路径> 时对文件内容脱敏后输出并退出（供跨端 parity 测试直接调用本脚本，
+#   走的是**真实生产函数** Redact-Secrets，而非测试内复制的模式表）；生产调用不传此参数，行为不变。
+param([string]$Cmd = '', [string]$RedactFile = '')
 
 $ErrorActionPreference = 'Stop'
 
@@ -41,39 +57,63 @@ $script:curCmd = ''
 $hookLog = Join-Path $env:TEMP 'riskguard-hook-calls.log'
 
 # ---- G15（2026-09-11）输出侧脱敏：日志与 systemMessage 一律先脱敏；判定逻辑不受影响 ----
-# 模式逐条对齐 packages/core/src/redact.ts 的 SECRET_PATTERNS（顺序与替换语义一致：整段命中 → [REDACTED]）。
-# 与 sh dangerous-commands.sh 的 redact_cmd 的差异（三端同源纪律，差异在此说明）：
-#   1) sh 只覆盖 api_key/token/secret/password/credential/authorization 键值 + AKIA/gh?/sk-/xox/Bearer；
-#      本版对齐 core，另含 JWT、PEM 私钥块、client_secret、≥40 位长随机串四类；
-#   2) sh 键值替换保留键名（password=[REDACTED]），本版对齐 core 为整体替换 [REDACTED]；
-#   3) sh 的 Bearer 需 ≥20 位、AKIA 固定 16 位、xox 有专类；本版与 core 一致（Bearer 为 [A-Za-z0-9._-]+，无 xox 专类）。
-# 较 core 的三处「只增不减」增补（均为覆盖任务卡点名的类 / 对齐 sh，不放松任何既有拦截）：
-#   a) 键值类补裸 token / credential —— core 无此二者，但任务卡 G15 明确要求 `token=`，sh 亦有；
-#   b) gh[pousr]_ 下界 36 → 20 —— 与 sh 一致（core 为 36，真实 PAT 均 ≥36，收窄下界只增命中）；
-#   c) 其余 9 条与 core 完全一致（含顺序与替换语义）。
-# 注：core 为 JS 正则，本版为 .NET 正则，逐条语义等价且均为全局替换；差异仅在 \b —— .NET 的 \b 是
-#     Unicode 感知、JS 为 ASCII 感知，对本组全 ASCII 模式无实际影响。脱敏只作用于输出侧，判定不变。
-$script:Redacted = '[REDACTED]'
-$script:RedactPatterns = @(
-    '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b',
-    '\bgh[pousr]_[A-Za-z0-9]{20,255}\b',
-    '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b',
-    '\bsk-ant-[A-Za-z0-9_-]{20,}\b',
-    '\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b',
-    '-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----',
-    '(?i)(?:"?password"?\s*[:=]\s*)([''"]?)([^\s''",;}\]]+)\1',
-    '(?i)(?:"?(?:api[_-]?key|access[_-]?token|token|secret[_-]?key|client[_-]?secret|credential)"?\s*[:=]\s*)([''"]?)([^\s''",;}\]]+)\1',
-    '(?i)(?:authorization\s*[:=]\s*(?:bearer|basic)\s+)([A-Za-z0-9._-]+)',
-    '\b[A-Za-z0-9_-]{40,}\b'
+# ---- G15b（2026-09-11）三端同源：本表是 packages/core/src/redact.ts（canonical）的 .NET 等价实现 ----
+# 三端一致性由 packages/core/test/redact-parity.test.ts 守住（同一语料喂三端，断言输出与命中规则集一致）。
+# 与 core 的对应关系（逐条同序、同 id、同替换语义）：
+#   1) 一律**不使用 \b**：POSIX ERE 无 \b，三端若一端用 \b、另一端用边界模拟必然产生输出差异；
+#      统一改为「独特前缀 + 贪婪量词」，确需左边界者（-p/-u）三端同形写作 (^|[^-A-Za-z0-9_])。
+#      去掉 \b 只会增加命中，不减少 G15 既有覆盖。
+#   2) 键值对的「值」统一为 ("[^"]*"|'[^']*'|[^\s'",;}\]]+)：引号分支在前，故引号内含空格的值可整段命中。
+#   3) -p / -u 两条需保留被左边界消费掉的字符，故 repl 取 '$1[REDACTED]'。
+# 与 sh（POSIX ERE）的差异——语义集合一致，仅写法不同：
+#   - 大小写不敏感：.NET 用内联 (?i)；sh 无该能力，用运行时生成的 [Pp][Aa]… 字符类。
+#   - 跨行 PEM：.NET 用 [\s\S]*?（惰性）；sh 侧 sed 逐行处理，故在 redact_cmd() 内把换行临时映射为
+#     \002 后用 [^-]* 跨行匹配（PEM 正文是 base64、不含 '-'，等价于惰性语义），详见该函数注释。
+#     （旧注释写「sh 用贪婪 .*」——G15b-FIX 起 sh 已改为 [^-]*，此处按代码更正；G15b-FIX2 R3-③）
+# 已知取舍：`-p` 通用规则的值须含至少一个非数字字符（排除 ssh -p2222 / docker -p 8080:80 误伤）；
+#           全数字密码由 cli-mysql-password-numeric（命令词锚定 mysql/mariadb）补齐。
+$script:Redacted = '@@RG_REDACTED@@'
+$script:RedactedOut = '[REDACTED]'
+# 注：$script:Redacted 是**内部哨兵**，全部规则跑完后在 Redact-Secrets 末尾统一映射为 $script:RedactedOut。
+#     原因：若直接用 [REDACTED]，后一条键值规则会把前一条规则产出的 `[REDACTED`（值类排除 `]`）再匹配一次，
+#     留下多余的 `]`（实测 aws configure set aws_access_key_id AKIA… → `[REDACTED]]`）。三端同此处理。
+# 键值对的「值」：双引号（可含空格）| 单引号（可含空格）| 不带引号的连续非空白
+$script:RedactValue = '("[^"]*"|''[^'']*''|[^\s''",;}\]]+)'
+$script:RedactRules = @(
+    @{ id = 'aws-access-key-id';   re = '(?:AKIA|ASIA)[0-9A-Z]{16}';                                     repl = $null },
+    @{ id = 'github-pat';          re = 'gh[pousr]_[A-Za-z0-9]{20,255}';                                 repl = $null },
+    @{ id = 'openai-sk';           re = 'sk-(?:proj-)?[A-Za-z0-9_-]{20,}';                               repl = $null },
+    @{ id = 'anthropic-sk-ant';    re = 'sk-ant-[A-Za-z0-9_-]{20,}';                                     repl = $null },
+    @{ id = 'jwt';                 re = 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'; repl = $null },
+    @{ id = 'pem-private-key';     re = '-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----'; repl = $null },
+    @{ id = 'password-kv';         re = ('(?i)"?password"?\s*[:=]\s*' + $script:RedactValue);             repl = $null },
+    @{ id = 'aws-space-kv';        re = ('(?i)(?:aws_)?(?:secret_access_key|access_key_id|session_token)(?:\s*[:=]\s*|\s+)' + $script:RedactValue); repl = $null },
+    @{ id = 'generic-kv';          re = ('(?i)"?(?:api[_-]?key|access[_-]?token|token|secret[_-]?key|client[_-]?secret|credential|secret|passwd)"?\s*[:=]\s*' + $script:RedactValue); repl = $null },
+    @{ id = 'authorization';       re = '(?i)authorization\s*[:=]\s*(?:bearer|basic)\s+[A-Za-z0-9._-]+'; repl = $null },
+    @{ id = 'cli-mysql-password';  re = '(^|[^-A-Za-z0-9_])-p[^\s]*[^\s0-9][^\s]*';                       repl = '$1@@RG_REDACTED@@' },
+    # G15b-FIX2 R2：改为**命令词锚定**（旧写法只要求「同段出现过 mysql」，把 `ssh mysql -p2222 host` 的端口、
+    # `psql -h mysql -p5432` 的端口都当密码脱敏；sh 生产路径还会跨折叠后的换行命中别的命令 → 两端发散）
+    @{ id = 'cli-mysql-password-numeric'; re = '(?i)(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[0-9]+'; repl = '$1$2$3$4@@RG_REDACTED@@' },
+    # G15b-FIX2 R1：`-u` 与 `--user` 拆两条。G15b-FIX 把「密码段须含非数字」的守卫加到共用分支，
+    # 使 `curl -u alice:123456`（全数字口令）明文泄漏 → 回归。① `-u` 恢复 G15b 旧写法（无值限制）。
+    @{ id = 'cli-basic-auth-u';    re = '(^|[^-A-Za-z0-9_])-u\s+[^\s:]+:[^\s]+';                          repl = '$1@@RG_REDACTED@@' },
+    # ② `--user` 保留「密码段须含非数字」守卫，并额外**锚定到 curl/wget**（只有它们的 --user 是凭据）：
+    #    `docker run --user nginx:nginx nginx` / `npm install --user alice:hunter2` 因此逐字不变。
+    @{ id = 'cli-basic-auth-user'; re = '(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(curl|wget)([^;&|\n]*)(\s--user\s+)[^\s:]+:[^\s]*[^\s0-9:][^\s]*'; repl = '$1$2$3$4@@RG_REDACTED@@' },
+    @{ id = 'long-random';         re = '[A-Za-z0-9_-]{40,}';                                            repl = $null }
 )
 function Redact-Secrets {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
     $out = $Text
-    foreach ($p in $script:RedactPatterns) {
-        try { $out = [regex]::Replace($out, $p, $script:Redacted) } catch { }
+    foreach ($r in $script:RedactRules) {
+        try {
+            $repl = $script:Redacted
+            if ($r.repl) { $repl = $r.repl }
+            $out = [regex]::Replace($out, $r.re, $repl)
+        } catch { }
     }
-    return $out
+    return $out.Replace($script:Redacted, $script:RedactedOut)
 }
 
 # ---- G15 日志卫生：大小上限（默认 1 MiB；RG_HOOK_LOG_MAX_BYTES 可覆盖，0=不限）+ 轮转 ----
@@ -114,6 +154,17 @@ function Deny-Command($reason) {
         systemMessage = "⛔ HOOK 已拦截危险命令：$safeReason`n命令：$safeCmd`n如确需执行，请在 Agent 外部手动操作。"
     }
     Write-Output ($result | ConvertTo-Json -Depth 10 -Compress)
+    exit 0
+}
+
+# ---- G15b 测试入口：-RedactFile <path> → 输出该文件内容的脱敏结果（parity 测试用；生产不传此参数）----
+if (-not [string]::IsNullOrEmpty($RedactFile)) {
+    try {
+        $text = [System.IO.File]::ReadAllText($RedactFile, [System.Text.Encoding]::UTF8)
+        [Console]::Out.Write((Redact-Secrets $text))
+    } catch {
+        [Console]::Out.Write('')
+    }
     exit 0
 }
 
