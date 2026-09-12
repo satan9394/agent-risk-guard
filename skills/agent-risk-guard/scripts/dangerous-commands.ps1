@@ -373,7 +373,13 @@ if ($cmdTest -match '(?i)\brm\s+-rf?\s+') {
 # 16) rm 不带 -rf（R8 修正：命令起始/分隔符锚定，避免 echo "use rm" 注释误伤；含换行分隔；R25 排除 help/version 误伤）
 # G3-FIX5/A：补可选 sudo / 绝对路径前缀（`sudo rm x`、`/usr/bin/rm x` 由 allow → deny），
 #   豁免前瞻用**同一前缀**（否则 `sudo rm --help` 会被误拦）。两端同批（sh L428 + rmseg 抽取式 L430）。
-if (($cmd -match ($CMD_PRE + 'rm(?:\s+|["'']?\s*-\s*)')) -and ($cmd -notmatch ($CMD_PRE + 'rm\s+(-h|--help|--version|-V)\b'))) {
+# G24 修复：豁免粒度从「整条命令级」改为「仅豁免它自己那次直接调用」。
+#   旧写法靠第二个 `-and ($cmd -notmatch ...)` 做否定——`-notmatch` 作用于**整个 $cmd**，
+#   于是命令里**任意位置**出现一次 `rm --help` 就把整条命令的 rule 16 一并关掉：
+#   `rm --help; rm /tmp/t` 旧 ps1 = **allow**（sh 端 deny，两端发散）。
+#   新写法把豁免收成 `rm` 之后的**调用点前瞻**：只对「紧跟 help/version 的那次调用」免检，
+#   同一命令里其余 rm 调用照常拦。help 类用例（`rm --help` / `sudo rm --help` / `RM -H` / `rm'' --help`）不变。
+if ($cmd -match ($CMD_PRE + 'rm(?!\s+(?:-h|--help|--version|-V)\b)(?:\s+|["'']?\s*-\s*)')) {
     Deny-Command 'rm 在 Git Bash 下是永久删除（不进回收站），请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
 

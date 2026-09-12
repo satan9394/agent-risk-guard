@@ -172,7 +172,9 @@ if ($cmdTest -match '\brm\s+-rf?\s+') {
 }
 
 # 16) rm 不带 -rf（R8 修正：命令起始/分隔符锚定，避免 echo "use rm" 注释误伤；含换行分隔；R25 排除 help/version 误伤）
-if (($cmd -match '(?:^|[;&|\r\n])\s*rm(?:\s+|["'']?\s*-\s*)') -and ($cmd -notmatch '(?:^|[;&|\r\n])\s*rm\s+(-h|--help|--version|-V)\b')) {
+# G24 修复：同 canonical rule 16——help/version 豁免只作用于它自己那次直接调用，
+#   不再让命令里任意位置的 `rm --help` 把整条命令的 rule 16 关掉（旧写法为第二个 -notmatch 整串否定）。
+if ($cmd -match '(?:^|[;&|\r\n])\s*rm(?!\s+(?:-h|--help|--version|-V)\b)(?:\s+|["'']?\s*-\s*)') {
     Deny-Command 'rm 在 Git Bash 下是永久删除（不进回收站），请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
 

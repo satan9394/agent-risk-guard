@@ -45,6 +45,11 @@
  *   L 段 L1–L20：**G3-FIX6/A 新增 + G3-FIX7/A 扩到 20 条**——**跨端身份断言**专用语料
  *                （命令位 / 非命令位成对），由**独立的第二个 test** 断言「两端 decision 逐条一致」
  *                （不看应然），使「单端前缀漂移」提交前必红。L17–L20 是 FIX7/A 的两对括号守卫。
+ *   M 段 M1–M15：**G24 新增**——**rule 16 的 help/version 豁免粒度**。豁免只能作用于「它自己那次
+ *                直接调用」，**不得**退化成整条命令级抑制（旧 ps1 用第二个 `-and ($cmd -notmatch …)`
+ *                做整串否定 → 一处 `rm --help` 就把同一条命令里另一处真删除一并放行）。
+ *                M1–M9 是「一处 help 掩盖另一处真删除」（ps1 旧=allow / sh=deny 的分歧面），
+ *                M10–M15 是**纯 help 调用必须仍 allow** 的反向守卫（防「干脆取消豁免」式的过拦修法）。
  *
  * ⚠️ 本闸门只钉「两端逐字同判 + 等于应然」。**不得**为了让它变绿而放宽 deny 语义（红线 §5.6/D12）：
  *    若某条真的两端分歧且短期无法收敛，正确做法是**保留分歧并如实登记**，而不是把它钉成 allow。
@@ -53,7 +58,14 @@
  *        第 5 条把 `rmdir /tmp/empty_dir` 钉成 allow，sh `sh-hook-test` 把它钉成 deny）、
  *      `time|nice|nohup … rmdir <无标志路径>`（G3-FIX6 把上面这条**既存语义分歧**沿包装词前缀**同构扩展**：
  *        sh rule 1/1b 无论有无标志都拦，ps1 rule 14 只在带 `/s|/q|-r|-f|…` 时拦）、
- *      `echo "Format-Volume guide"`（sh 的 rule 17 读未剥离 echo 的原文 → deny / ps1 allow）。
+ *      `echo "Format-Volume guide"`（sh 的 rule 17 读未剥离 echo 的原文 → deny / ps1 allow）、
+ *      `rm /tmp/t; rm --help`（**反向顺序**：G24 修复后 ps1 deny / sh allow。ps1 把豁免收成**调用点
+ *        前瞻**后，「非 help 的 rm」一律拦；而 sh 的 rmseg 抽取式（`.*` 贪婪 + `head -1`）取的是
+ *        **最后一个** rm 的实参 → 仍被后面的 `--help` 掩蔽。方向是 ps1 **收紧**而非放松，故保留并登记）、
+ *      `rm --help\nrm /tmp/t`（**多行**：G24 修复后 ps1 deny / sh allow。sh 侧 sed 是**逐行**处理再
+ *        `head -1`，只看**第一行**的抽取结果，第二行的真删除对 sh 不可见。同上，方向为 ps1 收紧）、
+ *      `rm --help extra`（ps1 allow / sh deny；**既有**，非 G24 引入：ps1 的前瞻只认「help 标志 + 词
+ *        边界」，sh 的 `case` 要求实参**逐字**等于 `--help`）。
  *
  * 可覆盖路径（用于变异验证：把主源换成"回退版"后本闸门必须变红）：
  *   `RG_PARITY_PS1=<path>` / `RG_PARITY_SH=<path>`
@@ -362,6 +374,27 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'K85 commit -m "env nice diskpart"', payload: J('git commit -m "env nice diskpart"'), expect: 'allow', note: '★引号内散文：互串闭集不得点着引号内文本' },
   { id: 'K86 timeout diskpart（反向守卫）', payload: J('timeout diskpart'), expect: 'allow', note: '★包装词必须整词匹配（`time` ⊄ `timeout`），否则「闭集可重复」会滑向「任意单词」' },
   { id: 'K87 sudorm --help（反向守卫）', payload: J('sudorm --help'), expect: 'allow', note: '★同上（`sudo` ⊄ `sudorm`）。⚠️ 注意 `sudorm -rf /tmp/t` **不入本语料**：sh 的既有裸 `rm -rf` 规则（L512，无命令位锚，FIX4 起）会 deny，ps1 allow —— 既存两端分歧，不作闸门断言' },
+  // ── M 段（G24 新增，M1–M15）：**help/version 豁免的粒度** ─────────────────────────────────
+  //   缺陷（G24）：ps1 rule 16 的豁免写成 `-and ($cmd -notmatch $CMD_PRE + 'rm\s+(--help|…)')`
+  //   —— `-notmatch` 作用于**整个 $cmd**，于是命令里**任意位置**出现一次 `rm --help`，
+  //   就把整条命令的 rule 16 关掉。G24 修复把豁免收成 `rm` 之后的**调用点前瞻**
+  //   `rm(?!\s+(?:-h|--help|--version|-V)\b)`：只对「紧跟 help/version 的那次调用」免检。
+  //   ⚠️ 修法**不得**滑向「取消豁免」：M10–M15 是反向守卫（纯 help 调用必须仍 allow）。
+  { id: 'M1  rm --help 掩盖真删除', payload: J('rm --help; rm /tmp/t'), expect: 'deny', note: '★G24：旧 ps1=allow（整条命令级抑制）/ sh=deny → 修后两端 deny' },
+  { id: 'M2  rm -h 掩盖真删除', payload: J('rm -h; rm /tmp/t'), expect: 'deny', note: '★同上（豁免的第二个标志）' },
+  { id: 'M3  rm --version 掩盖真删除', payload: J('rm --version; rm /tmp/t'), expect: 'deny', note: '★同上（--version 分支）' },
+  { id: 'M4  rm -V 掩盖真删除', payload: J('rm -V; rm /tmp/t'), expect: 'deny', note: '★同上（-V 分支）' },
+  { id: 'M5  rm --help && 真删除', payload: J('rm --help && rm /tmp/t'), expect: 'deny', note: '★同上（`&&` 分隔，非 `;`）' },
+  { id: 'M6  echo; rm --help; 真删除', payload: J('echo hi; rm --help; rm /tmp/t'), expect: 'deny', note: '★同上（help 在中间，两侧都有语句）' },
+  { id: 'M7  sudo rm --help 掩盖真删除', payload: J('sudo rm --help; rm /tmp/t'), expect: 'deny', note: '★同上（豁免侧带 CMD_PRE 前缀；防「只豁免裸 rm」的写法把这条改回 allow）' },
+  { id: 'M8  rm\'\' --help 掩盖真删除', payload: J("rm'' --help; rm /tmp/t"), expect: 'deny', note: '★同上（空引号归一后仍须按调用点豁免，与 Q1/Q2/C6 同源）' },
+  { id: 'M9  绝对路径 rm --help 掩盖真删除', payload: J('/usr/bin/rm --help; rm /tmp/t'), expect: 'deny', note: '★同上（绝对路径前缀）' },
+  { id: 'M10 纯 rm --help', payload: J('rm --help'), expect: 'allow', note: '反向守卫：单次 help 调用必须仍 allow（不得用「取消豁免」来过拦）' },
+  { id: 'M11 纯 rm -h', payload: J('rm -h'), expect: 'allow', note: '反向守卫（短标志）' },
+  { id: 'M12 纯 rm --version', payload: J('rm --version'), expect: 'allow', note: '反向守卫（version 分支）' },
+  { id: 'M13 纯 rm -V', payload: J('rm -V'), expect: 'allow', note: '反向守卫（大小写不敏感）' },
+  { id: 'M14 sudo rm --help', payload: J('sudo rm --help'), expect: 'allow', note: '反向守卫：豁免前瞻必须与 CMD_PRE **同前缀**，否则 `sudo rm --help` 由 allow 变误拦' },
+  { id: 'M15 绝对路径 rm --help', payload: J('/usr/bin/rm --help'), expect: 'allow', note: '反向守卫（同上，绝对路径前缀）' },
 ];
 
 /**
