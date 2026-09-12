@@ -15,7 +15,7 @@
  *   ③ 两端还都必须等于语料里钉住的 `expect`——只有 ② 会被"两端一起改错"骗过，③ 把应然语义也钉住。
  * 失败时打印 `载荷 / ps1 / sh / 期望` 四列，便于直接定位。
  *
- * ── 语料三段（G3 实测的 5 条分歧 + 其两侧邻居面）────────────────────────────
+ * ── 语料七段（G3 实测的 5 条分歧 + 其两侧邻居面 + G3-FIX4 补齐的三处缺口）─────────────
  *   A 段 T1–T20：编排者 Round 260 的 20 条分歧矩阵（含 T2/T3/T5/T9/T10 五条已修分歧）。
  *   B 段 Q1–Q12：**T3「空引号归一」的绕过面**——归一只能"多看见"不能"少看见"：
  *                `rm'' --help` → allow，而 `rm'' -rf /tmp/t` / `r''m -rf` / `;''rm -rf` 必须仍 deny。
@@ -24,6 +24,10 @@
  *   D 段 Y1–Y10：**T9/T10「command 类型」的邻居面**——按 PowerShell `[string]` 转换语义对齐：
  *                null / [] / {} → deny；`["rm","-rf","/tmp/t"]` → deny（PS 会拼成 "rm -rf /tmp/t"）；
  *                123 / true / {"a":1} / [["rm"]] / ["rm","--help"] / ["git","status"] → allow。
+ *   —— 以下三段是 G3-FIX4 新增（G3 的 66 条在原缺陷源上**全绿**，是"闸门覆盖不足"的直接证据）——
+ *   F 段 F1–F18：**非 rm 族**的空引号插词（R1：G3 把归一泄漏给全规则 → 13 条新分歧）。
+ *   H 段 H1–H12：**command 数组的元素为对象**（R2：`[{"cmd":"rm -rf /tmp/t"}]` 曾 fail-open）。
+ *   G 段 G1–G14：`-i` 之后「引号内文本命中不敏感词」的**前导锚**面（R3：合法 commit message 被误拦）。
  *
  * 可覆盖路径（用于变异验证：把主源换成"回退版"后本闸门必须变红）：
  *   `RG_PARITY_PS1=<path>` / `RG_PARITY_SH=<path>`
@@ -136,6 +140,74 @@ export const DECISION_CORPUS: DecisionCase[] = [
   // ── E 段：缺键/畸形（G5 红线的判定侧对照，防"为过闸门放宽 fail-closed"）───────────
   { id: 'E1  缺 command 键', payload: JSON.stringify({ tool_name: 'Bash', tool_input: {} }), expect: 'deny' },
   { id: 'E2  缺 tool_input', payload: JSON.stringify({ tool_name: 'Bash' }), expect: 'deny' },
+
+  // ══════════════════════════════════════════════════════════════════════════════════
+  // G3-FIX4 新增三段（F/H/G，共 44 条）—— 补的是 G3 闸门 66 条**零覆盖**、却在同一冻结源上
+  // 实测出「14 条新跨端分歧 + 1 处 fail-open」的三处缺口（Evaluator G3 §2.2b/§2.4/§2.5d）。
+  // 钉法：每条都同时钉「两端一致」与「等于应然」，故把任一条硬伤改回旧行为 → 本闸门必红。
+  // ══════════════════════════════════════════════════════════════════════════════════
+
+  // ── F 段 F1–F18：**非 rm 族**的空引号插词（R1 = G3 新造的 13+ 条跨端分歧源）──────────
+  // 机理：ps1 只在 rm / Remove-Item 删除族用剥离引号的文本（ps1 L222 `$cmdNaked`，L374/L378 起使用），
+  //      其余规则一律看**原文**；G3 把空引号归一泄漏给**全部**规则 → 下面 F1–F15 在 sh 由 allow 变 deny
+  //      （两个方向都错：既过拦、又与 ps1 发散）。F16/F17 是**反向守卫**：删除族的归一秒不得一起收掉。
+  { id: 'F1  g..it clean -f（非 rm 族）', payload: J("g''it clean -f"), expect: 'allow', note: 'R1：ps1 不剥离非删除族引号 → allow' },
+  { id: 'F2  g..it reset --hard', payload: J("g''it reset --hard"), expect: 'allow', note: 'R1' },
+  { id: 'F3  g..it rm x', payload: J("g''it rm x"), expect: 'allow', note: 'R1' },
+  { id: 'F4  g..it push --force', payload: J("g''it push --force"), expect: 'allow', note: 'R1' },
+  { id: 'F5  g..it branch -D x', payload: J("g''it branch -D x"), expect: 'allow', note: 'R1' },
+  { id: 'F6  r..mdir /s /q x', payload: J("r''mdir /s /q x"), expect: 'allow', note: 'R1（ps1 L306 只查 $cmdTest，不剥离引号）' },
+  { id: 'F7  R..MDIR /s /q x', payload: J("R''MDIR /s /q x"), expect: 'allow', note: 'R1' },
+  { id: 'F8  s..hutdown /s', payload: J("s''hutdown /s"), expect: 'allow', note: 'R1' },
+  { id: 'F9  c..hmod 777 /x', payload: J("c''hmod 777 /x"), expect: 'allow', note: 'R1' },
+  { id: 'F10 d..iskpart', payload: J("d''iskpart"), expect: 'allow', note: 'R1' },
+  { id: 'F11 sh..red -u /tmp/t', payload: J("sh''red -u /tmp/t"), expect: 'allow', note: 'R1' },
+  { id: 'F12 un..link /tmp/t', payload: J("un''link /tmp/t"), expect: 'allow', note: 'R1' },
+  { id: 'F13 f..ind /tmp -delete', payload: J("f''ind /tmp -delete"), expect: 'allow', note: 'R1' },
+  { id: 'F14 d..el /f x', payload: J("d''el /f x"), expect: 'allow', note: 'R1（ps1 L297 只查 $cmdTest）' },
+  { id: 'F15 e..rase x', payload: J("e''rase x"), expect: 'allow', note: 'R1' },
+  { id: 'F16 r..m -rf /tmp/t（反向守卫）', payload: J("r''m -rf /tmp/t"), expect: 'deny', note: '删除族归一必须保留（ps1 $cmdNaked）' },
+  { id: 'F17 R..emove-Item（反向守卫）', payload: J("R''emove-Item x"), expect: 'deny', note: 'Remove-Item 是删除族：归一后必须仍 deny' },
+  { id: 'F18 g..it status（对照）', payload: J("g''it status"), expect: 'allow', note: '对照：非删除族插词不改变判定' },
+
+  // ── H 段 H1–H12：**数组元素为对象**（R2 = fail-open 回归源）──────────────────────────
+  // 机理：PowerShell 对「数组元素位 / 哈希值位的对象」渲染为**空串**（实测 `[{"a":1}]` → ""、
+  //      `{"a":{"b":1}}` → "@{a=}"），**不是**类型名。G3 的 ps_elem(dict) 返回类型名字符串 →
+  //      `command:[{"cmd":"rm -rf /tmp/t"}]` 得到非空串 → 绕过「command 为空 → deny」→ **fail-open**。
+  // H5 就是 R2 的直接回归测试；H6 是同族的第二形态。
+  { id: 'H1  command:[{"a":1}]', payload: T([{ a: 1 }]), expect: 'deny', note: '对象元素 → PS 串 "" → command 为空 → deny' },
+  { id: 'H2  command:[{"a":1},{"b":2}]', payload: T([{ a: 1 }, { b: 2 }]), expect: 'deny', note: 'PS 串 " " → 纯空白 → deny' },
+  { id: 'H3  command:[{"a":1},"x"]', payload: T([{ a: 1 }, 'x']), expect: 'allow', note: 'PS 串 " x" → 非空、无危险词 → allow' },
+  { id: 'H4  command:{"a":{"b":1}}', payload: T({ a: { b: 1 } }), expect: 'allow', note: 'PS 串 "@{a=}"（嵌套对象渲染为空）' },
+  { id: 'H5  command:[{"cmd":"rm -rf /tmp/t"}]', payload: T([{ cmd: 'rm -rf /tmp/t' }]), expect: 'deny', note: '★ R2 回归测试：G3 曾在此 fail-open（allow）' },
+  { id: 'H6  command:[{"cmd":"git status"}]', payload: T([{ cmd: 'git status' }]), expect: 'deny', note: 'R2 同族：对象元素 → "" → deny（sh 曾 allow）' },
+  { id: 'H7  command:1e2', payload: T(1e2), expect: 'allow', note: 'PS [string]1e2 = "100"（非 "100.0"）' },
+  { id: 'H8  command:1e21', payload: T(1e21), expect: 'allow', note: 'PS [string]1e21 = "1E+21"' },
+  { id: 'H9  command:1.0e-7', payload: T(1e-7), expect: 'allow', note: 'PS [string]1e-7 = "1E-07"' },
+  { id: 'H10 command:[{"a":1},[1]]', payload: T([{ a: 1 }, [1]]), expect: 'allow', note: 'PS 串 " System.Object[]"' },
+  { id: 'H11 command:{"a":1,"b":2}', payload: T({ a: 1, b: 2 }), expect: 'allow', note: 'PS 串 "@{a=1; b=2}"' },
+  { id: 'H12 command:{"rm":"-rf"}', payload: T({ rm: '-rf' }), expect: 'allow', note: 'PS 串 "@{rm=-rf}"：值位不被当命令词' },
+
+  // ── G 段 G1–G14：`-i` 之后「引号内文本恰好命中不敏感词」的锚点面（R3）────────────────
+  // 机理：sh 的 shutdown(L489)/chmod(L494)/rm 引号变体(L509)/10b(L476) 前导锚曾含 `[:space:]`，
+  //      而 ps1 L463/L468/L365/L370 只认 `(?:^|[;&|\r\n])\s*`。`-i` 把这类**潜伏锚点不一致**批量点着：
+  //      `git commit -m "remove SHUTDOWN path"`（合法 commit message）由 allow 变 deny。G3-FIX4 对齐锚点。
+  // G11/G12 是**两端同形残留**（ps1 与 sh 都 deny）：钉的是"两端一致"，不是"这样安全"——
+  // 与 C15/T11 同一处理方式，登记为加固候选。
+  { id: 'G1  commit -m "remove SHUTDOWN path"', payload: J('git commit -m "remove SHUTDOWN path"'), expect: 'allow', note: '★ R3：合法 commit message，曾被 -i 误拦' },
+  { id: 'G2  commit -m "REBOOT fix"', payload: J('git commit -m "REBOOT fix"'), expect: 'allow', note: 'R3 邻' },
+  { id: 'G3  commit -m "fix CHMOD docs"', payload: J('git commit -m "fix CHMOD docs"'), expect: 'allow', note: 'R3 邻（chmod 锚点）' },
+  { id: 'G4  echo "please shutdown the server"', payload: J('echo "please shutdown the server"'), expect: 'allow', note: 'R3 邻' },
+  { id: 'G5  echo "run chmod 777 /x"', payload: J('echo "run chmod 777 /x"'), expect: 'allow', note: 'R3 邻' },
+  { id: 'G6  git log --grep="reboot"', payload: J('git log --oneline --grep="reboot"'), expect: 'allow', note: 'R3 邻' },
+  { id: 'G7  commit -m "fix halt handling"', payload: J('git commit -m "fix halt handling"'), expect: 'allow', note: 'R3 邻' },
+  { id: 'G8  cat shutdown.txt', payload: J('cat shutdown.txt'), expect: 'allow', note: 'R3 邻（ps1 尾锚 \\b 亦不命中）' },
+  { id: 'G9  build && shutdown /s（反向守卫）', payload: J('npm run build && shutdown /s'), expect: 'deny', note: '分隔符后的 shutdown 必须仍拦' },
+  { id: 'G10 echo hi; chmod 777 /x（反向守卫）', payload: J('echo hi; chmod 777 /x'), expect: 'deny', note: '分隔符后的 chmod 777 必须仍拦' },
+  { id: 'G11 commit -m "drop RM -rf usages"', payload: J('git commit -m "drop RM -rf usages"'), expect: 'deny', note: '两端同形残留（非锚点类，L394 无锚点）：加固候选' },
+  { id: 'G12 git log --grep="RM -rf"', payload: J('git log --grep="RM -rf"'), expect: 'deny', note: '两端同形残留：加固候选' },
+  { id: 'G13 commit -m "shred the docs"', payload: J('git commit -m "shred the docs"'), expect: 'allow', note: 'R3 邻（unlink/shred 锚点）' },
+  { id: 'G14 commit -m "update UNLINK docs"', payload: J('git commit -m "update UNLINK docs"'), expect: 'allow', note: 'R3 邻' },
 ];
 
 /** 拼一行可读的失败明细（载荷 / ps1 / sh / 期望） */
@@ -189,7 +261,7 @@ function decisionOf(stdout: string, code: number | null): string {
   return d === 'deny' ? 'deny' : d === 'allow' ? 'allow' : 'NO-DECISION';
 }
 
-test('decision parity: ps1 与 sh 对同一语料的 permissionDecision 必须逐条一致且等于应然', { timeout: 600000 }, (t) => {
+test('decision parity: ps1 与 sh 对同一语料的 permissionDecision 必须逐条一致且等于应然', { timeout: 1800000 }, (t) => {
   const ps1Hook = process.env.RG_PARITY_PS1 || DEFAULT_PS1;
   const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
   // 路径写错时必须**响亮失败**（否则 powershell 打 banner、bash 静默 exit 127，表现为莫名其妙的"不一致"）

@@ -282,24 +282,70 @@ fi
 # 直接中止脚本（exit 127、无决策输出 → 静默放行），下方 grep 回退是死代码。改用显式 || 回退。
 if command -v python3 >/dev/null 2>&1; then
     cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
+from decimal import Decimal
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
+def ps_num(f):
+    # G3-FIX4/R4：把 Python float 渲染成 **.NET double 默认 ToString()（G 格式）** 的近似值。
+    # 实测口径（`_g3fix4_float_probe*.mjs`，逐条真跑 ps1 的 `[string]$data.tool_input.command`）：
+    #   定点 ↔ 科学 的分界 = 十进制指数 e10 ∈ [-4, 14] 用**定点**，否则用科学记数；
+    #     1e2→"100"、0.1→"0.1"、0.0001→"0.0001"、123456789012345.6→"123456789012345.6"
+    #     1e15→"1E+15"、1e16→"1E+16"、1.5e16→"1.5E+16"、1e21→"1E+21"
+    #     1e-5→"1E-05"、1e-6→"1E-06"、1.5e-6→"1.5E-06"、1e-15→"1E-15"、-1e-5→"-1E-05"
+    #   科学记数的指数一律**大写 E + 符号 + 至少两位**；尾数去掉多余 ".0"。
+    # ⚠️ 这是**近似**，不是忠实复刻。已知残差来自 PowerShell 5.1 的 ConvertFrom-Json **数字类型映射**：
+    #   无指数的十进制字面量（`0.00001`）被解析成 Decimal → [string] 保持定点 "0.00001"；
+    #   带指数的字面量（`1e-5`）被解析成 Double → [string] 走上面的 G 格式 "1E-05"。
+    #   二者是**同一个 double 值**，Python 侧拿不到原始字面量文本，故无法区分——已实测登记该残差类。
+    #   **该残差对本产品的 permissionDecision 无任何影响**（两种渲染都不命中任何规则）。
+    if f != f: return "NaN"
+    if f == float("inf"): return "Infinity"
+    if f == float("-inf"): return "-Infinity"
+    r = repr(f)
+    if "e" in r:
+        e10 = int(r.split("e")[1])
+    else:
+        s = r.lstrip("-")
+        if s.startswith("0."):
+            frac = s[2:]
+            e10 = -(len(frac) - len(frac.lstrip("0")) + 1)
+        else:
+            e10 = len(s.split(".")[0]) - 1
+    d = Decimal(r)
+    if -4 <= e10 <= 14:
+        out = format(d, "f")
+        if "." in out: out = out.rstrip("0").rstrip(".")
+        return out if out not in ("", "-") else "0"
+    t = abs(d).normalize().as_tuple()
+    digits = "".join(str(x) for x in t.digits)
+    exp10 = t.exponent + len(digits) - 1
+    mant = (digits[0] + ("." + digits[1:] if len(digits) > 1 else "")).rstrip("0").rstrip(".")
+    return ("-" if d < 0 else "") + mant + "E" + ("+" if exp10 >= 0 else "-") + str(abs(exp10)).rjust(2, "0")
 def ps_cast(v):
-    # G3/T9/T10：复刻 PowerShell 的 [string] 转换（ps1 L205 的 [string]$data.tool_input.command）
+    # G3/T9/T10 + G3-FIX4：把 JSON 值渲染成 PowerShell `[string]` 的**近似**结果
+    #   （ps1 L205 `[string]$data.tool_input.command`）。
+    # ⚠️ 声明口径（G3-FIX4/R4 更正）：**不得**称其为"忠实复刻"。它是**逐条实测校准**的近似实现；
+    #    已实测对齐的形态：null / true / false / str / int / float / [] / 顶层 dict / 数组按空格拼接 /
+    #    嵌套数组；剩余差异（若有）逐条登记在 IMPLEMENTATION_RESULT_G3-FIX4.md 的「ps_cast 语义表」。
     if v is None: return ""
     if v is True: return "True"
     if v is False: return "False"
     if isinstance(v,str): return v
     if isinstance(v,int): return str(v)
-    if isinstance(v,float): return repr(v)
+    if isinstance(v,float): return ps_num(v)
     if isinstance(v,list): return " ".join(ps_elem(x) for x in v)
     if isinstance(v,dict):
         if not v: return ""          # 空对象 → "" → 落「command 为空」分支 deny（ps1 实测同）
         return "@{" + "; ".join(str(k)+"="+ps_elem(x) for k,x in v.items()) + "}"
     return str(v)
 def ps_elem(v):
+    # 数组元素位 / 哈希值位的渲染（实测 PowerShell）：
+    #   list → "System.Object[]"（`[["rm"]]` 实测吻合，保留）
+    #   dict → ""                （`[{"a":1}]` → ""；`{"a":{"b":1}}` → "@{a=}"；**不是**类型名）
+    # G3-FIX4/R2（fail-open 回归）：旧实现 dict 分支返回 "System.Management.Automation.PSCustomObject"
+    #   → `command:[{"cmd":"rm -rf /tmp/t"}]` 得到非空字串 → 绕过「command 为空 → deny」→ sh 由 deny 变 allow。
     if isinstance(v,list): return "System.Object[]"
-    if isinstance(v,dict): return "System.Management.Automation.PSCustomObject"
+    if isinstance(v,dict): return ""
     return ps_cast(v)
 try:
     d=json.load(sys.stdin)
@@ -325,17 +371,21 @@ sys.stdout.reconfigure(encoding="utf-8")
 print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")') || true
 fi
 
-# ===== G3/T3：空引号归一（对齐 ps1 L365 的 ["'']* 语义）===============================
-# 缺陷（编排者实测）：`rm'' --help` 在 ps1 侧等价于 `rm --help` → 放行；本侧引号插词规则（L332/L462）
-#   把它当「引号插词的 rm」直接 deny → 误拦。
-# 修法：判定前**只删除空的引号对**（'' 与 ""），即 shell 语义下无操作的字符串拼接：
-#   `rm'' --help` → `rm --help`（放行）；`rm'' -rf /tmp/t` → `rm -rf /tmp/t`（**仍 deny**）；
-#   `r''m -rf /tmp/t` → `rm -rf /tmp/t`（**仍 deny**）—— 归一后照常跑**全部**规则，不设短路。
-# ⚠️ 归一方向恒为「多看见」：删空引号只会让命令词与分隔符**相邻**（`;''rm` → `;rm`、`r''m` → `rm`），
-#   不会把危险词藏起来，故不构成新的绕过面（邻居面钉在 decision-parity.test.ts）。
+# ===== G3-FIX4/R1：空引号归一**只给 rm / Remove-Item 删除族**（对齐 ps1 L222 `$cmdNaked`）=========
+# G3/T3 的原始意图：`rm'' --help` 在 ps1 侧等价于 `rm --help` → 放行；本侧引号插词规则把它当
+#   「引号插词的 rm」直接 deny → 误拦。
+# G3 的错误：把归一**施加到全部规则**（`cmd` 被就地替换），而 ps1 **只在删除族**用剥离引号的文本
+#   （ps1 L222 定义 `$cmdNaked`，ps1 L374/L378 起**仅** rm / Remove-Item 使用它）。于是凡「删除族之外」
+#   的命令被空引号插词（`g''it clean -f` / `s''hutdown /s` / `c''hmod 777` / `r''mdir /s` / `un''link` …）
+#   都会在 sh 侧命中、在 ps1 侧不命中 → **13 条新跨端分歧**（Evaluator G3 §2.2b R1 实测）。
+# G3-FIX4 修法：`cmd` 保持原样（其余全部规则照旧用它），另存 `cmdNoq`（= 删空引号对后的文本），
+#   **只**喂给 rm / Remove-Item 族规则：L360 bare rm、L370b Remove-Item 补查、L375 引号插词 rm、
+#   L379 r..m、L394 rm -rf 任意位置；对应的 echo/printf 剥离版为 cmdtestNoq（见下方 L353 区）。
+# 归一方向恒为「多看见」：删空引号只会让命令词与分隔符**相邻**（`;''rm` → `;rm`、`r''m` → `rm`），
+#   不会把危险词藏起来，故不构成新的绕过面（邻居面钉在 decision-parity.test.ts B 段 Q1–Q12）。
 # 回显/脱敏用原始命令 cmdOrig（见 redact_cmd），故 deny JSON 与 core/ps1 的逐字一致性不受影响。
 cmdOrig="$cmd"
-cmd=$(printf '%s' "$cmd" | sed -E "s/''//g; s/\"\"//g")
+cmdNoq=$(printf '%s' "$cmd" | sed -E "s/''//g; s/\"\"//g")
 
 # ---- 纯注释命令放行（对齐 .ps1 L215 的「整串开头 `\s*#`」语义）----
 # G5：旧实现用 grep 的**逐行**锚点 `^[[:space:]]*#`，任一行以 # 开头即放行，于是
@@ -351,15 +401,19 @@ esac
 CMD_SEG='(^|[;&|])[[:space:]]*'
 # echo/printf 引号参数剥离（对齐 .ps1 $cmdTest）：echo "xxx" → echo ""（无引号 rm 是真实危险，不剥）
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
+# G3-FIX4/R1：同一剥离规则施加到**空引号归一后**的 cmdNoq 上——rm / Remove-Item 删除族专用。
+#   ps1 侧对应物是 $cmdNaked（= $cmdTest 再去引号，ps1 L223），故这里先 $cmdTest 再归一，顺序等价。
+cmdtestNoq=$(printf '%s' "$cmdNoq" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 
 # 1) POSIX 删除类（命令边界锚定；echo/printf 参数已剥离；R25：rm --help/-h/--version 无害）
 if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}rmdir([[:space:]]|-)|${CMD_SEG}unlink([[:space:]]|-)|${CMD_SEG}shred([[:space:]]|-)"; then
     deny_command "POSIX permanent deletion (rmdir/unlink/shred). Use trash command."
 fi
 # rm：排除 --help/-h/--version（无害）；其余 rm 实参一律拦
-if printf '%s' "$cmdtest" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; then
+# G3-FIX4/R1：改用 **cmdtestNoq**（空引号归一后的文本）——这是 rm 族，与 ps1 rule 16 同口径。
+if printf '%s' "$cmdtestNoq" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; then
     # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
-    rmseg=$(printf '%s' "$cmdtest" | tr '[:upper:]' '[:lower:]' | sed -nE 's/.*(^|[;&|])[[:space:]]*rm[[:space:]]*([^;&|]*)/\2/p' | head -1 | sed 's/[[:space:]]*$//')
+    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE 's/.*(^|[;&|])[[:space:]]*rm[[:space:]]*([^;&|]*)/\2/p' | head -1 | sed 's/[[:space:]]*$//')
     case "$rmseg" in
         -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
         *) deny_command "rm is permanent deletion. Use trash command." ;;
@@ -367,31 +421,44 @@ if printf '%s' "$cmdtest" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; 
 fi
 
 # 1b) PowerShell 删除类（R15 补齐：Remove-Item/del/erase，-i 大小写不敏感对齐 .ps1；R23 加 Clear-Content/.Delete；R25 加 ri/rd）
+# G3-FIX4/R1：本规则**保持用未归一的 cmdtest**——ps1 侧 rmdir/del/erase/ri/rd 只查 $cmdTest（ps1 L297–L311），
+#   不做引号剥离；若此处吃 cmdtestNoq，`r''mdir /s` 会被误拦（ps1 allow）→ 反向制造 R1 型分歧。
 if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}Remove-Item|${CMD_SEG}del([[:space:]]|-)|${CMD_SEG}erase([[:space:]]|-)|${CMD_SEG}ri([[:space:]]|-)|${CMD_SEG}rd([[:space:]]|-)|${CMD_SEG}rmdir([[:space:]]|-)|Clear-Content|\.Delete[[:space:]]*\("; then
+    deny_command "PowerShell/CMD permanent deletion (Remove-Item/del/erase/ri/rd/rmdir/Clear-Content/.Delete). Use trash command."
+fi
+# 1b-2) G3-FIX4/R1：Remove-Item 的**空引号插词**补查（对齐 ps1 16e L378 的 $cmdNaked `\bRemove-Item\b`）。
+#   这是唯一需要「归一文本」的非 rm 词条，故单列一条，避免把归一泄漏给 del/erase/ri/rd/rmdir。
+if printf '%s' "$cmdtestNoq" | grep -qiE '\bRemove-Item\b'; then
     deny_command "PowerShell/CMD permanent deletion (Remove-Item/del/erase/ri/rd/rmdir/Clear-Content/.Delete). Use trash command."
 fi
 
 # 引号插词 rm 变体（rm'' -rf / rm" " -rf / r''m，对齐 .ps1 16c；R25：实引号 + 任意引号内内容）
-if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
+# G3-FIX4/R1：rm 族 → 用 cmdtestNoq。
+if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_SEG}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
     deny_command "Quoted-word rm variant is permanent deletion."
 fi
-# 引号插词在命令名内（r''m / r""m）
-if printf '%s' "$cmd" | grep -qiE 'r["'"'"']+m([[:space:]]|-)'; then
+# 引号插词在命令名内（r''m / r""m）——G3-FIX4/R1：rm 族 → cmdtestNoq；
+#   单引号奇数次（r"m / r'm）不会被空引号归一消除，仍由本条的 ["']+ 兜住（与 ps1 $cmdNaked 同口径）。
+if printf '%s' "$cmdtestNoq" | grep -qiE 'r["'"'"']+m([[:space:]]|-)'; then
     deny_command "Quoted-name rm variant is permanent deletion."
 fi
 
 # 2) find -delete / -exec rm
-if printf '%s' "$cmd" | grep -qiE 'find[^;&|\n]*-delete|find[^;&|\n]*-exec[^;&|\n]*rm'; then
+# G3-FIX4/R3-审计：补前导锚 `(^|[;&|])[[:space:]]*`，对齐 ps1 L333/L337 的 `(?:^|[;&|\r\n])\s*find\b`。
+#   旧实现**完全没有前导锚**，`-i` 之后 `git commit -m "always FIND -delete carefully"` 这类引号内文本被点着 → 新过拦。
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*find[^;&|\n]*-delete|(^|[;&|])[[:space:]]*find[^;&|\n]*-exec[^;&|\n]*rm'; then
     deny_command "find -delete/-exec rm is permanent deletion."
 fi
 
 # 3) xargs/for 批量 rm
-if printf '%s' "$cmd" | grep -qiE '(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)'; then
+# G3-FIX4/R3-审计：同上补前导锚，对齐 ps1 L340 的 `(?:^|[;&|\r\n])\s*(?:\bxargs\b…|\bfor\b…)`。
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)'; then
     deny_command "xargs/for rm is permanent deletion."
 fi
 
 # 3b) rm -rf 任意位置（对齐 .ps1 15 区：echo/printf 引号已由 cmdtest 剥离，无引号 echo rm -rf 也是真实危险）
-if printf '%s' "$cmdtest" | grep -qiE 'rm[[:space:]]+-r{0,1}f{0,1}[[:space:]]+'; then
+# G3-FIX4/R1：rm 族 → cmdtestNoq（`rm'' -rf` 归一后由此条兜住）。
+if printf '%s' "$cmdtestNoq" | grep -qiE 'rm[[:space:]]+-r{0,1}f{0,1}[[:space:]]+'; then
     deny_command "rm -rf recursive delete is permanent deletion."
 fi
 
@@ -473,7 +540,9 @@ if printf '%s' "$cmd" | grep -qiE '\$\([^)]*(rm|Remove-Item|del|rmdir|shutdown)|
 fi
 
 # 10b) 变量赋值危险 + 反斜杠/前导斜杠 rm（R25：X=rm; $X -rf / r\m / /rm）
-if printf '%s' "$cmd" | grep -qiE '=[[:space:]]*["'"'"']*rm([[:space:]]|["'"'"']|;|$)|=[[:space:]]*["'"'"']*Remove-Item([[:space:]]|["'"'"']|;|$)|(^|[;&|[:space:]])[\\/]{1,2}rm([[:space:]]|-)|r[\\/]m([[:space:]]|-)'; then
+# G3-FIX4/R3-审计：前导锚 `(^|[;&|[:space:]])` → `(^|[;&|])[[:space:]]*`，对齐 ps1 L370 的 `(?:^|[;&|\r\n])`。
+#   旧锚含 `[:space:]`，`-i` 之后会把「引号内文本」当命令词点着（同 L489/L494/L509 一类）。
+if printf '%s' "$cmd" | grep -qiE '=[[:space:]]*["'"'"']*rm([[:space:]]|["'"'"']|;|$)|=[[:space:]]*["'"'"']*Remove-Item([[:space:]]|["'"'"']|;|$)|(^|[;&|])[[:space:]]*[\\/]{1,2}rm([[:space:]]|-)|r[\\/]m([[:space:]]|-)'; then
     deny_command "Variable assignment / backslash-prefixed rm (dangerous execute)."
 fi
 
@@ -486,12 +555,17 @@ if printf '%s' "$cmd" | grep -qiE '(bash|sh|pwsh|powershell)[[:space:]]+-c[[:spa
 fi
 
 # 12) 系统级操作（无尾随空格变体，对齐 .ps1 28）
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])(sudo[[:space:]]+)?(shutdown|reboot|halt|poweroff)([[:space:]]|$)'; then
+# G3-FIX4/R3（必修）：前导锚 `(^|[;&|[:space:]])` → `(^|[;&|])[[:space:]]*`，逐字对齐 ps1 L463
+#   `(?:^|[;&|\r\n])\s*`。旧锚含 `[:space:]` → `-i` 之后 `git commit -m "remove SHUTDOWN path"`
+#   这类**合法 commit message**里的「空格 + shutdown」被当命令词点着 → 新过拦 + 新分歧。
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(shutdown|reboot|halt|poweroff)([[:space:]]|$)'; then
     deny_command "System shutdown/reboot blocked."
 fi
 
 # 13) chmod 全局权限（无 -R 也拦，对齐 .ps1 29）
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+'; then
+# G3-FIX4/R3-审计（裁决点名 L494 chmod vs ps1 L468）：同一类锚点不一致，一并改，
+#   ps1 L468 = `(?:^|[;&|\r\n])\s*chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)\s+`。
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+'; then
     deny_command "chmod global permission (777) is a security risk."
 fi
 
@@ -506,7 +580,12 @@ if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+gc[^;]*--prune|git[[:space:]]+
 fi
 
 # 16) 引号插词 rm（rm''-rf，对齐 .ps1 16c；R25：需实引号，rm -h 不误伤）
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])rm[[:space:]]*["'"'"'][^[:space:]]*[[:space:]]*-[a-z]'; then
+# G3-FIX4/R3-审计：前导锚含 `[:space:]` → `(^|[;&|])[[:space:]]*`，对齐 ps1 L365 16c
+#   `(?:^|[;&|\r\n])\s*`。旧锚在 `-i` 之后会点着「引号内/参数位」的 rm 串。
+# G3-FIX4/R1-回归修补：本规则同时改用 **cmdtestNoq**（rm 族归一文本）。若仍读原始 `$cmd`，
+#   `rm'' -h` 会因为归一前还带着引号而命中本规则 → sh deny（ps1 allow，闸门 Q12 实测变红）。
+#   归一是「多看见」方向，故改用归一文本不会漏拦：`rm''-rf` 由 L396 裸 rm 规则承接。
+if printf '%s' "$cmdtestNoq" | grep -qiE '(^|[;&|])[[:space:]]*rm[[:space:]]*["'"'"'][^[:space:]]*[[:space:]]*-[a-z]'; then
     deny_command "Quoted-word rm variant is permanent deletion."
 fi
 
