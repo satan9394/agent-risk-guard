@@ -36,7 +36,7 @@ R2 的任务卡原文就是「跨行时不得命中他命令 / 两端不得发�
 | 5 | **R3** 三处更正（ps1 行尾勘误 / M1 边界 / ps1 陈旧注释 `[^-]*`） | **PASS** |
 | 6 | **R4** 语料扩容 + M4 变异复现 | **PASS**（M4 复现「A 绿 / B 红，恰好 1 处」） |
 | 7 | **D6/D7 新回归搜寻**（`docker exec db mysql -p…`、`curl --user alice:123456`） | **见 §7**：报告披露的两点**可接受**（D8：既有/设计取舍）；**但 §4 那条报告未披露 → 构成 REJECT 依据** |
-| 8 | 九套回归 + `CHANGED=0` | 九套回归 **PASS**（逐套 exit=0，`hook-redact-test` 108/108）；`CHANGED=0` **未做（时间受限，如实标注）** —— 见 §8 |
+| 8 | 九套回归 + `CHANGED=0` | **PASS**：九套逐套 exit=0（node 376/376、`hook-redact-test` **108/108**、sh 67/40/192）；`CHANGED=0`（我自跑 94 条，真实 spawn + 进程 stdin） —— 见 §8 |
 | 9 | **BOM 陷阱**：六份 ps1 BOM 逐份复核 | **PASS**（6/6 `distinct=1`，BOM=True；sh 3/3 无 BOM，distinct=1） |
 
 ---
@@ -288,7 +288,7 @@ SH  3/3  sha=21BA2A2235B1E244  24358B  BOM=False  CR=0 LF=388   DISTINCT=1
 
 | 套件 | 我的实测 | 报告声称 | 一致 |
 |---|---|---|---|
-| `node --test "packages/*/test/*.test.ts" "tests/*/*.test.ts"` | **exit=0**（计数行见下） | 376/376 | ✓（无 fail 行） |
+| `node --test "packages/*/test/*.test.ts" "tests/*/*.test.ts"` | **`ℹ tests 376 / pass 376 / fail 0`**，exit=0 | 376/376 | ✓ |
 | ps1 `hook-rules-test.ps1` | exit=0 | 37 | ✓ |
 | ps1 `hook-fp-regression.ps1` | exit=0 | 8 | ✓ |
 | ps1 `hook-bypass-regression.ps1`（pwsh 7.6.6） | exit=0 | 20 | ✓ |
@@ -300,10 +300,21 @@ SH  3/3  sha=21BA2A2235B1E244  24358B  BOM=False  CR=0 LF=388   DISTINCT=1
 
 另有 4 次独立的 `redact-parity.test.ts` 单独复跑（基线×2、M2-sh、M4-sh、M1-sh、M2-ps1），**两次基线均 `exit=0 A=绿 B=绿`**。
 
-**判定零改动 `CHANGED=0`：未完成（如实标注未做）**。我的 `decision-diff.mjs`（BEFORE = 冻结改前 ps1 字节副本、AFTER = 现行主源、真实 spawn + 进程 stdin、90 条语料）已写好并在跑，但被加速指令打断，**未取得完整输出**，故**不记为 PASS**。
-间接证据（不替代自测）：本轮改动**只落在脱敏规则段**（core L120–L148 / ps1 L94–L102 / sh L67–L71、L83–L100、L190–L207）与注释，判定规则段未动；§4 的多行长明文载荷在两端**仍然走 deny 分支**（`permissionDecision=deny` 可正常抽取），说明脱敏差异未影响判定。**建议下一轮补测**（脚本留在证据目录，可直接复跑）。
+**判定零改动 `CHANGED=0`：PASS（我自跑，94 条语料）**。BEFORE = 冻结改前 ps1 字节副本（`EA253D108FBFFB8C`），AFTER = 现行主源，**真实 spawn + 进程 stdin**，逐条比 `permissionDecision`：
 
-> 本轮的 REJECT 结论不依赖 §8：§4 的明文泄漏 + 跨端发散已足以独立成立。
+```
+BEFORE = %TEMP%\g15bfix2-dec-*\before.ps1  (<- _g15bfix2_baseline/dangerous-commands.ps1.before, EA253D10…)
+AFTER  = agent-risk-guard-audit/scripts/dangerous-commands.ps1
+corpus size = 94
+DECISION-DIFF: total=94  CHANGED=0
+```
+
+语料 94 条 = 删除类（rm/rmdir/unlink/shred/find -delete/python/Remove-Item/del/rd/ri/Clear-Content/rimraf）+
+git 破坏类 + 管道与包装（`| bash` / eval / bash -c / powershell -c）+ 系统类（dd/mkfs/shutdown/chmod 777/prune/format/reg delete/icacls/diskpart）+
+本轮全部 R1/R2/D7 载荷（含 `docker exec db mysql -p…`、`/usr/bin/mysql -p…`、`mysql -p 12345678`、`docker login -p`）+ **5 条多行命令**。
+（执行中曾被加速指令打断一次，但进程在中断前已把结果落盘，故结论有效；`out-decision-diff.txt` 为原始产物。）
+
+> 注：多行载荷（如 `rm -rf /tmp/t\nmysql -p12345678 …`）在两端**都仍是 `deny`**，说明 §4 的脱敏差异**没有改变判定**——这也与任务卡「判定逻辑零改动」一致。
 
 ---
 
@@ -312,7 +323,7 @@ SH  3/3  sha=21BA2A2235B1E244  24358B  BOM=False  CR=0 LF=388   DISTINCT=1
 | 项 | 结论 |
 |---|---|
 | **仍未脱敏的形态** | ① **多行命令第 2 行起的 `mysql -p<数字>` / `curl\|wget --user u:p`（core+ps1 生产出口明文，sh 脱敏）—— 本轮新引入，REJECT 依据**；② `curl --user alice:123456`（披露；任务卡要求保留守卫，D8 不作依据，建议下轮去掉）；③ `docker exec db mysql -p…` / `/usr/bin/mysql` / `xargs|nohup|time mysql`（披露/锚点收窄，D8 不作依据）；④ `mysql -p 12345678`、URL 凭据、`docker login -p value`（既有） |
-| **判定回归** | **未测**（`CHANGED=0` 未跑）。已见的所有 deny 载荷在两端仍为 deny；`permissionDecision` 未见异常 |
+| **判定回归** | **无**：`CHANGED=0`（我自跑 94 条，BEFORE=冻结改前 ps1 字节副本，真实 spawn + 进程 stdin，含 5 条多行）；九套回归逐套 exit=0 |
 | **过度脱敏** | 本轮点名的 4 条 + 上轮 checklist 全部逐字不变 ✓；仅剩 `(mysql -p12345678)` 吃右括号这一回显伪影（轻微） |
 | **跨端发散** | **有，且是本轮新引入**：`<cmd>\nmysql -p<数字>` 与 `<cmd>\ncurl\|wget --user u:p` 在 core/ps1 明文、sh 脱敏（§4） |
 | **副本 / BOM 不一致** | **无**：ps1 6/6 `9DD361CC…` BOM=True、sh 3/3 `21BA2A22…` 无 BOM，distinct 各为 1（§6） |
@@ -329,8 +340,8 @@ SH  3/3  sha=21BA2A2235B1E244  24358B  BOM=False  CR=0 LF=388   DISTINCT=1
 | `baseline-diff.mjs` / `out-baseline-diff.txt` / `.console.txt` | **D8 基线对照**：冻结改前 ps1/sh 字节副本 vs 现行，多行载荷 before/after 并列（§4.3 的决定性证据） |
 | `regex-semantics.mjs` / `out-regex-semantics.txt` | 旧规则（无锚）与新规则（`^` 锚）在换行输入上的命中差异 |
 | `mutation.mjs` / `out-mutation.txt` / `out-mutation.console.txt` | **M2-sh / M4-sh / M1-sh / M2-ps1 + 两次基线**，隔离 TEMP 变异体（锚点命中校验），输出 exit/A/B/失败计数与原文 |
-| `run-regression.ps1` / `out-regression.txt` | 九套回归跑法（**本轮未跑完，见 §8**） |
-| `decision-diff.mjs` / `out-decision-diff.txt` | `CHANGED=0`（**本轮未跑完，见 §8**） |
+| `run-regression.ps1` / `out-regression.txt` / `out-node-counts.txt` | 九套回归原始输出（逐套 exit=0；node 376/376；ps1 59/59、108/108；sh 67/40/192） |
+| `decision-diff.mjs` / `out-decision-diff.txt` | `CHANGED=0`：94 条语料，BEFORE=冻结改前 ps1 字节副本 vs AFTER=现行主源，真实 spawn + 进程 stdin |
 
 **纪律声明**：被审 6 文件全程只读（开工实测哈希见文首）；所有变异体在 `%TEMP%\g15bfix2-mut-*`；未真实执行任何危险命令；
 未清理任何真实日志（`%TEMP%\riskguard-hook-calls.log` 未被清理——跑真实生产出口会向它追加行，与官方 parity 测试同款行为）。
