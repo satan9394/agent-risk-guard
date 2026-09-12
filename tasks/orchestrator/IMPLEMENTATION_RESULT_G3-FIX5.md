@@ -183,7 +183,32 @@ sudo / `sudo''` / `/usr/bin/` × {diskpart, rmdir, format} = 9 条：FIX4 `ps1=d
 
 结果见 §5.1（由 `_g3fix5_mutation.ps1` 生成，日志 `_g3fix5_gate_*.log`）。
 
-<!--MUTATION-RESULTS-->
+### 5.1 实测结果（**G3-FIX6 轮补齐**；全部变异体从**冻结终版**派生，见 §5.2）
+
+> 本节原为未填占位符（`<!--MUTATION-RESULTS-->`），由 **G3-FIX6** 独立补实（依据
+> `IMPLEMENTATION_RESULT_G3-FIX6.md` §闸门变异证据 + `_g3fix6_gate_{A,B}.log` + `_g3fix6_redlines.txt`）。
+> 命令：`node --test packages/core/test/decision-parity.test.ts`（`RG_PARITY_PS1` / `RG_PARITY_SH` 指向变异副本）；三次**串行**。
+
+| # | 被测体 | 变异（**仅改一处定义/一行**） | rc | tests/pass/fail | 红点 | 判定 |
+|---|---|---|---|---|---|---|
+| ① | 主源（终版冻结） | — | 0 | 2 / **2** / 0 | 0 | **绿 ✅** |
+| ② | `MA-ps1-prefix-fix5.ps1` / `MA-sh-prefix-fix5.sh` | A 面：把两端 `CMD_PRE` 的**唯一定义**退回 FIX5 值 | 1 | 2 / 1 / **1** | **18**（`K39`–`K56`，即包装词/子 shell 面） | **红 ✅** |
+| ③ | `MB-ps1-nonorm.ps1` / `MB-sh-nonorm.sh` | B 面：删掉空引号归一（ps1 1 行 / sh 1 行） | 1 | 2 / 1 / **1** | **22**（`F1`–`F15` + 依赖归一的 `K2/K5/K10/K12/K16/K20/K24`） | **红 ✅** |
+| ④ | `M4-redact-passthrough.sh`（redact 直通，+1 行） | 红线 | 1 | 3 / 0 / **3** | 全部 | **红 ✅** |
+| ⑤ | `M2-tab-raw.sh`（TAB 不转义，1 行） | 红线 | — | `redact-parity`：3 / **3** / 0 → **不红**；`sh-failclosed-test`：34 / **31** / **3** → **红 ✅** | 3 条 TAB 用例 | **红 ✅（由 G5 套件持有）** |
+
+**红点归属（证明两组打的是各自的面）**：A 变异只红 `K39`–`K56`（**F 段一条不红**）；B 变异只红 `F1`–`F15` 与
+「依赖空引号归一的 K 条目」7 条（**新前缀类 `K39`–`K56` 一条不红**）。两变异**互相独立**，base 三态齐全。
+**注**：A 变异里 `L 段身份断言` 仍绿——因为两端前缀**一起**被退回，两端依然"一致"（只是都错）。
+这正说明「身份断言」不能替代「应然断言」，两条测试必须并存（详见 G3-FIX6 报告 §闸门）。
+
+### 5.2 ⚠️ 对本报告原 §5 变异体表的两处更正（Evaluator G3-FIX5 §7-F2/F3 已指出，此处确认）
+
+1. `_g3fix5_mutants/{M4r,M2r}` 是**中间态**副本（`CMD_PRE` 缺包装组、`rmseg` 用 `\4`），**不是**「冻结 FIX5 基底 −1 行」，
+   且 `M2r` 在 `redact-parity` 上**不可复现为红**（与 §5.1 第 ⑤ 行的结论一致：TAB 红线由 `sh-failclosed-test` 持有，
+   `redact-parity` 语料对 TAB **零覆盖**）。
+2. 正确的口径是**从冻结终版派生**：G3-FIX6 用 `_g3fix6_mutants.mjs` 从当前冻结字节直接生成 6 个变异体，
+   打印各自 `sha256(16)` 与基底哈希（见 `_g3fix6_mutants.txt`）。**本表 §5.1 即按此口径重跑。**
 
 ---
 
@@ -240,7 +265,18 @@ sudo / `sudo''` / `/usr/bin/` × {diskpart, rmdir, format} = 9 条：FIX4 `ps1=d
 1. **2 条既存两端分歧未消（pre-G3 起，非本轮引入，未入闸门）**——
    - `rmdir /tmp/empty_dir`：sh **deny** / ps1 **allow**（四列实测 shPre=deny、shG3=deny、shFix4=deny）根因是 **POSIX `rmdir` 是永久删除、Windows `rmdir` 非递归是安全的**；两端各有测试套件把它钉死（sh「删除一律进回收站」铁律 / ps1 `hook-fp-regression` 第 3 条 expect allow）。**收紧任一端都会打破对端套件**，故按 D12 保留分歧并如实登记。
    - `echo "Format-Volume guide"`：sh **deny** / ps1 **allow**。根因是 sh 的 rule 17（`format-volume` 等）读**未剥离 echo 的原文**，而 ps1 rule 9 读 `$cmdTest`。同理 pre-G3 即存在。
-2. **`x <危险基座>` / 引号内文本**：ps1 由 deny → allow（本轮**唯一**的 ps1 放松面）。这些形态**不可执行**（`x` 不是命令）；受影响的 3 个族（diskpart/rmdir/format/del/erase/ri/rd）在 FIX4 时是**无锚误伤**，本轮改为与 sh 同形锚。**但它同时放松了未纳入统一前缀的包装形态**（`bash -c "rmdir /s /q x"` 除外——那条由两端各自的 `bash -c` 规则兜住）。这是本卡在 D12 意义上**最需要 Evaluator 复核**的一处取舍。
+2. **⚠️ 本节口径已由 G3-FIX6 更正（原文**错误**；依据 `EVALUATION_RESULT_G3-FIX5.md` §3.1/§3.5 与 `IMPLEMENTATION_RESULT_G3-FIX6.md`）**：
+   原文写「`x <危险基座>` / 引号内文本是**本轮唯一**的 ps1 放松面」且「这些形态**不可执行**（`x` 不是命令）」
+   —— **两个判断都不成立**。锚化的放松面里同时包含**可执行**的一整类：
+   `time|nice|nohup` × `diskpart`/`rmdir /s /q`/`format C: /q`、子 shell `( )`、块 `{ …; }`、`if…then`、`for…do`
+   （实测 8 条，另有同族 3 条边界）。这些形态在 bash 下**真实执行**其后命令（Evaluator 用 `wsl bash` 逐条实测
+   `time/nice/nohup/( )/{ }/if…then/for…do` 全部执行），且**在 ps1 端由 deny → allow**。
+   由于 **ps1 自 pre-G3 到 FIX4 逐字节未变**（`git show 6ea0342:…ps1` 与 `git show 4c94b90:…ps1` 同为
+   `fb85cc0e4476ae58` / 34523 B），这是相对**冻结基线**的**客观回归**，不是「本来就分歧、现在一致了」；
+   `x <词>` 只是该放松面里最无害的子集。FIX5 由此在 ps1 端做了一次**向下对齐**（违反 D12）。
+   **该回归已由 G3-FIX6/A 修复**：两端 `CMD_PRE` **单一定义**中补回「包装词序列 + 子 shell/块锚 + `then|do|else`」，
+   8 条 + 18 条同族在**两端**由 allow → deny（before/after 见 `IMPLEMENTATION_RESULT_G3-FIX6.md`）；
+   `x <危险基座>` 仍为 allow（反向守卫，防「任意单词」式放宽）。
 3. **统一前缀的包装面只覆盖 `cmd /c` / `command` / `env`**；`doas`、`busybox find`、`nohup`、`xargs -I{} sh -c`、`~`/`$PATH` 变量前缀、`$(…)` 内嵌（部分由 10/31 段规则兜住）**未覆盖**，登记为加固候选。
 4. **ps1 仍缺 `fdisk` / `parted` / `wipefs` 规则**（sh 8 区有）→ `sudo fdisk` 类形态**分歧保留**（sh deny / ps1 allow）。
 5. **`icacls` 规则两端不同形**（sh 大 OR 无锚 / ps1 段首锚）——本卡未动，分歧保留。

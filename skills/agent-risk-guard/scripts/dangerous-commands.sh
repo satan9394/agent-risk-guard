@@ -407,12 +407,23 @@ esac
 
 # ---- 命令边界匹配（对齐 .ps1：段首/分隔符锚定，防 echo rm 字符串误伤）----
 # CMD_SEG：行首 或 分隔符(; & |) + 可选前导空白（含换行作为空格）
+# G3-FIX6/A：**保留但不再被任何危险基座规则引用**（历史锚，供对照/未来非命令位用途）。
 CMD_SEG='(^|[;&|])[[:space:]]*'
-# G3-FIX5/A：危险基座的**统一前缀**（两端同形）= 段首/分隔符锚 + 可选 sudo + 可选**绝对**路径前缀。
-#   向上对齐：`sudo chmod 777 /x`、`/usr/bin/find /tmp -delete`、`sudo'' xargs rm`（归一后 `sudo xargs rm`）
-#   由 allow → deny（FIX4 因「不动 ps1」把 sh 向下对齐而放松掉的 12 条真实危险命令）。
-#   路径前缀限「以 / 开头」（`/[^[:space:];&|]*/`），避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
-CMD_PRE='(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?'
+# G3-FIX6/A（**命令位前缀的单一定义** —— 本文件唯一权威副本，全部危险基座规则**引用**它）：
+#   形态 = 命令位锚 + 包装词序列(可重复) + 可选绝对路径前缀 + 可选 cmd/cmd.exe/command/env 包装。
+#   1) 命令位锚 `(^|[;&|]|\(|\{)`：行首/语句分隔符/子 shell `(`/块 `{` —— bash 真实执行其后命令的位置。
+#   2) 包装词闭集 `(sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)`：**均真实执行其后命令**。
+#      · `time|nice|nohup|setsid|doas|exec|ionice|busybox` 是 FIX5 只补了 sudo 而丢掉的一整类
+#        （`time diskpart` / `nice rmdir /s /q x` / `nohup rmdir /s /q x` 8 条回归）。
+#      · `then|do|else` 是 if/for 的**命令位保留词**：放在**包装词位**（而非锚位）与处方等价——
+#        `if true; then rmdir /s /q x; fi`（`;` 锚 + `then ` 包装 + `rmdir`）、
+#        `for i in 1; do del x; done`（`;` 锚 + `do ` 包装 + `del `）**照样 deny**；
+#        而 `git commit -m "do rm docs"` / `echo "do rm"` 这类**引号内散文**不会被点着（若把 `\bdo\b`
+#        放进锚位，`do` 前只需一个词边界，`"do rm"` 会被新造过拦）。方向恒为「多看见危险、不少看见」。
+#   3) 路径前缀限「以 / 开头」（`/[^[:space:];&|]*/`），避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
+#   ⚠️ **不得放宽成「任意单词」**：`x diskpart`（x 不是命令）必须仍 allow —— 见闸门 K18/K22/K26/L 段反向守卫。
+#   捕获组编号（sed 抽取式规则 L434 依赖）：\1 锚 \2 包装序列 \3 包装词 \4 路径 \5 cmd/command/env。
+CMD_PRE='(^|[;&|]|\(|\{)[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)[[:space:]]+)*(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?'
 # echo/printf 引号参数剥离（对齐 .ps1 $cmdTest）：echo "xxx" → echo ""（无引号 rm 是真实危险，不剥）
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 # G3-FIX4/R1：同一剥离规则施加到**空引号归一后**的 cmdNoq 上——rm / Remove-Item 删除族专用。
@@ -429,7 +440,9 @@ fi
 if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_PRE}rm([[:space:]]|-)"; then
     # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
     # G3-FIX5/A：抽取式同步 CMD_PRE（否则 `sudo rm --help` 抽不到实参 → 误拦；ps1 rule 16 的豁免前瞻同批加前缀）
-    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE 's#.*(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?rm[[:space:]]*([^;&|]*)#\5#p' | head -1 | sed 's/[[:space:]]*$//')
+    # G3-FIX6/A：抽取式**改为引用同一个 ${CMD_PRE}**（不再自带第二份硬编码副本）；实参捕获组随前缀扩到 \6
+    #   （\1 锚 \2 包装序列 \3 包装词 \4 路径 \5 cmd/command/env，见 L415 定义处注释）。
+    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE "s#.*${CMD_PRE}rm[[:space:]]*([^;&|]*)#\\6#p" | head -1 | sed 's/[[:space:]]*$//')
     case "$rmseg" in
         -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
         *) deny_command "rm is permanent deletion. Use trash command." ;;

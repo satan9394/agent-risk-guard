@@ -32,11 +32,19 @@
  *   K 段 K1–K31：**G3-FIX5 新增**——sudo / `sudo''` / 绝对路径前缀 × 危险基座（A 面，Evaluator
  *                G3-FIX4 §4-A 点名的 12 条真实危险命令），既存分歧族 diskpart/rmdir/format（B 面，
  *                §2.4d 实测 ≥12 条），以及补前缀后的过拦面（C 面）。
+ *   K 段 K39–K56：**G3-FIX6/A 新增**——**包装词 / 子 shell / 块 / if-then / for-do** 前缀面
+ *                （Evaluator G3-FIX5 §3.1 的 REJECT 依据：这 8 条真实可执行形态在 ps1 端 deny → allow）。
+ *                K57–K59 是**过拦守卫**：`do`/`then` 出现在引号内散文时不得被点着。
+ *   L 段 L1–L16：**G3-FIX6/A 新增**——**跨端身份断言**专用语料（命令位 / 非命令位成对），由**独立
+ *                的第二个 test** 断言「两端 decision 逐条一致」（不看应然），使「单端前缀漂移」提交前必红。
  *
  * ⚠️ 本闸门只钉「两端逐字同判 + 等于应然」。**不得**为了让它变绿而放宽 deny 语义（红线 §5.6/D12）：
  *    若某条真的两端分歧且短期无法收敛，正确做法是**保留分歧并如实登记**，而不是把它钉成 allow。
- *    当前已知的此类残留（**不入语料**，见 IMPLEMENTATION_RESULT_G3-FIX5 §未解决问题）：
- *      `rmdir <无标志路径>`（sh deny / ps1 allow，POSIX 与 Windows 语义冲突，两端各有测试套件钉住）、
+ *    当前已知的此类残留（**不入语料**，见 IMPLEMENTATION_RESULT_G3-FIX6 §未解决问题）：
+ *      `rmdir <无标志路径>`（sh deny / ps1 allow，POSIX 与 Windows 语义冲突；ps1 `hook-fp-regression.ps1`
+ *        第 5 条把 `rmdir /tmp/empty_dir` 钉成 allow，sh `sh-hook-test` 把它钉成 deny）、
+ *      `time|nice|nohup … rmdir <无标志路径>`（G3-FIX6 把上面这条**既存语义分歧**沿包装词前缀**同构扩展**：
+ *        sh rule 1/1b 无论有无标志都拦，ps1 rule 14 只在带 `/s|/q|-r|-f|…` 时拦）、
  *      `echo "Format-Volume guide"`（sh 的 rule 17 读未剥离 echo 的原文 → deny / ps1 allow）。
  *
  * 可覆盖路径（用于变异验证：把主源换成"回退版"后本闸门必须变红）：
@@ -278,6 +286,67 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'K36 env shutdown /s', payload: J('env shutdown /s'), expect: 'deny', note: '同上（env 包装）' },
   { id: 'K37 cmd /c npm test', payload: J('cmd /c npm test'), expect: 'allow', note: '过拦面：包装前缀不得误伤无危险基座的命令' },
   { id: 'K38 commit -m "command del docs"', payload: J('git commit -m "command del docs"'), expect: 'allow', note: '过拦面：包装词出现在参数/引号内不误伤' },
+  // ── E 面（G3-FIX6/A 新增，K39–K56）：**包装词 / 子 shell / 块 / if-then / for-do 前缀** ─────────
+  //   机理（Evaluator G3-FIX5 §3.1 的 REJECT 依据）：FIX5 把 ps1 三条规则（format/diskpart/del…rmdir）
+  //   由**无锚**改为**命令位锚**，但 FIX5 的统一前缀里**只有 sudo** —— 于是
+  //   `time|nice|nohup|setsid|doas|exec|ionice|busybox` 与 `(`/`{`/`then`/`do`/`else` 这一整类真实
+  //   **可执行**形态在 ps1 端由 deny → allow（8 条回归；ps1 自 pre-G3 至 FIX4 逐字节未变 `fb85cc0e…`，
+  //   故这是相对**冻结基线**的客观回归）。G3-FIX6/A：两端在**同一个** CMD_PRE 里补回包装词序列与
+  //   子 shell/块锚 + `then|do|else`（放在**包装词位**的闭集里，见 L 段与 K57–K59 的过拦守卫）。
+  { id: 'K39 time diskpart', payload: J('time diskpart'), expect: 'deny', note: '★FIX5 回归（ps1 allow）→ 两端 deny' },
+  { id: 'K40 nice rmdir /s /q x', payload: J('nice rmdir /s /q x'), expect: 'deny', note: '★FIX5 回归（ps1 allow）→ 两端 deny' },
+  { id: 'K41 nohup rmdir /s /q x', payload: J('nohup rmdir /s /q x'), expect: 'deny', note: '★FIX5 回归（ps1 allow）→ 两端 deny' },
+  { id: 'K42 time format C: /q', payload: J('time format C: /q'), expect: 'deny', note: '★FIX5 回归（ps1 allow）→ 两端 deny' },
+  { id: 'K43 (rmdir /s /q x)', payload: J('(rmdir /s /q x)'), expect: 'deny', note: '★FIX5 回归：子 shell 起始符不在 FIX5 的锚里' },
+  { id: 'K44 { rmdir /s /q x; }', payload: J('{ rmdir /s /q x; }'), expect: 'deny', note: '★FIX5 回归：花括号组' },
+  { id: 'K45 if true; then rmdir /s /q x; fi', payload: J('if true; then rmdir /s /q x; fi'), expect: 'deny', note: '★FIX5 回归：`then` 后是命令位' },
+  { id: 'K46 for i in 1; do del x; done', payload: J('for i in 1; do del x; done'), expect: 'deny', note: '★FIX5 回归：`do` 后是命令位' },
+  { id: 'K47 sudo time nice nohup diskpart', payload: J('sudo time nice nohup diskpart'), expect: 'deny', note: '包装词**嵌套**（D7 邻居）' },
+  { id: 'K48 time /usr/bin/diskpart', payload: J('time /usr/bin/diskpart'), expect: 'deny', note: '路径 + 包装组合（D7 邻居）' },
+  { id: 'K49 nohup shutdown /s', payload: J('nohup shutdown /s'), expect: 'deny', note: '包装词 × 系统关机族' },
+  { id: 'K50 time find /tmp -delete', payload: J('time find /tmp -delete'), expect: 'deny', note: '包装词 × find -delete' },
+  { id: 'K51 time xargs rm < list.txt', payload: J('time xargs rm < list.txt'), expect: 'deny', note: '包装词 × xargs rm' },
+  { id: 'K52 { del x; }', payload: J('{ del x; }'), expect: 'deny', note: '块 × del' },
+  { id: 'K53 (diskpart)', payload: J('(diskpart)'), expect: 'deny', note: '子 shell × diskpart' },
+  { id: 'K54 if…then 换行形态', payload: J('if true\nthen rmdir /s /q x\nfi'), expect: 'deny', note: '换行也是命令位（ps1 `[;&|\\r\\n]` / sh 行首 `^`）' },
+  { id: 'K55 for…do 换行形态', payload: J('for i in 1\ndo del x\ndone'), expect: 'deny', note: '同上' },
+  { id: 'K56 then 后接包装词', payload: J('if x; then time rmdir /s /q x; fi'), expect: 'deny', note: '命令位保留词 + 包装词的组合' },
+  // ── C 面续：**关键词不得被当成锚**（否则引号内散文 `do rm` 会变成新过拦）──────────────────
+  { id: 'K57 commit -m "do rm docs"', payload: J('git commit -m "do rm docs"'), expect: 'allow', note: '★过拦守卫：`do` 是**命令位保留词**，只在分隔符/行首之后才算命令位' },
+  { id: 'K58 echo "do rm"', payload: J('echo "do rm"'), expect: 'allow', note: '★过拦守卫：引号内散文不点着' },
+  { id: 'K59 grep -r "then rmdir" .', payload: J('grep -r "then rmdir" .'), expect: 'allow', note: '★过拦守卫：同上（`then` 在引号内）' },
+];
+
+/**
+ * ── L 段：**跨端身份断言**语料（G3-FIX6/A 新增）──────────────────────────────────────────
+ * 为什么单列：主测试把「两端同判」与「等于应然」合在一个断言里，任一端悄悄漂移时，失败原因容易被
+ * 误读成「应然写错了」。本段只钉**身份**：**不管应然是什么，两端 decision 必须逐条一致**。
+ * 成对设计（D7 邻居）：每条「命令位」形态都配一条只差一个词的「非命令位」邻居（`x` 前缀 / 引号内 /
+ * 参数位），两条的应然**相反**：
+ *   · 若把命令位前缀放宽成「任意单词」→ 两条一起 deny（**新过拦**）；
+ *   · 若把前缀收窄回 FIX5 → 两条一起 allow（**回归**）。
+ * 故本段同时对「过拦」与「放松」两个方向敏感，且与应然表相互独立。
+ * 已知**不入语料**的两端残留（保留分歧并如实登记，见 IMPLEMENTATION_RESULT_G3-FIX6 §未解决问题）：
+ *   `rmdir <无标志路径>` 与 `time rmdir <无标志路径>`（sh deny / ps1 allow：POSIX 与 Windows 语义冲突，
+ *   两端各有测试套件钉住——ps1 `hook-fp-regression.ps1` 第 5 条把 `rmdir /tmp/empty_dir` 钉成 allow）。
+ */
+export const IDENTITY_CORPUS: DecisionCase[] = [
+  { id: 'L1  命令位 time diskpart', payload: J('time diskpart'), expect: 'deny', note: '与 L2 成对（只差一个非命令词）' },
+  { id: 'L2  非命令位 x diskpart', payload: J('x diskpart'), expect: 'allow', note: '反向守卫' },
+  { id: 'L3  命令位 nohup rmdir /s /q x', payload: J('nohup rmdir /s /q x'), expect: 'deny', note: '与 L4 成对' },
+  { id: 'L4  非命令位 x rmdir /s /q x', payload: J('x rmdir /s /q x'), expect: 'allow', note: '反向守卫' },
+  { id: 'L5  命令行 { del x; }', payload: J('{ del x; }'), expect: 'deny', note: '与 L6 成对' },
+  { id: 'L6  非命令词 x del x', payload: J('x del x'), expect: 'allow', note: '反向守卫' },
+  { id: 'L7  if…then 命令位', payload: J('if true; then rmdir /s /q x; fi'), expect: 'deny', note: '与 L8 成对' },
+  { id: 'L8  引号内 then rmdir', payload: J('git commit -m "then rmdir /s /q"'), expect: 'allow', note: '反向守卫（`then` 在引号内不是命令位）' },
+  { id: 'L9  for…do 命令位', payload: J('for i in 1; do del x; done'), expect: 'deny', note: '与 L10 成对' },
+  { id: 'L10 引号内 do del', payload: J('git commit -m "do del files"'), expect: 'allow', note: '反向守卫' },
+  { id: 'L11 命令位 time format C: /q', payload: J('time format C: /q'), expect: 'deny', note: '与 L12 成对' },
+  { id: 'L12 非命令位 x format C: /q', payload: J('x format C: /q'), expect: 'allow', note: '反向守卫' },
+  { id: 'L13 包装词嵌套（全包装）', payload: J('sudo time nice nohup diskpart'), expect: 'deny', note: '与 L14 成对' },
+  { id: 'L14 包装词嵌套后接非命令词', payload: J('sudo time nice nohup x diskpart'), expect: 'allow', note: '反向守卫：`x` 不是命令，nohup 会执行 `x` 而非 diskpart' },
+  { id: 'L15 子 shell 命令位', payload: J('(rmdir /s /q x)'), expect: 'deny', note: '与 L16 成对' },
+  { id: 'L16 参数位 rmdir', payload: J('echo "rmdir /s /q x"'), expect: 'allow', note: '反向守卫：echo 后是文本' },
 ];
 
 /** 拼一行可读的失败明细（载荷 / ps1 / sh / 期望） */
@@ -359,5 +428,38 @@ test('decision parity: ps1 与 sh 对同一语料的 permissionDecision 必须�
     rows.length,
     0,
     `跨端判定不一致（共 ${rows.length} / ${DECISION_CORPUS.length} 条）:\n${rows.join('\n')}\n`,
+  );
+});
+
+/**
+ * ── G3-FIX6/A：**跨端身份断言**（独立红线）────────────────────────────────────────────
+ * 与上一个 test 的区别：本测试**不看应然**，只断言「同一批命令位/非命令位语料，两端 decision 一致」。
+ * 这是任务卡 §1「闸门加一条跨端身份断言」的落地：即便将来有人只改一端的前缀（另一端忘记同步），
+ * 只要本段语料里任一条两端不同判，本测试即红——把「单端漂移」从"要等 Evaluator 扫全量才发现"
+ * 变成"提交前必红"。
+ */
+test('cross-end identity: 命令位/非命令位语料两端 decision 必须逐条一致', { timeout: 1800000 }, (t) => {
+  const ps1Hook = process.env.RG_PARITY_PS1 || DEFAULT_PS1;
+  const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
+  assert.ok(existsSync(ps1Hook), `ps1 hook 不存在: ${ps1Hook}`);
+  assert.ok(existsSync(shHook), `sh hook 不存在: ${shHook}`);
+  const hasPs1 = which('powershell.exe', ['-NoProfile', '-Command', 'exit 0']);
+  const hasSh = which('wsl.exe', ['-e', 'bash', '-lc', 'exit 0']);
+  if (!hasPs1 || !hasSh) return t.skip('两端之一不可用，无法做身份断言');
+
+  const ps1Args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Hook];
+  const shArgs = ['-e', 'bash', toWslPath(shHook)];
+
+  const rows: string[] = [];
+  for (const c of IDENTITY_CORPUS) {
+    const p = runEnd('powershell.exe', ps1Args, c.payload);
+    const s = runEnd('wsl.exe', shArgs, c.payload);
+    if (p === s) continue;
+    rows.push(row(c, p, s, '两端分歧（身份断言失败：某一端的前缀漂移了）'));
+  }
+  assert.equal(
+    rows.length,
+    0,
+    `跨端身份断言失败（共 ${rows.length} / ${IDENTITY_CORPUS.length} 条）:\n${rows.join('\n')}\n`,
   );
 });

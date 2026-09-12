@@ -234,6 +234,20 @@ $cmdTest = $cmdTest -replace "(?i)\bprint\s*\(['""][^'""]*['""]\)", 'print()'
 # 命令词插词归一（GAN P1-插词）：r'm'→rm、R`emove-Item→Remove-Item、R'EMOVE'-'ITEM'→REMOVE-ITEM；
 # 在 $cmdTest 基础上进一步剥离内部单/双引号与反引号，用于补查删除类插词变体
 $cmdNaked = $cmdTest -replace '["''`]', ''
+# ---- G3-FIX6/A：命令位前缀的**单一定义**（本文件唯一权威副本；全部危险基座规则**引用**它）----
+#   形态 = 命令位锚 + 包装词序列(可重复) + 可选绝对路径前缀 + 可选 cmd/cmd.exe/command/env 包装。
+#   1) 命令位锚 `(?:^|[;&|\r\n]|\(|\{)`：行首/语句分隔符/换行/子 shell/块 —— 均**真实执行**其后命令。
+#   2) 包装词闭集 `(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)`：真实执行其后命令。
+#      · 前八个是 FIX5 只补了 sudo 而丢掉的一整类（`time diskpart` / `nice rmdir /s /q x` /
+#        `nohup rmdir /s /q x` 8 条退出码回归），本轮两端一起补回。
+#      · `then|do|else` 是 if/for 的命令位保留词，放在**包装词位**而非锚位：与处方**行为等价**
+#        （`if true; then rmdir /s /q x; fi` = `;` 锚 + `then ` 包装 + `rmdir`；
+#         `for i in 1; do del x; done` = `;` 锚 + `do ` 包装 + `del `）**照样 deny**，
+#         但 `git commit -m "do rm docs"` / `echo "do rm"` 这类**引号内散文**不会被点着
+#        （若把 `\bthen\b|\bdo\b|\belse\b` 放进锚位，`do` 前只需一个词边界 → 引号内 `do rm` 变成新过拦）。
+#   3) 路径前缀限「以 / 开头」，避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
+#   ⚠️ **不得放宽成「任意单词」**：`x diskpart`（x 不是命令）必须仍 allow —— 见闸门 K18/K22/K26/L 段反向守卫。
+$CMD_PRE = '(?i)(?:^|[;&|\r\n]|\(|\{)\s*(?:(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)\s+)*(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?'
 
 # ---- ========== 危险命令模式匹配 ========== ----
 # 全部为致命级别 — 硬拦截，不询问
@@ -267,8 +281,11 @@ if ($cmd -match '^:\(\)\{') {
 }
 
 # 6) shutdown / reboot
-# G3-FIX5/A：补可选的**绝对路径前缀**（`/sbin/shutdown` 等）；sudo 沿用原样。两端同形（sh L582）。
-if ($cmd -match '(?i)^\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?(shutdown|reboot|halt|poweroff)\s') {
+# G3-FIX5/A：补可选的**绝对路径前缀**（`/sbin/shutdown` 等）；sudo 沿用原样。两端同形（sh L585）。
+# G3-FIX6/A：本条原为「**仅整串开头 `^`**」的窄锚（同一份前缀的第 18 个副本），现统一引用 $CMD_PRE。
+#   方向为**向上**（旧锚是 $CMD_PRE 的子集：`^` ⊂ 命令位锚），且 rule 28（L492）本就用更宽的 `\b` 兜住
+#   同一族，故不产生新的拦截面，只是消除第 18 份副本。
+if ($cmd -match ($CMD_PRE + '(shutdown|reboot|halt|poweroff)\s')) {
     Deny-Command '尝试关闭或重启系统'
 }
 
@@ -276,7 +293,7 @@ if ($cmd -match '(?i)^\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|co
 # G3-FIX5/A（既存分歧族）：由**无锚** `\bformat\s+[A-Z]:\s*[/]` 改为「段首/分隔符锚 + 可选 sudo + 可选绝对路径」
 #   ——与 sh L548 同形。效果：`sudo format C: /q` / `/usr/bin/format C: /q` 由 allow → **deny**（向上）；
 #   `x format ...`、`git commit -m "format C: / fix"` 由 deny → allow（修正对**误伤形态**的过拦，非真实危险放松）。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?format\s+[A-Z]:\s*[/]') {
+if ($cmd -match ($CMD_PRE + 'format\s+[A-Z]:\s*[/]')) {
     Deny-Command '尝试格式化磁盘'
 }
 
@@ -284,7 +301,7 @@ if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.ex
 # G3-FIX5/A（既存分歧族）：由**无锚** `\bdiskpart\b` 改为「段首/分隔符锚 + 可选 sudo + 可选绝对路径」
 #   ——与 sh L536 同形。效果：`sudo diskpart` / `/usr/bin/diskpart` 由 allow → **deny**（向上）；
 #   `x diskpart`、`git commit -m "remove Diskpart usage"` 由 deny → allow（修正误伤；后者是 FIX4 登记的既存分歧）。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?diskpart\b') {
+if ($cmd -match ($CMD_PRE + 'diskpart\b')) {
     Deny-Command '尝试操作磁盘分区 (diskpart)'
 }
 
@@ -317,19 +334,19 @@ if ($cmdTest -match '(?i)\bRemove-Item\b') {
 # G3-FIX5/A（既存分歧族）：以下五条由**无锚** `\bxxx` 改为「段首/分隔符锚 + 可选 sudo + 可选绝对路径」
 #   ——与 sh L441 的 CMD_PRE 同形。效果：`sudo rmdir /s /q x` / `/usr/bin/rmdir …` 由 allow → **deny**（向上）；
 #   `x rmdir /s /q x`、引号内文本由 deny → allow（修正误伤）。回收站直删一族由 16f 的无锚补查独立承接，不受影响。
-if ($cmdTest -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?del\s+') {
+if ($cmdTest -match ($CMD_PRE + 'del\s+')) {
     Deny-Command 'del 是永久删除（不进回收站）。请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
-if ($cmdTest -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?erase\b') {
+if ($cmdTest -match ($CMD_PRE + 'erase\b')) {
     Deny-Command 'erase 是永久删除（不进回收站）。请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
-if ($cmdTest -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?ri\s+(?:(-r|-f|-recurse|-force|-confirm|-literalpath)\b|[A-Za-z]:[\\/])') {
+if ($cmdTest -match ($CMD_PRE + 'ri\s+(?:(-r|-f|-recurse|-force|-confirm|-literalpath)\b|[A-Za-z]:[\\/])')) {
     Deny-Command 'ri（Remove-Item 别名）递归/强制删除是永久删除（不进回收站）。请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
-if ($cmdTest -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?rmdir\s+(/s|/q|-r|-recurse|-f|-force)') {
+if ($cmdTest -match ($CMD_PRE + 'rmdir\s+(/s|/q|-r|-recurse|-f|-force)')) {
     Deny-Command 'rmdir 递归/强制删除是永久删除（不进回收站）。请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
-if ($cmdTest -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?rd\s+(/s|/q|-r|-recurse|-f|-force)') {
+if ($cmdTest -match ($CMD_PRE + 'rd\s+(/s|/q|-r|-recurse|-f|-force)')) {
     Deny-Command 'rd 递归/强制删除是永久删除（不进回收站）。请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
 if ($cmd -match '\[System\.IO\.(File|Directory)\]::Delete') {
@@ -344,27 +361,27 @@ if ($cmdTest -match '(?i)\brm\s+-rf?\s+') {
 # 16) rm 不带 -rf（R8 修正：命令起始/分隔符锚定，避免 echo "use rm" 注释误伤；含换行分隔；R25 排除 help/version 误伤）
 # G3-FIX5/A：补可选 sudo / 绝对路径前缀（`sudo rm x`、`/usr/bin/rm x` 由 allow → deny），
 #   豁免前瞻用**同一前缀**（否则 `sudo rm --help` 会被误拦）。两端同批（sh L428 + rmseg 抽取式 L430）。
-if (($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?rm(?:\s+|["'']?\s*-\s*)') -and ($cmd -notmatch '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?rm\s+(-h|--help|--version|-V)\b')) {
+if (($cmd -match ($CMD_PRE + 'rm(?:\s+|["'']?\s*-\s*)')) -and ($cmd -notmatch ($CMD_PRE + 'rm\s+(-h|--help|--version|-V)\b'))) {
     Deny-Command 'rm 在 Git Bash 下是永久删除（不进回收站），请改用 pwsh 的 Microsoft.VisualBasic 回收站命令'
 }
 
 # 16b) POSIX 删除类补充（R8 实测：unlink/shred/find -delete 曾漏拦；锚定防 echo 注释误伤）
 # G3-FIX5/A：以下五条一律补「可选 sudo + 可选绝对路径前缀」，与 sh L423/L466/L473 的 CMD_PRE 同形。
 #   这是 FIX4 REJECT 的正解：`sudo find -delete` / `/usr/bin/find -delete` / `sudo xargs rm` 由 allow → **deny**。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?unlink(?:\s+|["'']?\s*-\s*)') {
+if ($cmd -match ($CMD_PRE + 'unlink(?:\s+|["'']?\s*-\s*)')) {
     Deny-Command 'unlink 是永久删除（不进回收站），请改用回收站命令'
 }
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?shred(?:\s+|["'']?\s*-\s*)') {
+if ($cmd -match ($CMD_PRE + 'shred(?:\s+|["'']?\s*-\s*)')) {
     Deny-Command 'shred 是永久销毁（不可恢复），禁止'
 }
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?find\b[^|;&\n]*\s-delete\b') {
+if ($cmd -match ($CMD_PRE + 'find\b[^|;&\n]*\s-delete\b')) {
     Deny-Command 'find -delete 是永久删除（不进回收站），请改用回收站命令'
 }
 # GAN P1-包装变体：find -execdir 与 -exec 同拦
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?find\s+[^|;&]*\s-(?:exec|execdir)\b[^|;&]*\brm\b') {
+if ($cmd -match ($CMD_PRE + 'find\s+[^|;&]*\s-(?:exec|execdir)\b[^|;&]*\brm\b')) {
     Deny-Command 'find -exec/-execdir rm 是永久删除（不进回收站），请改用回收站命令'
 }
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?(?:\bxargs\b[^|;&\n]*\brm\b|\bfor\b[^;]*;\s*do[^;]*\brm\b)') {
+if ($cmd -match ($CMD_PRE + '(?:\bxargs\b[^|;&\n]*\brm\b|\bfor\b[^;]*;\s*do[^;]*\brm\b)')) {
     Deny-Command '批量/循环 rm 删除是永久删除（不进回收站），请改用回收站命令'
 }
 
@@ -390,7 +407,7 @@ if ($cmd -match '(?i)\b(?:perl|ruby)\s+-(?:e|E)\s+["''][^"'']*(?:unlink|rmdir|sh
 
 # 16c) 引号插词绕过防护（R8＋HOOK-AUDIT P0-09：rm''-rf / rm"" -rf 任意引号组合；R25 排除 help/version）
 # G3-FIX5/A：补可选 sudo / 绝对路径前缀，与 sh L452 的 CMD_PRE 同形。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?rm\s*["'']*\s*-(?!-?h(?:elp)?\b|version\b|V\b)[a-z]+') {
+if ($cmd -match ($CMD_PRE + 'rm\s*["'']*\s*-(?!-?h(?:elp)?\b|version\b|V\b)[a-z]+')) {
     Deny-Command '引号插词的 rm 变体是永久删除（不进回收站），请改用回收站命令'
 }
 
@@ -400,7 +417,7 @@ if ($cmd -match '(?i)=\s*"?rm(\s|"|;|$)' -or $cmd -match '(?i)=\s*"?Remove-Item(
 }
 
 # 16e) GAN P1-插词：剥离内部引号/反引号后的 rm / Remove-Item 删除类补查（r'm'、R`emove-Item）
-if ($cmdNaked -match '(?i)(?:^|[;&|\r\n])\s*rm(?:\s+|-)\s*(?:-r\S*|-f\b|-recurse|-force)') {
+if ($cmdNaked -match ($CMD_PRE + 'rm(?:\s+|-)\s*(?:-r\S*|-f\b|-recurse|-force)')) {
     Deny-Command '含插词的 rm 变体是永久删除（不进回收站），请改用回收站命令'
 }
 if ($cmdNaked -match '(?i)\bRemove-Item\b') {
@@ -489,13 +506,13 @@ if ($cmd -match '(?i)\breg\s+delete\b') {
 
 # 28) 系统操作（P0-01 修复：halt/poweroff/shutdown/reboot 无尾随空格）
 # G3-FIX5/A：补可选绝对路径前缀，与 sh L582 的 CMD_PRE 同形。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?(?:shutdown|reboot|halt|poweroff)\b') {
+if ($cmd -match ($CMD_PRE + '(?:shutdown|reboot|halt|poweroff)\b')) {
     Deny-Command '系统关闭/重启操作'
 }
 
 # 29) chmod 全局权限（P0-02 修复：不带 -R 的 777 也拦）
 # G3-FIX5/A：补可选 sudo / 绝对路径前缀，与 sh L590 的 CMD_PRE 同形（FIX4 的 U2 洞在此堵上）。
-if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)\s+') {
+if ($cmd -match ($CMD_PRE + 'chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)\s+')) {
     Deny-Command '设置全局权限（chmod 777）存在安全风险'
 }
 
