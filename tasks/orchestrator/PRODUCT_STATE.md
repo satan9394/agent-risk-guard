@@ -5,6 +5,19 @@
 
 ---
 
+## ✅ 最新状态（Round 257）：G15b 切片已闭环 ACCEPT
+
+- 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → G15 ✅ → G15b ❌REJECT → FIX1 → FIX ❌REJECT → FIX2 ❌REJECT → **FIX3 ✅ ACCEPT**
+- **第五个独立 Evaluator `a4b0551b` 判定 ACCEPT**（报告 `EVALUATION_RESULT_G15b-FIX3.md`）：原缺陷（多行第 2 行起锚点发散）**真修**——38 条载荷 × 三端 + 21 条 × 两端生产出口全 AGREE/无泄漏；`^\s*` 新攻击面 PASS（18 条自造载荷三列对照，**无一条**「改前不脱敏→改后脱敏」）；R1/R2/F1 不回退；**M2-sh 变异自跑 → A 绿 / B 红 33 处**；`hook-redact-test` **119/119**；副本 distinct=1。
+- **编排者亦独立跑通**：多行 7 形态（含缩进续行/分号+缩进/第 3 行 mariadb）**TOTAL-FAIL=0**；parity **A/B/C 3/3**；ps1 6/6 `FB85CC0E4476` BOM=True、sh 3/3 `5560674677AF`。提交 `210788d`。
+- **📌 FIX3 复验新登记的后续缺口（均非 FIX3 引入，需单独立卡）**：
+  1. 报告 §8 表述不实：称「PART C 多行 PEM 三端一致」，该 PEM 语料实为**单行**；真跨行 PEM 喂 sh `--redact-stdin` 与 core/ps1 不等价（FIX2 起既有，生产路径正常）
+  2. 未披露的明文残留（FIX2 起，pre-FIX2 为脱敏）：① `# mysql -p12345678` 注释行 → ps1 生产出口**明文**；② `echo "curl --user alice:hunter2 …"` → ps1+sh 生产出口**明文**
+  3. 范围外但真实（pre-FIX2 同样）：③ **sh 生产出口命令含 TAB → 输出非法 JSON（fail-open 风险）**；④ **sh hook 对「首行危险 + 次行以 `#` 开头」的多行命令返回空 = 放行**。③④ 并入 **G5** 处理
+- **下一轮**：**G5**（sh fail-open，吸收 ③④）或 **G3**（规则单源收敛）
+
+---
+
 ## ⚠️ 状态更新（Round 216，本节比下方正文更新）
 
 - 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → G15 ✅ → G15b ❌REJECT → FIX1 → **G15b-FIX ❌REJECT → FIX2（进行中）**
