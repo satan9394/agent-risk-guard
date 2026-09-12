@@ -29,7 +29,7 @@ const exPs1 = (m) => { const x = /\n命令：([\s\S]*?)\n如确需执行/.exec(m
 const exSh = (m) => { const x = /Command: ([\s\S]*?)\nUse trash\/recycle bin/.exec(m); return x ? x[1] : null; };
 
 const CASES = [
-  { n: 'F1-aws-space',  e: 'redact', p: 'aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', t: 'wJalrXUtnFEMI' },
+  { n: 'F1-aws-space',  e: 'redact', p: 'aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000', t: 'TESTFIXTUREsecretVALUE' },
   { n: 'F1-mysql-p',    e: 'redact', p: 'mysql -pSup3rS3cret -e "select 1"', t: 'Sup3rS3cret' },
   { n: 'F1-curl-u',     e: 'redact', p: 'curl -u alice:hunter2 https://example.com', t: 'hunter2' },
   { n: 'R1-curl-u-num', e: 'redact', p: 'curl -u alice:123456 https://example.com', t: 'alice:123456' },

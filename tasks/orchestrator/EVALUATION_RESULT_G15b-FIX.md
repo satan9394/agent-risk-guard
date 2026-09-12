@@ -58,7 +58,7 @@
 sh 生产出口实测（`dangerous-commands.sh`，27 条）：
 
 ```
-[OK] D1-aws-space   in =aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY; rm -rf /tmp/t
+[OK] D1-aws-space   in =aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000; rm -rf /tmp/t
                     out=aws configure set [REDACTED]; rm -rf /tmp/t
 [OK] D1-quoted-sp   in =rm -rf /tmp/t --password="correct horse battery staple"
                     out=rm -rf /tmp/t --[REDACTED]
@@ -104,7 +104,7 @@ M2-sh 的关键一行（这正是上轮 REJECT 的成因，现在被捕获了）
 ✖ redact parity B: 生产出口（真实 deny JSON）不得泄漏明文密钥
   AssertionError: 生产出口校验失败（21 处）:
   sh 生产出口**明文泄漏** "correct horse battery staple"
-  sh 生产出口**明文泄漏** "wJalrXUtnFEMI/K7MDENG"
+  sh 生产出口**明文泄漏** "TESTFIXTUREsecretVALUE/K7MDENG"
   sh 生产出口**明文泄漏** "12345678" …
 ```
 
@@ -119,7 +119,7 @@ M2-sh 的关键一行（这正是上轮 REJECT 的成因，现在被捕获了）
 in      =git clone https://ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@github.com/o/r.git
 core    =git clone https://[REDACTED]@github.com/o/r.git
 M1a(删gh)=git clone https://[REDACTED]@github.com/o/r.git   ==core: true  ← 变异不可检测（被 long-random 掩盖）
-M1b(删aws-space)=aws configure set aws_secret_access_key wJalrXUtnFEMI/… ← 可检测
+M1b(删aws-space)=aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE/… ← 可检测
 ```
 
 即：报告 §3.1 的「M1：`redact_text` 删一条模式 → PART A FAIL」**只对部分规则成立**（他们删的应是 `aws-space`）。

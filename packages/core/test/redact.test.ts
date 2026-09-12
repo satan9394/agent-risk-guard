@@ -54,17 +54,17 @@ test('redact/G15b R1: aws configure set <key> <value>（空格分隔）脱敏', 
   const cases: Array<[string, string]> = [
     [
       'aws_secret_access_key',
-      'aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      'aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000',
     ],
-    ['aws_access_key_id', 'aws configure set aws_access_key_id AKIAIOSFODNN7EXAMPLE'],
-    ['secret_access_key', 'aws configure set secret_access_key wJalrXUtnFEMI/K7MDENG'],
-    ['aws_secret_access_key(=)', 'aws configure set aws_secret_access_key=wJalrXUtnFEMI'],
+    ['aws_access_key_id', 'aws configure set aws_access_key_id AKIAZZTESTFIXTURE999'],
+    ['secret_access_key', 'aws configure set secret_access_key TESTFIXTUREsecretVALUE/K7MDENG'],
+    ['aws_secret_access_key(=)', 'aws configure set aws_secret_access_key=TESTFIXTUREsecretVALUE'],
     ['aws_session_token', 'aws configure set aws_session_token FQoGZXIvYXdzEBYaDExample'],
   ];
   for (const [label, cmd] of cases) {
     const out = redactSecrets(cmd);
     assert.ok(out.includes('[REDACTED]'), `[${label}] 应脱敏: ${cmd} → ${out}`);
-    assert.ok(!out.includes('wJalrXUtnFEMI') && !out.includes('AKIAIOSFODNN7EXAMPLE') && !out.includes('FQoGZXIvYXdzEBYaDExample'),
+    assert.ok(!out.includes('TESTFIXTUREsecretVALUE') && !out.includes('AKIAZZTESTFIXTURE999') && !out.includes('FQoGZXIvYXdzEBYaDExample'),
       `[${label}] 不得残留明文: ${out}`);
     assert.ok(out.startsWith('aws configure set'), `[${label}] 命令前缀应保留: ${out}`);
   }

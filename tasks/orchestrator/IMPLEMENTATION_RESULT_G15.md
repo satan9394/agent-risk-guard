@@ -47,7 +47,7 @@
 | 用例 | 判定（前/后） | 改前日志 reason | 改后日志 reason |
 |---|---|---|---|
 | A1 `curl -H "Authorization: Bearer sk-proj-…"` | allow / allow | `curl -H "Authorization: Bearer sk-proj-AAAABBBBCCCCDDDDEEEEFFFF12345" https://api.example.com/v1/chat` | `curl -H "Authorization: Bearer [REDACTED]" https://api.example.com/v1/chat` |
-| A2 `aws … --profile AKIAIOSFODNN7EXAMPLE` | allow / allow | `aws s3 cp s3://bucket/file.txt . --profile AKIAIOSFODNN7EXAMPLE` | `aws s3 cp s3://bucket/file.txt . --profile [REDACTED]` |
+| A2 `aws … --profile AKIAZZTESTFIXTURE999` | allow / allow | `aws s3 cp s3://bucket/file.txt . --profile AKIAZZTESTFIXTURE999` | `aws s3 cp s3://bucket/file.txt . --profile [REDACTED]` |
 | A3 `mysql … --password=hunter2SuperSecret` | allow / allow | `mysql -u root --password=hunter2SuperSecret -e "select 1"` | `mysql -u root --[REDACTED] -e "select 1"` |
 | A4 `git clone https://ghp_…@github.com/…` | allow / allow | `git clone https://ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@github.com/o/r.git` | `git clone https://[REDACTED]@github.com/o/r.git` |
 | A5 JWT bearer | allow / allow | `… Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIi…`（完整 JWT） | `curl -H "Authorization: Bearer [REDACTED]" https://jwt.example.com` |
@@ -82,7 +82,7 @@
 其余 deny 用例（before → after 的 `systemMessage` 的「命令：」行）：
 
 - D2：`rm -rf /tmp/dump --password=hunter2SuperSecret` → `rm -rf /tmp/dump --[REDACTED]`
-- D3：`Remove-Item C:\temp\x -Recurse -Force # AKIAIOSFODNN7EXAMPLE` → `Remove-Item C:\temp\x -Recurse -Force # [REDACTED]`
+- D3：`Remove-Item C:\temp\x -Recurse -Force # AKIAZZTESTFIXTURE999` → `Remove-Item C:\temp\x -Recurse -Force # [REDACTED]`
 
 字段形状（`hookSpecificOutput.permissionDecision` / `hookEventName` / `updatedInput` / `permissionDecisionReason`）与改前**逐字段一致**，仅字符串内容脱敏。
 
@@ -172,7 +172,7 @@
 
 ```
 FAIL  allow-log  [Authorization: Bearer + sk-proj-] 日志出现 [REDACTED]   <- log=…reason=curl -H "Authorization: Bearer sk-proj-AAAABBBBCCCCDDDDEEEEFFFF12345" …
-FAIL  allow-log  [AWS AKIA] 日志无明文密钥   <- log=…reason=aws s3 cp s3://b/f . --profile AKIAIOSFODNN7EXAMPLE
+FAIL  allow-log  [AWS AKIA] 日志无明文密钥   <- log=…reason=aws s3 cp s3://b/f . --profile AKIAZZTESTFIXTURE999
 FAIL  allow-log  [password=] 日志无明文密钥   <- log=…reason=mysql -u root --password=hunter2SuperSecret …
 FAIL  allow-log  [token=] 日志无明文密钥   <- log=…--token=npm_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 FAIL  deny-echo  [Bearer sk-ant- + 管道 shell] systemMessage 无明文密钥

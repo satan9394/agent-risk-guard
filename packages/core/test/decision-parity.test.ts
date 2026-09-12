@@ -15,7 +15,7 @@
  *   ③ 两端还都必须等于语料里钉住的 `expect`——只有 ② 会被"两端一起改错"骗过，③ 把应然语义也钉住。
  * 失败时打印 `载荷 / ps1 / sh / 期望` 四列，便于直接定位。
  *
- * ── 语料七段（G3 实测的 5 条分歧 + 其两侧邻居面 + G3-FIX4 补齐的三处缺口）─────────────
+ * ── 语料九段（G3 实测的 5 条分歧 + 两侧邻居面 + FIX4 三处缺口 + FIX5 前缀/分歧面）───────
  *   A 段 T1–T20：编排者 Round 260 的 20 条分歧矩阵（含 T2/T3/T5/T9/T10 五条已修分歧）。
  *   B 段 Q1–Q12：**T3「空引号归一」的绕过面**——归一只能"多看见"不能"少看见"：
  *                `rm'' --help` → allow，而 `rm'' -rf /tmp/t` / `r''m -rf` / `;''rm -rf` 必须仍 deny。
@@ -24,10 +24,20 @@
  *   D 段 Y1–Y10：**T9/T10「command 类型」的邻居面**——按 PowerShell `[string]` 转换语义对齐：
  *                null / [] / {} → deny；`["rm","-rf","/tmp/t"]` → deny（PS 会拼成 "rm -rf /tmp/t"）；
  *                123 / true / {"a":1} / [["rm"]] / ["rm","--help"] / ["git","status"] → allow。
- *   —— 以下三段是 G3-FIX4 新增（G3 的 66 条在原缺陷源上**全绿**，是"闸门覆盖不足"的直接证据）——
- *   F 段 F1–F18：**非 rm 族**的空引号插词（R1：G3 把归一泄漏给全规则 → 13 条新分歧）。
+ *   F 段 F1–F18：**非 rm 族**的空引号插词（R1）。⚠️ G3-FIX5/B 起两端**同做全局空引号归一**，
+ *                故 F1–F15 由 allow 改钉为 **deny**（与 C6/C12/C16/C17 同判）——FIX4 把 F7/F8/F9/F13
+ *                钉成 allow 与 C 段自相矛盾，等于把「ps1 的洞」当契约、禁止后续收紧（见 D12）。
  *   H 段 H1–H12：**command 数组的元素为对象**（R2：`[{"cmd":"rm -rf /tmp/t"}]` 曾 fail-open）。
  *   G 段 G1–G14：`-i` 之后「引号内文本命中不敏感词」的**前导锚**面（R3：合法 commit message 被误拦）。
+ *   K 段 K1–K31：**G3-FIX5 新增**——sudo / `sudo''` / 绝对路径前缀 × 危险基座（A 面，Evaluator
+ *                G3-FIX4 §4-A 点名的 12 条真实危险命令），既存分歧族 diskpart/rmdir/format（B 面，
+ *                §2.4d 实测 ≥12 条），以及补前缀后的过拦面（C 面）。
+ *
+ * ⚠️ 本闸门只钉「两端逐字同判 + 等于应然」。**不得**为了让它变绿而放宽 deny 语义（红线 §5.6/D12）：
+ *    若某条真的两端分歧且短期无法收敛，正确做法是**保留分歧并如实登记**，而不是把它钉成 allow。
+ *    当前已知的此类残留（**不入语料**，见 IMPLEMENTATION_RESULT_G3-FIX5 §未解决问题）：
+ *      `rmdir <无标志路径>`（sh deny / ps1 allow，POSIX 与 Windows 语义冲突，两端各有测试套件钉住）、
+ *      `echo "Format-Volume guide"`（sh 的 rule 17 读未剥离 echo 的原文 → deny / ps1 allow）。
  *
  * 可覆盖路径（用于变异验证：把主源换成"回退版"后本闸门必须变红）：
  *   `RG_PARITY_PS1=<path>` / `RG_PARITY_SH=<path>`
@@ -147,28 +157,33 @@ export const DECISION_CORPUS: DecisionCase[] = [
   // 钉法：每条都同时钉「两端一致」与「等于应然」，故把任一条硬伤改回旧行为 → 本闸门必红。
   // ══════════════════════════════════════════════════════════════════════════════════
 
-  // ── F 段 F1–F18：**非 rm 族**的空引号插词（R1 = G3 新造的 13+ 条跨端分歧源）──────────
-  // 机理：ps1 只在 rm / Remove-Item 删除族用剥离引号的文本（ps1 L222 `$cmdNaked`，L374/L378 起使用），
-  //      其余规则一律看**原文**；G3 把空引号归一泄漏给**全部**规则 → 下面 F1–F15 在 sh 由 allow 变 deny
-  //      （两个方向都错：既过拦、又与 ps1 发散）。F16/F17 是**反向守卫**：删除族的归一秒不得一起收掉。
-  { id: 'F1  g..it clean -f（非 rm 族）', payload: J("g''it clean -f"), expect: 'allow', note: 'R1：ps1 不剥离非删除族引号 → allow' },
-  { id: 'F2  g..it reset --hard', payload: J("g''it reset --hard"), expect: 'allow', note: 'R1' },
-  { id: 'F3  g..it rm x', payload: J("g''it rm x"), expect: 'allow', note: 'R1' },
-  { id: 'F4  g..it push --force', payload: J("g''it push --force"), expect: 'allow', note: 'R1' },
-  { id: 'F5  g..it branch -D x', payload: J("g''it branch -D x"), expect: 'allow', note: 'R1' },
-  { id: 'F6  r..mdir /s /q x', payload: J("r''mdir /s /q x"), expect: 'allow', note: 'R1（ps1 L306 只查 $cmdTest，不剥离引号）' },
-  { id: 'F7  R..MDIR /s /q x', payload: J("R''MDIR /s /q x"), expect: 'allow', note: 'R1' },
-  { id: 'F8  s..hutdown /s', payload: J("s''hutdown /s"), expect: 'allow', note: 'R1' },
-  { id: 'F9  c..hmod 777 /x', payload: J("c''hmod 777 /x"), expect: 'allow', note: 'R1' },
-  { id: 'F10 d..iskpart', payload: J("d''iskpart"), expect: 'allow', note: 'R1' },
-  { id: 'F11 sh..red -u /tmp/t', payload: J("sh''red -u /tmp/t"), expect: 'allow', note: 'R1' },
-  { id: 'F12 un..link /tmp/t', payload: J("un''link /tmp/t"), expect: 'allow', note: 'R1' },
-  { id: 'F13 f..ind /tmp -delete', payload: J("f''ind /tmp -delete"), expect: 'allow', note: 'R1' },
-  { id: 'F14 d..el /f x', payload: J("d''el /f x"), expect: 'allow', note: 'R1（ps1 L297 只查 $cmdTest）' },
-  { id: 'F15 e..rase x', payload: J("e''rase x"), expect: 'allow', note: 'R1' },
-  { id: 'F16 r..m -rf /tmp/t（反向守卫）', payload: J("r''m -rf /tmp/t"), expect: 'deny', note: '删除族归一必须保留（ps1 $cmdNaked）' },
+  // ── F 段 F1–F18：**非 rm 族**的空引号插词（R1；G3-FIX5/B 后两端一起 deny）──────────────
+  // ⚠️ G3-FIX5 的**结构性变更**：ps1 与 sh **都**把「空引号对（'' / ""）归一」提升为
+  //    **全部规则**读的检测文本（ps1 L211b `$cmd = $cmd -replace "''",'' -replace '""',''`；
+  //    sh L389-396 `cmd="$cmdNoq"`）。因此 F1–F15 这些写法在 bash 下**真实还原**成危险命令
+  //    （`g''it clean -f` ≡ `git clean -f`，Evaluator G3-FIX4 §2.3c 用 `set --` 逐条实测），
+  //    **两端一致 deny**。这与 C 段同型用例（C6 RMDIR /s /q x、C12 FIND -DELETE、C16 SHUTDOWN /s、
+  //    C17 CHMOD 777 /x）的期望**完全一致**——FIX4 曾把 F7/F8/F9/F13 钉成 allow，与 C 段自相矛盾，
+  //    那一版把「ps1 的洞」当成了契约，等于禁止后续收紧；G3-FIX5 已按 D12（一致性必须**向上**对齐、
+  //    不得把放松写进闸门）改为 deny。归一是「多看见」方向，故 F16/F17 反向守卫仍须 deny。
+  { id: 'F1  g..it clean -f（非 rm 族）', payload: J("g''it clean -f"), expect: 'deny', note: '空引号归一 → git clean -f（与 C13 同判）' },
+  { id: 'F2  g..it reset --hard', payload: J("g''it reset --hard"), expect: 'deny', note: '空引号归一 → git reset --hard' },
+  { id: 'F3  g..it rm x', payload: J("g''it rm x"), expect: 'deny', note: '空引号归一 → git rm x' },
+  { id: 'F4  g..it push --force', payload: J("g''it push --force"), expect: 'deny', note: '空引号归一 → git push --force' },
+  { id: 'F5  g..it branch -D x', payload: J("g''it branch -D x"), expect: 'deny', note: '空引号归一 → git branch -D x' },
+  { id: 'F6  r..mdir /s /q x', payload: J("r''mdir /s /q x"), expect: 'deny', note: '空引号归一 → rmdir /s /q x（与 C6 同判）' },
+  { id: 'F7  R..MDIR /s /q x', payload: J("R''MDIR /s /q x"), expect: 'deny', note: '★FIX4 自相矛盾点：空引号归一后与 C6 是同一条命令 → 必须同判 deny' },
+  { id: 'F8  s..hutdown /s', payload: J("s''hutdown /s"), expect: 'deny', note: '★FIX4 自相矛盾点：归一后与 C16 同判 deny' },
+  { id: 'F9  c..hmod 777 /x', payload: J("c''hmod 777 /x"), expect: 'deny', note: '★FIX4 自相矛盾点：归一后与 C17 同判 deny' },
+  { id: 'F10 d..iskpart', payload: J("d''iskpart"), expect: 'deny', note: '空引号归一 → diskpart' },
+  { id: 'F11 sh..red -u /tmp/t', payload: J("sh''red -u /tmp/t"), expect: 'deny', note: '空引号归一 → shred -u（与 C8 同判）' },
+  { id: 'F12 un..link /tmp/t', payload: J("un''link /tmp/t"), expect: 'deny', note: '空引号归一 → unlink（与 C7 同判）' },
+  { id: 'F13 f..ind /tmp -delete', payload: J("f''ind /tmp -delete"), expect: 'deny', note: '★FIX4 自相矛盾点：归一后与 C12 同判 deny' },
+  { id: 'F14 d..el /f x', payload: J("d''el /f x"), expect: 'deny', note: '空引号归一 → del /f x' },
+  { id: 'F15 e..rase x', payload: J("e''rase x"), expect: 'deny', note: '空引号归一 → erase x' },
+  { id: 'F16 r..m -rf /tmp/t（反向守卫）', payload: J("r''m -rf /tmp/t"), expect: 'deny', note: '删除族反向守卫：归一不得放行' },
   { id: 'F17 R..emove-Item（反向守卫）', payload: J("R''emove-Item x"), expect: 'deny', note: 'Remove-Item 是删除族：归一后必须仍 deny' },
-  { id: 'F18 g..it status（对照）', payload: J("g''it status"), expect: 'allow', note: '对照：非删除族插词不改变判定' },
+  { id: 'F18 g..it status（对照）', payload: J("g''it status"), expect: 'allow', note: '对照：归一后是安全命令 → allow（防「一律 deny」式过修）' },
 
   // ── H 段 H1–H12：**数组元素为对象**（R2 = fail-open 回归源）──────────────────────────
   // 机理：PowerShell 对「数组元素位 / 哈希值位的对象」渲染为**空串**（实测 `[{"a":1}]` → ""、
@@ -208,6 +223,61 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'G12 git log --grep="RM -rf"', payload: J('git log --grep="RM -rf"'), expect: 'deny', note: '两端同形残留：加固候选' },
   { id: 'G13 commit -m "shred the docs"', payload: J('git commit -m "shred the docs"'), expect: 'allow', note: 'R3 邻（unlink/shred 锚点）' },
   { id: 'G14 commit -m "update UNLINK docs"', payload: J('git commit -m "update UNLINK docs"'), expect: 'allow', note: 'R3 邻' },
+
+  // ══════════════════════════════════════════════════════════════════════════════════
+  // G3-FIX5 新增 K 段（K1–K32）：**sudo / 绝对路径前缀**面 + **既存分歧族**（Evaluator G3-FIX4 §4-A/§2.4d）
+  // 机理：FIX4 的 M3 把 find/xargs/chmod 的前导锚对齐成 ps1 同形 `(?:^|[;&|\r\n])\s*`，而
+  //   **两端都不认 `sudo` / `/usr/bin/` 前缀** → `sudo chmod 777 /x`、`sudo find /tmp -delete`、
+  //   `/usr/bin/xargs rm`、`sudo'' shutdown /s` 由 deny 变 allow（其中 3 类在 pre-G3 冻结基线上**本来就是 deny**）。
+  // G3-FIX5/A 的修法：两端同批把危险基座锚升级为**统一前缀**
+  //   ps1 `(?:^|[;&|\r\n])\s*(?:sudo\s+)?(?:/[^\s;&|]*/)?` ／ sh `CMD_PRE='(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(/[^[:space:];&|]*/)?'`
+  //   —— 方向恒为**向上对齐**（D12）：前缀形态由 allow → deny，两端同判。
+  // 另含**既存分歧族**（pre-G3 即分歧，Evaluator §2.4d 实测 ≥12 条）：ps1 的 diskpart/rmdir/format
+  //   规则原先**无前导锚**，sh 有锚 → 两端发散。本轮把 ps1 改成与 sh 同形的锚（取更严的**可辩护**一端：
+  //   前缀形态 deny；`x <词>` / 引号内文本属**误伤形态** → 两端同判 allow，并在 note 里标注它不是「危险放松」）。
+  // 变异敏感：把 A（统一前缀）或 B（全局归一）任一改回旧行为，本段与 F 段必红。
+  // ══════════════════════════════════════════════════════════════════════════════════
+  // ── A 面：sudo / sudo'' / 绝对路径 前缀 × 危险基座（12 条真实危险命令 + 1 条同族邻居）──
+  { id: 'K1  sudo chmod 777 /x', payload: J('sudo chmod 777 /x'), expect: 'deny', note: '★FIX4 放松（pre-G3 即 deny）→ 本轮两端 deny' },
+  { id: 'K2  sudo.. chmod 777 /x', payload: J("sudo'' chmod 777 /x"), expect: 'deny', note: '★空引号归一 → sudo chmod 777 /x' },
+  { id: 'K3  /usr/bin/chmod 777 /x', payload: J('/usr/bin/chmod 777 /x'), expect: 'deny', note: '★绝对路径前缀 → 两端 deny（FIX4 前 sh 亦为 deny）' },
+  { id: 'K4  sudo find /tmp -delete', payload: J('sudo find /tmp -delete'), expect: 'deny', note: '★FIX4 放松（pre-G3 即 deny）' },
+  { id: 'K5  sudo.. find /tmp -delete', payload: J("sudo'' find /tmp -delete"), expect: 'deny', note: '★空引号归一后同 K4' },
+  { id: 'K6  /usr/bin/find /tmp -delete', payload: J('/usr/bin/find /tmp -delete'), expect: 'deny', note: '★FIX4 放松（pre-G3 即 deny）' },
+  { id: 'K7  sudo find /tmp -exec rm {} ;', payload: J('sudo find /tmp -exec rm {} ;'), expect: 'deny', note: '★FIX4 放松' },
+  { id: 'K8  /usr/bin/find /tmp -exec rm {} ;', payload: J('/usr/bin/find /tmp -exec rm {} ;'), expect: 'deny', note: '★FIX4 放松' },
+  { id: 'K9  sudo xargs rm < list.txt', payload: J('sudo xargs rm < list.txt'), expect: 'deny', note: '★FIX4 放松（pre-G3 即 deny）' },
+  { id: 'K10 sudo.. xargs rm < list.txt', payload: J("sudo'' xargs rm < list.txt"), expect: 'deny', note: '★空引号归一后同 K9' },
+  { id: 'K11 /usr/bin/xargs rm < list.txt', payload: J('/usr/bin/xargs rm < list.txt'), expect: 'deny', note: '★FIX4 放松' },
+  { id: 'K12 sudo.. shutdown /s', payload: J("sudo'' shutdown /s"), expect: 'deny', note: '★FIX4 放松（pre-G3 即 deny）' },
+  { id: 'K13 /usr/bin/shutdown /s', payload: J('/usr/bin/shutdown /s'), expect: 'deny', note: '同族邻居（绝对路径 + shutdown）' },
+  { id: 'K14 sudo rm x', payload: J('sudo rm x'), expect: 'deny', note: 'A 面同族：sudo 前缀的 rm 亦拦（两端同批补前缀）' },
+  // ── B 面：既存分歧族 sudo|x|/usr/bin/|sudo'' × diskpart / rmdir / format ──────────────
+  { id: 'K15 sudo diskpart', payload: J('sudo diskpart'), expect: 'deny', note: '★既存分歧（ps1=deny/sh=allow）→ 本轮两端 deny' },
+  { id: 'K16 sudo.. diskpart', payload: J("sudo'' diskpart"), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K17 /usr/bin/diskpart', payload: J('/usr/bin/diskpart'), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K18 x diskpart', payload: J('x diskpart'), expect: 'allow', note: '既存分歧的另一侧：`x` 不是可执行命令 → 两端同判 allow（**修正 ps1 的误伤**，非危险放松）' },
+  { id: 'K19 sudo rmdir /s /q x', payload: J('sudo rmdir /s /q x'), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K20 sudo.. rmdir /s /q x', payload: J("sudo'' rmdir /s /q x"), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K21 /usr/bin/rmdir /s /q x', payload: J('/usr/bin/rmdir /s /q x'), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K22 x rmdir /s /q x', payload: J('x rmdir /s /q x'), expect: 'allow', note: '`x` 不是可执行命令 → 两端同判 allow（修正误伤）' },
+  { id: 'K23 sudo format C: /q', payload: J('sudo format C: /q'), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K24 sudo.. format C: /q', payload: J("sudo'' format C: /q"), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K25 /usr/bin/format C: /q', payload: J('/usr/bin/format C: /q'), expect: 'deny', note: '★既存分歧 → 两端 deny' },
+  { id: 'K26 x format C: /q', payload: J('x format C: /q'), expect: 'allow', note: '`x` 不是可执行命令 → 两端同判 allow（修正误伤）' },
+  { id: 'K27 commit -m "remove Diskpart usage"', payload: J('git commit -m "remove Diskpart usage"'), expect: 'allow', note: '★既存分歧根因：ps1 的 diskpart 规则原为无锚 → 引号内文本被误拦；本轮两端同判 allow' },
+  { id: 'K28 commit -m "rmdir cleanup"', payload: J('git commit -m "rmdir cleanup"'), expect: 'allow', note: '过拦面：合法 commit message（ps1 要求 rmdir 带 /s 等标志）' },
+  // ── C 面：sudo / 路径前缀不得误伤合法命令 ────────────────────────────────────────────
+  { id: 'K30 commit -m "run chmod 777 in ci"', payload: J('git commit -m "run chmod 777 in ci"'), expect: 'allow', note: '过拦面：补前缀后仍 allow' },
+  { id: 'K31 commit -m "note: xargs rm here"', payload: J('git commit -m "note: xargs rm here"'), expect: 'allow', note: '过拦面：xargs 规则补前缀后仍 allow' },
+  { id: 'K32 diff <(git log) /tmp/f', payload: J('git diff --stat /usr/bin/README'), expect: 'allow', note: '过拦面：路径前缀只认「命令词位置」，参数里的 /usr/bin 不误伤' },
+  // ── D 面：命令位包装前缀 cmd /c | command | env（把「无锚 → 有锚」丢掉的一类形态补回两端）──────
+  { id: 'K33 cmd /c del /f C:\\x\\y', payload: J('cmd /c del /f C:\\x\\y'), expect: 'deny', note: '★ps1 五套之一 hook-bypass-regression 第 26 条的原始用例：锚点化后必须仍 deny' },
+  { id: 'K34 cmd /c rmdir /s /q x', payload: J('cmd /c rmdir /s /q x'), expect: 'deny', note: '同上（rmdir 族）' },
+  { id: 'K35 command diskpart', payload: J('command diskpart'), expect: 'deny', note: '同上（command 包装）' },
+  { id: 'K36 env shutdown /s', payload: J('env shutdown /s'), expect: 'deny', note: '同上（env 包装）' },
+  { id: 'K37 cmd /c npm test', payload: J('cmd /c npm test'), expect: 'allow', note: '过拦面：包装前缀不得误伤无危险基座的命令' },
+  { id: 'K38 commit -m "command del docs"', payload: J('git commit -m "command del docs"'), expect: 'allow', note: '过拦面：包装词出现在参数/引号内不误伤' },
 ];
 
 /** 拼一行可读的失败明细（载荷 / ps1 / sh / 期望） */

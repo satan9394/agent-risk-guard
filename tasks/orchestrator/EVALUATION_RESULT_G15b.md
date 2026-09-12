@@ -68,7 +68,7 @@ redact_cmd() {
 
 | 载荷 | 明文片段 | **ps1 实测** | **sh 实测** |
 |---|---|---|---|
-| `aws configure set aws_secret_access_key wJalrXUtnFEMI/...; rm -rf /tmp/t` | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | ok（`aws configure set [REDACTED]`） | **LEAK（无 `[REDACTED]`）** |
+| `aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE/...; rm -rf /tmp/t` | `TESTFIXTUREsecretVALUE0000000000000000` | ok（`aws configure set [REDACTED]`） | **LEAK（无 `[REDACTED]`）** |
 | `rm -rf /tmp/t --password="correct horse battery staple"` | `correct horse battery staple` | ok（`--[REDACTED]`） | **LEAK** |
 | `mysql -pSup3rS3cret -e "select 1"; rm -rf /tmp/t` | `Sup3rS3cret` | ok（`mysql [REDACTED]`） | **LEAK** |
 | `curl -u alice:hunter2 https://example.com; rm -rf /tmp/t` | `alice:hunter2` | ok（`curl [REDACTED]`） | **LEAK** |
@@ -76,7 +76,7 @@ redact_cmd() {
 sh 原始输出（节选，逐字）：
 
 ```
-{"hookSpecificOutput":{"permissionDecision":"deny","updatedInput":null},"systemMessage":"HOOK BLOCKED: rm is permanent deletion. Use trash command.\nCommand: aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY; rm -rf /tmp/t\nUse trash/recycle bin instead of permanent deletion."}
+{"hookSpecificOutput":{"permissionDecision":"deny","updatedInput":null},"systemMessage":"HOOK BLOCKED: rm is permanent deletion. Use trash command.\nCommand: aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000; rm -rf /tmp/t\nUse trash/recycle bin instead of permanent deletion."}
 ```
 
 → 直接违反**验收标准 1**（「在 **ps1 与 sh 两端**日志/回显中均出现 `[REDACTED]` 且无明文」）。

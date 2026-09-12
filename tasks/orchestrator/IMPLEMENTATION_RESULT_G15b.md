@@ -192,10 +192,10 @@ PARITY OK: 23/23 rows byte-identical (ps1 === sh)      exit=0
 
 ```
 AssertionError [ERR_ASSERTION]: 三端输出不一致（共 3 处）:
-  in  =aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+  in  =aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000
   core=aws configure set [REDACTED]
-  ps1 =aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY     ← 明文泄漏
-  in  =aws configure set aws_access_key_id AKIAIOSFODNN7EXAMPLE
+  ps1 =aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000     ← 明文泄漏
+  in  =aws configure set aws_access_key_id AKIAZZTESTFIXTURE999
   core=aws configure set [REDACTED]
   ps1 =aws configure set aws_access_key_id [REDACTED]                                       ← 与 core 形式不同
 ```

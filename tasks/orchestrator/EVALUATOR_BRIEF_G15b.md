@@ -13,7 +13,7 @@
 
 ### 1. 四类残留是否真的补齐（**在 ps1 与 sh 两端**）
 用**你自己构造**的载荷（不要复用实现者的语料）：
-- [ ] `aws configure set aws_secret_access_key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`（**空格分隔**形态）
+- [ ] `aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE0000000000000000`（**空格分隔**形态）
 - [ ] `--password="correct horse battery staple"`（**引号内含空格**）
 - [ ] `mysql -pSup3rS3cret -e "select 1"`（短参）
 - [ ] `curl -u alice:hunter2 https://example.com`（基本认证）

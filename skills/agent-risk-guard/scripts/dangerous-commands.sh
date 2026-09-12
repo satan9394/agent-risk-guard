@@ -26,6 +26,7 @@
 # 2026-09-11 G3（跨端判定收敛 + 跨端判定闸门）：
 #   [T3] 空引号归一：判定前只删除**空引号对**（'' / ""）→ `rm'' --help` ≡ `rm --help`（放行），
 #        而 `rm'' -rf /tmp/t` → `rm -rf /tmp/t` **仍然 deny**（归一后照常跑全部规则，无短路）。
+#        G3-FIX5/B：归一是**全局**的（两端同做），不再只作用于删除族——见 L389-396。
 #        注意：回显/脱敏仍用**原始命令**（cmdOrig），故生产出口与 core/ps1 的逐字一致性不变。
 #   [T5/T2 + 大小写整类] 判定规则 grep 一律 `-i`（ps1 的 `-match` 默认大小写不敏感，本侧旧实现漏了）；
 #        唯一例外 `git switch -C` 保持**大小写敏感**（ps1 L481 用 -cmatch 精确大写，`-c` 为安全的新建分支）。
@@ -378,14 +379,22 @@ fi
 #   （ps1 L222 定义 `$cmdNaked`，ps1 L374/L378 起**仅** rm / Remove-Item 使用它）。于是凡「删除族之外」
 #   的命令被空引号插词（`g''it clean -f` / `s''hutdown /s` / `c''hmod 777` / `r''mdir /s` / `un''link` …）
 #   都会在 sh 侧命中、在 ps1 侧不命中 → **13 条新跨端分歧**（Evaluator G3 §2.2b R1 实测）。
-# G3-FIX4 修法：`cmd` 保持原样（其余全部规则照旧用它），另存 `cmdNoq`（= 删空引号对后的文本），
-#   **只**喂给 rm / Remove-Item 族规则：L360 bare rm、L370b Remove-Item 补查、L375 引号插词 rm、
-#   L379 r..m、L394 rm -rf 任意位置；对应的 echo/printf 剥离版为 cmdtestNoq（见下方 L353 区）。
+# G3-FIX4 修法（**已被 G3-FIX5 回退**）：`cmd` 保持原样，另存 `cmdNoq` 只喂给 rm / Remove-Item 族规则。
+# G3-FIX5/B 修法（现行）：两端都做全局空引号归一，见下方 L389-396。以下 cmdOrig/cmdNoq 仍然保留——
+#   cmdOrig 供回显/脱敏，cmdNoq 是归一的唯一来源（cmd 在下一行被就地替换）。
 # 归一方向恒为「多看见」：删空引号只会让命令词与分隔符**相邻**（`;''rm` → `;rm`、`r''m` → `rm`），
 #   不会把危险词藏起来，故不构成新的绕过面（邻居面钉在 decision-parity.test.ts B 段 Q1–Q12）。
 # 回显/脱敏用原始命令 cmdOrig（见 redact_cmd），故 deny JSON 与 core/ps1 的逐字一致性不受影响。
 cmdOrig="$cmd"
 cmdNoq=$(printf '%s' "$cmd" | sed -E "s/''//g; s/\"\"//g")
+# ---- G3-FIX5/B（结构性收敛）：全局空引号归一（**回退** G3-FIX4/M2 的「只给删除族」收窄）----------
+# 依据 EVALUATION_RESULT_G3-FIX4 §2.3c / §4-B 类实测：`g''it clean -f`、`c''hmod 777 /x`、`R''MDIR /s /q`
+#   在 bash 下**真实还原**成危险命令（Evaluator 用 `set --` 逐条实测），而 M2 收窄后**两端一起 allow**
+#   = 24 条真实放松。本轮把「检测用文本」统一成归一后的 cmdNoq（ps1 侧同批对 $cmd 做空引号归一）：
+#   两端同判 → 分歧与放松同时消失。回显/脱敏仍读 cmdOrig（上一行），生产出口逐字不变。
+# 方向恒为「多看见」：删空引号对只会让命令词与分隔符**相邻**（`;''rm` → `;rm`、`r''m` → `rm`），
+#   不会把危险词藏起来；`rm'' --help` 仍落在 rm 的 help/version 豁免里 → allow。
+cmd="$cmdNoq"
 
 # ---- 纯注释命令放行（对齐 .ps1 L215 的「整串开头 `\s*#`」语义）----
 # G5：旧实现用 grep 的**逐行**锚点 `^[[:space:]]*#`，任一行以 # 开头即放行，于是
@@ -399,6 +408,11 @@ esac
 # ---- 命令边界匹配（对齐 .ps1：段首/分隔符锚定，防 echo rm 字符串误伤）----
 # CMD_SEG：行首 或 分隔符(; & |) + 可选前导空白（含换行作为空格）
 CMD_SEG='(^|[;&|])[[:space:]]*'
+# G3-FIX5/A：危险基座的**统一前缀**（两端同形）= 段首/分隔符锚 + 可选 sudo + 可选**绝对**路径前缀。
+#   向上对齐：`sudo chmod 777 /x`、`/usr/bin/find /tmp -delete`、`sudo'' xargs rm`（归一后 `sudo xargs rm`）
+#   由 allow → deny（FIX4 因「不动 ps1」把 sh 向下对齐而放松掉的 12 条真实危险命令）。
+#   路径前缀限「以 / 开头」（`/[^[:space:];&|]*/`），避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
+CMD_PRE='(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?'
 # echo/printf 引号参数剥离（对齐 .ps1 $cmdTest）：echo "xxx" → echo ""（无引号 rm 是真实危险，不剥）
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 # G3-FIX4/R1：同一剥离规则施加到**空引号归一后**的 cmdNoq 上——rm / Remove-Item 删除族专用。
@@ -406,14 +420,16 @@ cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'
 cmdtestNoq=$(printf '%s' "$cmdNoq" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 
 # 1) POSIX 删除类（命令边界锚定；echo/printf 参数已剥离；R25：rm --help/-h/--version 无害）
-if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}rmdir([[:space:]]|-)|${CMD_SEG}unlink([[:space:]]|-)|${CMD_SEG}shred([[:space:]]|-)"; then
+# G3-FIX5/A：CMD_SEG → CMD_PRE（补 sudo / 绝对路径前缀，两端同批）。
+if printf '%s' "$cmdtest" | grep -qiE "${CMD_PRE}rmdir([[:space:]]|-)|${CMD_PRE}unlink([[:space:]]|-)|${CMD_PRE}shred([[:space:]]|-)"; then
     deny_command "POSIX permanent deletion (rmdir/unlink/shred). Use trash command."
 fi
 # rm：排除 --help/-h/--version（无害）；其余 rm 实参一律拦
-# G3-FIX4/R1：改用 **cmdtestNoq**（空引号归一后的文本）——这是 rm 族，与 ps1 rule 16 同口径。
-if printf '%s' "$cmdtestNoq" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; then
+# G3-FIX5/B：全局归一后 cmdtestNoq == cmdtest（rm 族仍读归一文本，行为不变）。
+if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_PRE}rm([[:space:]]|-)"; then
     # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
-    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE 's/.*(^|[;&|])[[:space:]]*rm[[:space:]]*([^;&|]*)/\2/p' | head -1 | sed 's/[[:space:]]*$//')
+    # G3-FIX5/A：抽取式同步 CMD_PRE（否则 `sudo rm --help` 抽不到实参 → 误拦；ps1 rule 16 的豁免前瞻同批加前缀）
+    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE 's#.*(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?rm[[:space:]]*([^;&|]*)#\5#p' | head -1 | sed 's/[[:space:]]*$//')
     case "$rmseg" in
         -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
         *) deny_command "rm is permanent deletion. Use trash command." ;;
@@ -421,9 +437,10 @@ if printf '%s' "$cmdtestNoq" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)
 fi
 
 # 1b) PowerShell 删除类（R15 补齐：Remove-Item/del/erase，-i 大小写不敏感对齐 .ps1；R23 加 Clear-Content/.Delete；R25 加 ri/rd）
-# G3-FIX4/R1：本规则**保持用未归一的 cmdtest**——ps1 侧 rmdir/del/erase/ri/rd 只查 $cmdTest（ps1 L297–L311），
-#   不做引号剥离；若此处吃 cmdtestNoq，`r''mdir /s` 会被误拦（ps1 allow）→ 反向制造 R1 型分歧。
-if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}Remove-Item|${CMD_SEG}del([[:space:]]|-)|${CMD_SEG}erase([[:space:]]|-)|${CMD_SEG}ri([[:space:]]|-)|${CMD_SEG}rd([[:space:]]|-)|${CMD_SEG}rmdir([[:space:]]|-)|Clear-Content|\.Delete[[:space:]]*\("; then
+# G3-FIX5/B：全局空引号归一后 cmdtest 已是归一文本（FIX4/M2「本规则保持未归一的 cmdtest」的收窄已回退），
+#   故 `r''mdir /s` / `d''el /f` 与 ps1（同样在 $cmd 上做空引号归一）**同判 deny**。
+# G3-FIX5/A：段首锚 → CMD_PRE（补 sudo / 绝对路径前缀）；Clear-Content / .Delete( 保持无锚（与 ps1 16b2 同口径）。
+if printf '%s' "$cmdtest" | grep -qiE "${CMD_PRE}Remove-Item|${CMD_PRE}del([[:space:]]|-)|${CMD_PRE}erase([[:space:]]|-)|${CMD_PRE}ri([[:space:]]|-)|${CMD_PRE}rd([[:space:]]|-)|${CMD_PRE}rmdir([[:space:]]|-)|Clear-Content|\.Delete[[:space:]]*\("; then
     deny_command "PowerShell/CMD permanent deletion (Remove-Item/del/erase/ri/rd/rmdir/Clear-Content/.Delete). Use trash command."
 fi
 # 1b-2) G3-FIX4/R1：Remove-Item 的**空引号插词**补查（对齐 ps1 16e L378 的 $cmdNaked `\bRemove-Item\b`）。
@@ -433,8 +450,9 @@ if printf '%s' "$cmdtestNoq" | grep -qiE '\bRemove-Item\b'; then
 fi
 
 # 引号插词 rm 变体（rm'' -rf / rm" " -rf / r''m，对齐 .ps1 16c；R25：实引号 + 任意引号内内容）
-# G3-FIX4/R1：rm 族 → 用 cmdtestNoq。
-if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_SEG}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
+# G3-FIX4/R1：rm 族 → 用 cmdtestNoq（全局归一后同 cmdtest）。
+# G3-FIX5/A：CMD_SEG → CMD_PRE（`sudo rm" "-rf` 一并拦；ps1 16c 同批加前缀）。
+if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_PRE}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
     deny_command "Quoted-word rm variant is permanent deletion."
 fi
 # 引号插词在命令名内（r''m / r""m）——G3-FIX4/R1：rm 族 → cmdtestNoq；
@@ -446,13 +464,16 @@ fi
 # 2) find -delete / -exec rm
 # G3-FIX4/R3-审计：补前导锚 `(^|[;&|])[[:space:]]*`，对齐 ps1 L333/L337 的 `(?:^|[;&|\r\n])\s*find\b`。
 #   旧实现**完全没有前导锚**，`-i` 之后 `git commit -m "always FIND -delete carefully"` 这类引号内文本被点着 → 新过拦。
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*find[^;&|\n]*-delete|(^|[;&|])[[:space:]]*find[^;&|\n]*-exec[^;&|\n]*rm'; then
+# G3-FIX5/A：锚 → CMD_PRE（补 sudo / 绝对路径前缀，两端同批）。FIX4 把锚对齐成 ps1 同形后，
+#   `sudo find` / `/usr/bin/find` 两端一起漏 → 本轮两端一起补，方向为**向上**。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}find[^;&|\n]*-delete|${CMD_PRE}find[^;&|\n]*-exec[^;&|\n]*rm"; then
     deny_command "find -delete/-exec rm is permanent deletion."
 fi
 
 # 3) xargs/for 批量 rm
 # G3-FIX4/R3-审计：同上补前导锚，对齐 ps1 L340 的 `(?:^|[;&|\r\n])\s*(?:\bxargs\b…|\bfor\b…)`。
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)'; then
+# G3-FIX5/A：锚 → CMD_PRE（`sudo xargs rm` / `/usr/bin/xargs rm` 由 allow → deny，两端同批）。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)"; then
     deny_command "xargs/for rm is permanent deletion."
 fi
 
@@ -514,7 +535,8 @@ if printf '%s' "$cmd" | grep -qiE 'wmic[^;]*(shadowcopy|shadowstorage)[^;]*delet
 fi
 
 # 8) 磁盘操作（diskpart/format 用命令边界匹配以防 echo 字符串误伤）
-if printf '%s' "$cmd" | grep -qiE "${CMD_SEG}diskpart\b|${CMD_SEG}mkfs\.|${CMD_SEG}fdisk|${CMD_SEG}parted|${CMD_SEG}wipefs"; then
+# G3-FIX5/A：CMD_SEG → CMD_PRE（补 sudo / 绝对路径前缀，两端同批；ps1 rule 8 同步由 `\bdiskpart\b` 改为同形锚）。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}diskpart\b|${CMD_PRE}mkfs\.|${CMD_PRE}fdisk|${CMD_PRE}parted|${CMD_PRE}wipefs"; then
     deny_command "Disk formatting/partitioning detected."
 fi
 if printf '%s' "$cmd" | grep -qiE 'dd[[:space:]].*of=/dev/'; then
@@ -525,7 +547,8 @@ if printf '%s' "$cmd" | grep -qiE 'truncate[^;]*(/dev/|PhysicalDrive|\\\\\.\\\\)
 fi
 # G3：补齐 ps1 L262 的 `\s*[/]` 尾巴——ps1 只拦 `format X: /...`（真格式化），裸 `format C:` 放行；
 #   本侧旧实现漏了该尾巴，`-i` 后大写 `FORMAT C:` 会与 ps1 发散（邻居探针 C15 实测）。对齐后两端同判。
-if printf '%s' "$cmd" | grep -qiE "${CMD_SEG}format[[:space:]]+[A-Za-z]:[[:space:]]*/"; then
+# G3-FIX5/A：CMD_SEG → CMD_PRE（补 sudo / 绝对路径前缀，两端同批）。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}format[[:space:]]+[A-Za-z]:[[:space:]]*/"; then
     deny_command "format destroys disk data."
 fi
 
@@ -558,14 +581,16 @@ fi
 # G3-FIX4/R3（必修）：前导锚 `(^|[;&|[:space:]])` → `(^|[;&|])[[:space:]]*`，逐字对齐 ps1 L463
 #   `(?:^|[;&|\r\n])\s*`。旧锚含 `[:space:]` → `-i` 之后 `git commit -m "remove SHUTDOWN path"`
 #   这类**合法 commit message**里的「空格 + shutdown」被当命令词点着 → 新过拦 + 新分歧。
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*(sudo[[:space:]]+)?(shutdown|reboot|halt|poweroff)([[:space:]]|$)'; then
+# G3-FIX5/A：锚 → CMD_PRE（补绝对路径前缀；sudo 已有，两端同批）。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}(shutdown|reboot|halt|poweroff)([[:space:]]|$)"; then
     deny_command "System shutdown/reboot blocked."
 fi
 
 # 13) chmod 全局权限（无 -R 也拦，对齐 .ps1 29）
 # G3-FIX4/R3-审计（裁决点名 L494 chmod vs ps1 L468）：同一类锚点不一致，一并改，
 #   ps1 L468 = `(?:^|[;&|\r\n])\s*chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)\s+`。
-if printf '%s' "$cmd" | grep -qiE '(^|[;&|])[[:space:]]*chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+'; then
+# G3-FIX5/A：锚 → CMD_PRE（`sudo chmod 777 /x`、`/usr/bin/chmod 777 /x` 由 allow → deny，两端同批）。
+if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+"; then
     deny_command "chmod global permission (777) is a security risk."
 fi
 

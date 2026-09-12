@@ -14,7 +14,7 @@
 ## 用户场景 / 当前问题（Evaluator 已实测确认仍泄漏）
 | 形态 | 示例 | 为何现行模式漏掉 |
 |---|---|---|
-| AWS CLI 空格形态 | `aws configure set aws_secret_access_key wJalrXUtnFEMI...` | 键值模式要求 `[:=]`，此处是**空格分隔** |
+| AWS CLI 空格形态 | `aws configure set aws_secret_access_key TESTFIXTUREsecretVALUE...` | 键值模式要求 `[:=]`，此处是**空格分隔** |
 | 带引号含空格值 | `--password="correct horse battery staple"` | 值正则 `[^\s'",;}\]]+` 遇空格即停，反引号组不闭合 → 整条不匹配 |
 | mysql 短参 | `mysql -pSup3rS3cret -e "…"` | `-p<pass>` 非键名形态 |
 | curl 基本认证 | `curl -u alice:hunter2 https://…` | `-u user:pass` 非键名形态 |

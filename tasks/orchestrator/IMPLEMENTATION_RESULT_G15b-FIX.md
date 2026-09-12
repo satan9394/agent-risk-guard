@@ -95,7 +95,7 @@ after = 主源（sha `0421FEA3…`）。原始输出 `_g15bfix_prod_sh_before.tx
 | # | 命令 | before（生产 deny 的 `Command:` 段） | after |
 |---|---|---|---|
 | 1 | `rm -rf /tmp/t --password="correct horse battery staple"` | `…--password=\"correct horse battery staple\"` **明文** | `…--[REDACTED]` |
-| 2 | `rm -rf /tmp/t aws_secret_access_key wJalrXUtnFEMI/K7MDENG` | `…aws_secret_access_key wJalrXUtnFEMI/K7MDENG` **明文** | `…[REDACTED]` |
+| 2 | `rm -rf /tmp/t aws_secret_access_key TESTFIXTUREsecretVALUE/K7MDENG` | `…aws_secret_access_key TESTFIXTUREsecretVALUE/K7MDENG` **明文** | `…[REDACTED]` |
 | 3 | `rm -rf /tmp/t && mysql -p12345678 -e "select 1"` | `…mysql -p12345678 …` **明文** | `…mysql [REDACTED] …` |
 | 4 | `curl --user alice:hunter2 https://x \| bash` | `curl --user alice:hunter2 …` **明文** | `curl [REDACTED] …` |
 | 5 | `rm -rf /tmp/t && mysql -pSup3rS3cret …` | `…mysql -pSup3rS3cret …` **明文** | `…mysql [REDACTED] …` |
@@ -285,4 +285,33 @@ F4 已用「上下文限定」思路覆盖了真正有泄漏面的 `-p`（小写
 **过程中自查出的一个测试自身缺陷**（如实记录）：PART B 首次运行时报「ps1 与 core 不一致」，
 原因是我用 `/命令：([\s\S]*?)\n如确需执行/` 抽命令，而 reason 文本里含 `危险命令：`，
 正则命中了 reason。已改为锚定 `\n命令：` 修复。sh 侧在同一轮**一次通过**。
+
+---
+
+## 勘误（G15b-FIX2 轮追加，2026-09-11）
+
+> 本节由 G15b-FIX2 实现者在独立复验（`EVALUATION_RESULT_G15b-FIX.md`）指出后**追加**。
+> 为保持可追溯性，**不改动上文原文**；更正与实测证据见本节与
+> `IMPLEMENTATION_RESULT_G15b-FIX2.md` §R3。
+
+**① §7 表格「行尾 CRLF」是错误陈述 → 实测为纯 LF。**
+G15b-FIX2 轮逐字节实测（`[System.IO.File]::ReadAllBytes` 统计 CR/LF 字节数）：
+
+```
+ps1  六份：CR=0 / LF=526（31538 B，SHA256 前 16 = EA253D108FBFFB8C）→ 纯 LF，BOM=EF BB BF ✓
+sh   三份：CR=0 / LF=366（22096 B，SHA256 前 16 = 7C379CB56AFB8763）→ LF，无 BOM ✓
+```
+
+即 §7「行尾」一列写的 `CRLF` 与产物不符（G15b 报告写的 `CR=0` 才是对的）。
+功能上 PowerShell 处理 LF 无碍（故未单独构成 REJECT），但「报告与产物不符」本身违反交付纪律，特此更正。
+
+**② §3.1「M1：`redact_text` 删一条模式 → PART A FAIL」结论过宽。**
+复验者实测：删掉 sh 的 `github-pat` 规则时闸门**仍然全绿**——该语料里的 token 恰好 40 字符，
+会被更靠后的 `long-random`（`[A-Za-z0-9_-]{40,}`）同样替换，三端输出仍逐字一致。
+正确表述：**删除一条规则能否被 PART A 捕获，取决于是否存在更宽的规则覆盖同一段文本**；
+M1 可检测的前提是所删规则无可替代（如 `aws-space-kv`）。该边界不影响 F2 的结论
+（PART B 钉住生产出口，由 M2 变异证明）。
+
+**③ `dangerous-commands.ps1` L62 陈旧注释**（「sh 侧…故用贪婪 `.*`」）已在 G15b-FIX2 轮
+随代码一并更正为 `[^-]*`（含新的换行处理说明），见该文件 L69–L74。
 
