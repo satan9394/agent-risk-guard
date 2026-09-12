@@ -5,7 +5,18 @@
 
 ---
 
-## ✅ 最新状态（Round 257）：G15b 切片已闭环 ACCEPT
+## ✅ 最新状态（Round 259）：G15b 与 G5 两个切片均已闭环 ACCEPT
+
+- 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → G15 ✅ → G15b ✅（FIX3 后 ACCEPT）→ **G5 ✅（ACCEPT）**
+- **G5 = sh hook 失败语义与 JSON 合法性**，第六个独立 Evaluator `7d16a0b9` 判 **ACCEPT**（7/7 PASS，报告 `EVALUATION_RESULT_G5.md`）：原缺陷真实且已消除（50 例矩阵 pre `invalidJSON=7 / 裸 exit=2 / 分歧 18` → post **`0 / 0 / 2`**）；**零误拦合法调用**（47 条反向邻居；"末尾换行"两端均 allow）；**期望反转合法**（2×2 矩阵证明旧期望是"fail-open 现状记录"，`git diff` 仅 16b/16c 变化且**方向为加强**）；G15b 红线未回退（**M2 / M4 变异 → PART B 均红**）；**规则段 171 行 sha 前后同为 `3350ad9370e13de6`（判定规则零改动）**。
+- **编排者亦自跑**：6 条异常场景 sh/ps1 全 `exit=0`+deny；core 子集 **60/60**（首跑 1 红系**环境假红**，见 D10）；sh 三副本 `7F7769F2175C6D88`/30296 B/BOM=False/CR=0 **distinct=1**。提交 `3fe7d85` / `0f2f6ba`。
+- **G5 新登记缺口（均非 G5 引入，建议 P2 卡）**：① **裸控制字符跨端分歧**（`git status<LF>`/`<TAB>x` → sh=deny / ps1=allow；输入违反 RFC 8259，sh 更严方向安全；报告"DIFF=0（54 条）"**不可外推**）② 既有分歧 `command:null` / `command:[…]` → sh allow / ps1 deny（现实不可达）③ 无 python3 且抓不到 tool_name 的畸形输入仍 allow（未放宽）④ `# note\nrm -rf …` 两端同形放行（既有语义）⑤ 报告 §5-4 NBSP 例子未复现（错报，方向无害）
+- **下一轮**：**G3**（规则单源收敛——已升级为"存在实际漏拦"：N2/N3/N4 与④⑤类跨端分歧都是它的表现）或 **G24/G26/G27**
+- **本会话已固化 D6–D10 五条方法学纪律**（攻击面/邻居面/对照面/引擎面/环境面），以及"**修复会引入新缺陷**"——四次 REJECT 中三次根因都是验证参照物选错。
+
+---
+
+## ✅ 历史：G15b 切片闭环（Round 257）
 
 - 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → G15 ✅ → G15b ❌REJECT → FIX1 → FIX ❌REJECT → FIX2 ❌REJECT → **FIX3 ✅ ACCEPT**
 - **第五个独立 Evaluator `a4b0551b` 判定 ACCEPT**（报告 `EVALUATION_RESULT_G15b-FIX3.md`）：原缺陷（多行第 2 行起锚点发散）**真修**——38 条载荷 × 三端 + 21 条 × 两端生产出口全 AGREE/无泄漏；`^\s*` 新攻击面 PASS（18 条自造载荷三列对照，**无一条**「改前不脱敏→改后脱敏」）；R1/R2/F1 不回退；**M2-sh 变异自跑 → A 绿 / B 红 33 处**；`hook-redact-test` **119/119**；副本 distinct=1。
