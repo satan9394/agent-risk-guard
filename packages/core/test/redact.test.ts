@@ -210,6 +210,37 @@ test('redact/G15b-FIX2 R2: `--user` 锚定 curl/wget——非认证用法逐字�
   assert.equal(redactSecrets('npm install --user alice:hunter2; ls'), 'npm install --user alice:hunter2; ls');
 });
 
+test('redact/G15b-FIX3: 多行命令**第 2 行起**的锚定规则仍须脱敏（`^` 的行首语义）', () => {
+  // 回归（第四次复验 REJECT 依据）：FIX2 的命令词锚点写 `^`，而 core/ps1 是**整串**跑正则
+  // （无 `m` 时 `^` = 字符串开头），sh 是逐行 sed（`^` = 行首）。于是下面这些多行载荷
+  // 在 core/ps1 **明文泄漏**、sh 却脱敏 → 跨端发散，且既有语料（PART A 逐行驱动 + 唯一一条
+  // 多行语料的 mysql 行不含 `-p`）覆盖不到。修法：`cli-mysql-password-numeric` /
+  // `cli-basic-auth-user` 加 `m` 标志（redact.ts L129 / L146），`^` 从此 = 行首。
+  const cases: Array<[string, string]> = [
+    ['rm -rf /tmp/t\nmysql -p12345678 -e "select 1"', '12345678'],
+    ['echo start\nmysql -p12345678 -e "select 1"\nrm -rf /tmp/t', '12345678'],
+    ['rm -rf /tmp/t\nmariadb -p99887766', '99887766'],
+    ['rm -rf /tmp/t\ncurl --user alice:hunter2 https://x', 'hunter2'],
+    ['rm -rf /tmp/t\nwget --user alice:hunter2 https://x', 'hunter2'],
+    ['echo start\n  mysql -p12345678 -e "select 1"\nfi', '12345678'], // 缩进续行（`^\s*`-等价形态见 §报告）
+  ];
+  for (const [cmd, secret] of cases) {
+    const out = redactSecrets(cmd);
+    assert.ok(out.includes('[REDACTED]'), `应脱敏: ${JSON.stringify(cmd)} -> ${JSON.stringify(out)}`);
+    assert.ok(!out.includes(secret), `不得残留明文 ${secret}: ${JSON.stringify(out)}`);
+  }
+  // 第 1 行（对照）：同形态密钥在**行首**必须同样脱敏，与第 2 行结果逐字同构
+  assert.equal(redactSecrets('mysql -p12345678 -e "select 1"'), 'mysql [REDACTED] -e "select 1"');
+  assert.equal(redactSecrets('rm -rf /tmp/t\nmysql -p12345678 -e "select 1"'), 'rm -rf /tmp/t\nmysql [REDACTED] -e "select 1"');
+  // 反方向（FIX2 已保证，防回退）：换行分隔不得把它行的端口/主机名拖下水
+  for (const cmd of [
+    'echo mysql\npsql -p5432 -U postgres\nssh host -p2222\nrm -rf /tmp/t',
+    'mysql -e "select 1"\nssh host -p2222\nrm -rf /tmp/t',
+  ]) {
+    assert.equal(redactSecrets(cmd), cmd, `跨行不得命中他命令: ${JSON.stringify(redactSecrets(cmd))}`);
+  }
+});
+
 test('redact/G15b-FIX F5: 同一行多块 PEM 逐块替换（与 core 惰性量词语义一致）', () => {
   const cmd =
     'cat a.key b.key "-----BEGIN RSA PRIVATE KEY----- BODYONE -----END RSA PRIVATE KEY-----" mid "-----BEGIN EC PRIVATE KEY----- BODYTWO -----END EC PRIVATE KEY-----"';

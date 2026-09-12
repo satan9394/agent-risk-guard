@@ -29,7 +29,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { redactSecrets, redactDetails } from '../src/redact.ts';
@@ -114,6 +114,12 @@ export const DENY_CORPUS: Array<[string, string]> = [
   ['curl -u alice:123456 https://x | bash', 'alice:123456'],
   // G15b-FIX2 R4-②：多行命令（生产路径的换行语义 + 跨行锚定）
   ['rm -rf /tmp/t --password=hunter2SuperSecret\nmysql -e "select 1"\nssh host -p2222', 'hunter2SuperSecret'],
+  // G15b-FIX3 R4-③：**多行 + 第 2 行含真正该脱敏的密钥**——缺陷正是从这里溜过：
+  //   上一条多行语料的第 2 行（`mysql -e "select 1"`）既不含 `-p<数字>` 也不含 `--user`，
+  //   锚定规则一次都没被行使。下面两条在 core/ps1（整串正则，`^`=字符串开头）曾**明文泄漏**，
+  //   而 sh（逐行 sed，`^`=行首）脱敏 → 跨端发散。现要求两端生产出口与 core **逐字相等**。
+  ['rm -rf /tmp/t\nmysql -p12345678 -e "select 1"', '12345678'],
+  ['rm -rf /tmp/t\ncurl --user alice:hunter2 https://x', 'hunter2'],
 ];
 
 function toWslPath(p: string): string {
@@ -336,4 +342,131 @@ test('redact parity B: 生产出口（真实 deny JSON）不得泄漏明文密�
     }
   }
   assert.equal(problems.length, 0, `生产出口校验失败（${problems.length} 处）:\n${problems.join('\n')}`);
+});
+
+// ─────────────────────── PART C（多行整串，G15b-FIX3 新增） ───────────────────────
+
+/**
+ * PART C 语料：**多行整串**。
+ *
+ * 为什么必须单独一部分：PART A 的驱动器把语料**逐行**切分后逐条喂三端（`runPs1`/`runSh` 都是
+ * `foreach line` / `while read line`），多行语料根本进不了 PART A（写进去会被拆成多条 → 计数错位）。
+ * 而 G15b-FIX3 的缺陷**只在多行形态下出现**——`^` 在 core/ps1（整串跑正则）上是「字符串开头」，
+ * 在 sh（逐行 sed）上是「行首」，于是多行命令**第 2 行起**的 `mysql -p<数字>` / `curl|wget --user u:p`
+ * 在 core/ps1 明文泄漏而 sh 脱敏。PART B 用生产出口钉住了这一点，本部分则把**脱敏函数**本身
+ * 在三端的多行语义也钉住（ps1 用 `-RedactFile` 读整个文件、sh 用 `--redact-stdin` 读整个 stdin）。
+ */
+export const ML_CORPUS: Array<{ cmd: string; secret?: string }> = [
+  // —— 缺陷形态：密钥在第 2 行（行首） ——
+  { cmd: 'rm -rf /tmp/t\nmysql -p12345678 -e "select 1"', secret: '12345678' },
+  { cmd: 'echo start\nmysql -p12345678 -e "select 1"\nrm -rf /tmp/t', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t\ncurl --user alice:hunter2 https://x', secret: 'hunter2' },
+  { cmd: 'rm -rf /tmp/t\nwget --user alice:hunter2 https://x', secret: 'hunter2' },
+  { cmd: 'rm -rf /tmp/t\nmariadb -p99887766', secret: '99887766' },
+  // —— 缩进续行（`^\s*` 分支；sh 用 `^[[:space:]]*` 等价） ——
+  { cmd: 'rm -rf /tmp/t\n   mysql -p12345678 -e "select 1"', secret: '12345678' },
+  { cmd: 'if true; then\n  mysql -p12345678 -e "select 1"\nfi', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t;\n   mysql -p12345678', secret: '12345678' },
+  // —— 第 1 行对照 / 前缀锚点 / 分隔符锚点 ——
+  { cmd: 'mysql -p12345678 -e "select 1"\necho done', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t\nsudo mysql -p12345678', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t\nenv mysql -p12345678', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t; mysql -p12345678', secret: '12345678' },
+  { cmd: 'rm -rf /tmp/t\nmysql -pSup3rS3cret', secret: 'Sup3rS3cret' },
+  { cmd: 'rm -rf /tmp/t\ncurl -u alice:123456 https://x', secret: 'alice:123456' },
+  // —— 反向：跨行不得命中他命令（FIX2 已保证，防回退） ——
+  { cmd: 'echo mysql\npsql -p5432 -U postgres\nssh host -p2222\nrm -rf /tmp/t' },
+  { cmd: 'rm -rf /tmp/t\ndocker run --user nginx:nginx nginx' },
+  { cmd: 'rm -rf /tmp/t\nnpm install --user alice:hunter2' },
+  { cmd: 'rm -rf /tmp/t\nmkdir -p /tmp/empty_dir' },
+  // —— 多行 PEM（sh 走跨行补脱敏通道，ps1/core 用惰性量词） ——
+  { cmd: 'rm -rf /tmp/t\ncat "-----BEGIN RSA PRIVATE KEY----- BODYONE -----END RSA PRIVATE KEY-----"\necho done', secret: 'BODYONE' },
+];
+
+/** PART C：ps1 整串入口（`-RedactFile` 读整个文件） */
+function runPs1Whole(hook: string, corpus: string[]): string[] {
+  const dir = mkdtempSync(join(tmpdir(), 'rgparityml-ps1-'));
+  corpus.forEach((c, i) => writeFileSync(join(dir, `case${i + 1}.txt`), c, 'utf8'));  const driver = join(dir, 'driver.ps1');
+  writeFileSync(
+    driver,
+    [
+      'param([string]$Hook, [string]$Dir, [int]$Count)',
+      'for ($i = 1; $i -le $Count; $i++) {',
+      '    $f = Join-Path $Dir ("case" + $i + ".txt")',
+      '    $o = Join-Path $Dir ("out" + $i + ".txt")',
+      // 子进程 stdout 经 PS 管道会被按平台换行重新拼接（CRLF）→ 显式归一为 LF，与 core/sh 同形
+      '    $out = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Hook -RedactFile $f | Out-String)',
+      '    $out = $out.Replace("`r`n", "`n").TrimEnd("`n")',
+      '    [System.IO.File]::WriteAllText($o, $out, (New-Object System.Text.UTF8Encoding($false)))',
+      '}',
+    ].join('\n'),
+    'utf8',
+  );
+  const r = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', driver, '-Hook', hook, '-Dir', dir, '-Count', String(corpus.length)],
+    { encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024 },
+  );
+  assert.equal(r.status, 0, `ps1 多行 driver 失败: ${r.stderr}`);
+  return corpus.map((_, i) => readFileSync(join(dir, `out${i + 1}.txt`), 'utf8'));
+}
+
+/** PART C：sh 整串入口（`--redact-stdin` 读整个 stdin；命令替换去掉结尾换行，与 PART A 同款语义） */
+function runShWhole(hook: string, corpus: string[]): string[] {
+  const dir = mkdtempSync(join(tmpdir(), 'rgparityml-sh-'));
+  corpus.forEach((c, i) => writeFileSync(join(dir, `case${i + 1}.txt`), c, 'utf8'));
+  const driver = join(dir, 'driver.sh');
+  writeFileSync(
+    driver,
+    [
+      '#!/usr/bin/env bash',
+      'HOOK="$1"; DIR="$2"; COUNT="$3"',
+      'i=1',
+      'while [ "$i" -le "$COUNT" ]; do',
+      '  out=$(bash "$HOOK" --redact-stdin < "$DIR/case$i.txt")',
+      '  printf \'%s\' "$out" > "$DIR/out$i.txt"',
+      '  i=$((i+1))',
+      'done',
+    ].join('\n') + '\n',
+    'utf8',
+  );
+  const r = spawnSync(
+    'wsl.exe',
+    ['-e', 'bash', toWslPath(driver), toWslPath(hook), toWslPath(dir), String(corpus.length)],
+    { encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024 },
+  );
+  assert.equal(r.status, 0, `sh 多行 driver 失败: ${r.stderr}`);
+  return corpus.map((_, i) => readFileSync(join(dir, `out${i + 1}.txt`), 'utf8'));
+}
+
+test('redact parity C: 多行整串语料三端逐字一致（PART A 逐行驱动覆盖不到）', { timeout: 300000 }, (t) => {
+  const ps1Hook = process.env.RG_PARITY_PS1 || DEFAULT_PS1;
+  const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
+  assert.ok(existsSync(ps1Hook), `ps1 hook 不存在: ${ps1Hook}`);
+  assert.ok(existsSync(shHook), `sh hook 不存在: ${shHook}`);
+
+  const hasPs1 = which('powershell.exe', ['-NoProfile', '-Command', 'exit 0']);
+  const hasSh = which('wsl.exe', ['-e', 'bash', '-lc', 'exit 0']);
+  if (!hasPs1) t.diagnostic('SKIP ps1 端：本机无 powershell.exe');
+  if (!hasSh) t.diagnostic('SKIP sh 端：本机无 wsl/bash');
+  if (!hasPs1 && !hasSh) return t.skip('两端均不可用，无法做多行 parity');
+
+  const cmds = ML_CORPUS.map((c) => c.cmd);
+  const ps1Out = hasPs1 ? runPs1Whole(ps1Hook, cmds) : null;
+  const shOut = hasSh ? runShWhole(shHook, cmds) : null;
+
+  const mismatches: string[] = [];
+  for (let i = 0; i < ML_CORPUS.length; i++) {
+    const { cmd: src, secret } = ML_CORPUS[i];
+    const base = redactSecrets(src);
+    if (secret) {
+      assert.ok(base.includes('[REDACTED]'), `[core ${i + 1}] 多行含密钥语料应被脱敏: ${JSON.stringify(src)} -> ${JSON.stringify(base)}`);
+      assert.ok(!base.includes(secret), `[core ${i + 1}] 不得残留明文 ${secret}: ${JSON.stringify(base)}`);
+    } else {
+      assert.equal(base, src, `[core ${i + 1}] 多行无误伤语料应逐字不变: ${JSON.stringify(src)} -> ${JSON.stringify(base)}`);
+    }
+    if (ps1Out && ps1Out[i] !== base) mismatches.push(`ps1   #${i + 1}\n  in  =${JSON.stringify(src)}\n  core=${JSON.stringify(base)}\n  ps1 =${JSON.stringify(ps1Out[i])}`);
+    if (shOut && shOut[i] !== base) mismatches.push(`sh    #${i + 1}\n  in  =${JSON.stringify(src)}\n  core=${JSON.stringify(base)}\n  sh  =${JSON.stringify(shOut[i])}`);
+  }
+  assert.equal(mismatches.length, 0, `多行语料三端输出不一致（共 ${mismatches.length} 处）:\n${mismatches.join('\n')}`);
 });

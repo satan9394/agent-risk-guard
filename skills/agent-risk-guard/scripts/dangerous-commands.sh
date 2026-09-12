@@ -68,7 +68,11 @@ REDACT_CI_MARIADB=$(ci mariadb)
 REDACT_CI_SUDO=$(ci sudo)
 REDACT_CI_ENV=$(ci env)
 REDACT_CI_COMMAND=$(ci command)
-REDACT_ANCHOR="(^|[;&|][[:space:]]*|${REDACT_CI_SUDO}[[:space:]]+|${REDACT_CI_ENV}[[:space:]]+|${REDACT_CI_COMMAND}[[:space:]]+)"
+# G15b-FIX3（P0）：锚点里的 `^` 三端**处理单位不同 → 语义不同**——core/ps1 是整串跑正则（`^` = 字符串开头），
+#   本端 sed 是**逐行**处理（`^` = 行首）。故 core/ps1 侧给这两条规则加了 Multiline（`m` / 内联 `(?m)`，
+#   见 packages/core/src/redact.ts L129/L146 与 dangerous-commands.ps1 同名规则），本端**无需改动**即已等价。
+#   ⚠️ 本锚点（及任何含 `^` / `$` / `\n` 的规则）改动前，必须用**多行载荷**跑三端 parity（redact-parity PART B/C）。
+REDACT_ANCHOR="(^[[:space:]]*|[;&|][[:space:]]*|${REDACT_CI_SUDO}[[:space:]]+|${REDACT_CI_ENV}[[:space:]]+|${REDACT_CI_COMMAND}[[:space:]]+)"
 # generic-kv 键名（对齐 core：api_key|access_token|token|secret_key|client_secret|credential|secret|passwd）
 REDACT_KEYS_GENERIC="$(ci api)[_-]?$(ci key)|$(ci access)[_-]?$(ci token)|$(ci token)|$(ci secret)[_-]?$(ci key)|$(ci client)[_-]?$(ci secret)|$(ci credential)|$(ci secret)|$(ci passwd)"
 # aws-space-kv 键名（对齐 core：(aws_)?(secret_access_key|access_key_id|session_token)）

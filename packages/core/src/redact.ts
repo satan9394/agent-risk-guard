@@ -124,9 +124,15 @@ export const SECRET_RULES: RedactRule[] = [
   //   且 sh 生产路径先折叠换行，会跨行命中别的命令的端口（与 ps1 发散）。
   // 锚定后：`ssh mysql -p2222` / `psql -h mysql -p5432` / `docker run --name mysql -p 3306:3306 mysql`
   //   逐字不变，而 `mysql -p12345678` / `sudo mysql -p12345678` 仍脱敏。
+  // G15b-FIX3（P0）：锚点里的 `^` 在**整串跑正则**的 core/ps1 上是「字符串开头」，而 sh 的 sed 逐行时是
+  //   「行首」——三端**处理单位不同 → `^` 语义不同**。于是多行命令第 2 行起的 `mysql -p<数字>` 在
+  //   core/ps1 明文泄漏、sh 却脱敏（`<cmd>\nmysql -p12345678` → 跨端发散）。修法：加 `m`（multiline）
+  //   标志，使 `^` 在 core 上就是行首，与 sh 的逐行 sed 等价（ps1 侧同规则加内联 `(?m)`）。
+  //   并把起点分支写成 `^\s*`（而非 `^`）——**缩进的续行**（`if …; then\n  mysql -p…`）也要覆盖：
+  //   sh 逐行 sed 用 `^` + 前导空白等价，见 dangerous-commands.sh L71 的 `^[[:space:]]*`。
   {
     id: 'cli-mysql-password-numeric',
-    re: /(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[0-9]+/gi,
+    re: /(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[0-9]+/gim,
     repl: '$1$2$3$4' + SENTINEL,
   },
   // G15b-FIX2 R1：`-u` 与 `--user` **拆成两条规则**。
@@ -141,9 +147,12 @@ export const SECRET_RULES: RedactRule[] = [
   // ② `--user`（长参）：保留「密码段须含非数字」守卫（避开 uid:gid），并额外做**命令词锚定**——
   //    只有 curl/wget 的 `--user` 才是凭据；`docker run --user nginx:nginx`（user:group）、
   //    `npm install --user alice:hunter2`、`chown --user …` 一律逐字不变（R2 的过度脱敏）。
+  // G15b-FIX3（P0）：同 `cli-mysql-password-numeric`——原 flags `g` 使 `^` 只匹配**整串**开头，
+  //    多行第 2 行起的 `curl|wget --user u:p` 在 core 明文泄漏（sh 逐行 sed 仍脱敏）→ 跨端发散。
+  //    加 `m` 后 `^` = 行首，`^\s*` 同时覆盖缩进续行，三端语义对齐。
   {
     id: 'cli-basic-auth-user',
-    re: /(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(curl|wget)([^;&|\n]*)(\s--user\s+)[^\s:]+:[^\s]*[^\s0-9:][^\s]*/g,
+    re: /(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(curl|wget)([^;&|\n]*)(\s--user\s+)[^\s:]+:[^\s]*[^\s0-9:][^\s]*/gim,
     repl: '$1$2$3$4' + SENTINEL,
   },
 

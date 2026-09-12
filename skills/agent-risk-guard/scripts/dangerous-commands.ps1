@@ -93,13 +93,19 @@ $script:RedactRules = @(
     @{ id = 'cli-mysql-password';  re = '(^|[^-A-Za-z0-9_])-p[^\s]*[^\s0-9][^\s]*';                       repl = '$1@@RG_REDACTED@@' },
     # G15b-FIX2 R2：改为**命令词锚定**（旧写法只要求「同段出现过 mysql」，把 `ssh mysql -p2222 host` 的端口、
     # `psql -h mysql -p5432` 的端口都当密码脱敏；sh 生产路径还会跨折叠后的换行命中别的命令 → 两端发散）
-    @{ id = 'cli-mysql-password-numeric'; re = '(?i)(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[0-9]+'; repl = '$1$2$3$4@@RG_REDACTED@@' },
+    # G15b-FIX3（P0）：加**内联 `(?m)`**（≡ [System.Text.RegularExpressions.RegexOptions]::Multiline，使 `^` 匹配**行首**）。
+    #   原因：本端 `[regex]::Replace` 与 core 一样是**整串**跑正则，无 Multiline 时 `^` = 字符串开头；
+    #   而 sh 是逐行 sed，`^` = 行首 → 多行命令第 2 行起的 `mysql -p<数字>` 在本端明文泄漏而 sh 脱敏（跨端发散）。
+    #   起点分支写成 `^\s*`（而非 `^`）以覆盖**缩进续行**，与 sh 的 `^[[:space:]]*` 等价。
+    @{ id = 'cli-mysql-password-numeric'; re = '(?im)(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[0-9]+'; repl = '$1$2$3$4@@RG_REDACTED@@' },
     # G15b-FIX2 R1：`-u` 与 `--user` 拆两条。G15b-FIX 把「密码段须含非数字」的守卫加到共用分支，
     # 使 `curl -u alice:123456`（全数字口令）明文泄漏 → 回归。① `-u` 恢复 G15b 旧写法（无值限制）。
     @{ id = 'cli-basic-auth-u';    re = '(^|[^-A-Za-z0-9_])-u\s+[^\s:]+:[^\s]+';                          repl = '$1@@RG_REDACTED@@' },
     # ② `--user` 保留「密码段须含非数字」守卫，并额外**锚定到 curl/wget**（只有它们的 --user 是凭据）：
     #    `docker run --user nginx:nginx nginx` / `npm install --user alice:hunter2` 因此逐字不变。
-    @{ id = 'cli-basic-auth-user'; re = '(^|[;&|]\s*|sudo\s+|env\s+|command\s+)(curl|wget)([^;&|\n]*)(\s--user\s+)[^\s:]+:[^\s]*[^\s0-9:][^\s]*'; repl = '$1$2$3$4@@RG_REDACTED@@' },
+    # G15b-FIX3（P0）：同 `cli-mysql-password-numeric`，加内联 `(?m)`（≡ RegexOptions::Multiline）使 `^` = 行首，
+    #    否则多行命令第 2 行起的 `curl|wget --user u:p` 在本端明文泄漏、sh 却脱敏 → 跨端发散；`^\s*` 覆盖缩进续行。
+    @{ id = 'cli-basic-auth-user'; re = '(?m)(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(curl|wget)([^;&|\n]*)(\s--user\s+)[^\s:]+:[^\s]*[^\s0-9:][^\s]*'; repl = '$1$2$3$4@@RG_REDACTED@@' },
     @{ id = 'long-random';         re = '[A-Za-z0-9_-]{40,}';                                            repl = $null }
 )
 function Redact-Secrets {
