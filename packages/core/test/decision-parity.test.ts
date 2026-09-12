@@ -35,8 +35,16 @@
  *   K 段 K39–K56：**G3-FIX6/A 新增**——**包装词 / 子 shell / 块 / if-then / for-do** 前缀面
  *                （Evaluator G3-FIX5 §3.1 的 REJECT 依据：这 8 条真实可执行形态在 ps1 端 deny → allow）。
  *                K57–K59 是**过拦守卫**：`do`/`then` 出现在引号内散文时不得被点着。
- *   L 段 L1–L16：**G3-FIX6/A 新增**——**跨端身份断言**专用语料（命令位 / 非命令位成对），由**独立
- *                的第二个 test** 断言「两端 decision 逐条一致」（不看应然），使「单端前缀漂移」提交前必红。
+ *   K 段 K60–K68：**G3-FIX7/A 新增**——**引号内 / 散文里的括号不是命令位**（Evaluator G3-FIX6 §4.1 的
+ *                REJECT 依据：把 `\(`/`\{` 放**锚位**导致 9 条合法命令 allow → deny，含验收清单点名的
+ *                `printf '{ diskpart }'`）。K43/K44/K52/K53 是**成对守卫**：真子 shell / 块仍须 deny。
+ *   K 段 K69–K87：**G3-FIX7/B 新增**——**包装词 ↔ cmd/command/env 可互串**（Evaluator G3-FIX6 §9.4
+ *                登记项：FIX6 的固定顺序使 `command time diskpart` 等 ≥10 条真实可执行形态在 ps1 端
+ *                相对冻结基线 pre-G3 由 deny → allow，属 D12 放松）。K83–K87 是反向守卫（闭集可重复
+ *                **不得**滑向「任意单词」：`x command diskpart` / `timeout diskpart` / `sudorm` 仍 allow）。
+ *   L 段 L1–L20：**G3-FIX6/A 新增 + G3-FIX7/A 扩到 20 条**——**跨端身份断言**专用语料
+ *                （命令位 / 非命令位成对），由**独立的第二个 test** 断言「两端 decision 逐条一致」
+ *                （不看应然），使「单端前缀漂移」提交前必红。L17–L20 是 FIX7/A 的两对括号守卫。
  *
  * ⚠️ 本闸门只钉「两端逐字同判 + 等于应然」。**不得**为了让它变绿而放宽 deny 语义（红线 §5.6/D12）：
  *    若某条真的两端分歧且短期无法收敛，正确做法是**保留分歧并如实登记**，而不是把它钉成 allow。
@@ -315,6 +323,45 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'K57 commit -m "do rm docs"', payload: J('git commit -m "do rm docs"'), expect: 'allow', note: '★过拦守卫：`do` 是**命令位保留词**，只在分隔符/行首之后才算命令位' },
   { id: 'K58 echo "do rm"', payload: J('echo "do rm"'), expect: 'allow', note: '★过拦守卫：引号内散文不点着' },
   { id: 'K59 grep -r "then rmdir" .', payload: J('grep -r "then rmdir" .'), expect: 'allow', note: '★过拦守卫：同上（`then` 在引号内）' },
+  // ── A 面（G3-FIX7/A 新增，K60–K68）：**`(` `{` 不放锚位** —— 引号内 / 散文里的括号不是命令位 ─────
+  //   机理（Evaluator G3-FIX6 §4.1 的 REJECT 依据）：FIX6 把 `\(` `\{` 放进**命令位锚**，于是
+  //   「文本里出现 `(` / `{` 就算命令位」——引号内/散文里的括号（含 `s/(rm -rf)/` 这种 `(` 前是 `/` 的，
+  //   lookbehind 补 `["']` 也修不掉）被点着，9 条合法命令由 allow → deny（其中 `printf '{ diskpart }'`
+  //   是验收清单点名的「零过拦」项）。G3-FIX7/A：`\(` `\{` 移入**可重复前缀项**（与 `then|do|else`
+  //   的处置同构），锚位**只认** 行首 / 分隔符 / 换行。下列 9 条**两端必须 allow**。
+  { id: 'K60 printf \'{ diskpart }\'', payload: J("printf '{ diskpart }'"), expect: 'allow', note: '★FIX6 过拦（ps1 deny / sh deny）→ 两端 allow；验收清单点名的合法命令' },
+  { id: 'K61 echo "(diskpart)"', payload: J('echo "(diskpart)"'), expect: 'allow', note: '★FIX6 过拦 → 两端 allow（双引号内括号）' },
+  { id: 'K62 echo "{ diskpart }"', payload: J('echo "{ diskpart }"'), expect: 'allow', note: '★FIX6 过拦 → 两端 allow（双引号内花括号）' },
+  { id: 'K63 echo \'(rm -rf)\'', payload: J("echo '(rm -rf)'"), expect: 'allow', note: '★FIX6 过拦（ps1 deny）→ 两端 allow（单引号内括号）' },
+  { id: 'K64 echo "(rm -rf /)"', payload: J('echo "(rm -rf /)"'), expect: 'allow', note: '★FIX6 过拦（ps1 deny）→ 两端 allow' },
+  { id: 'K65 commit -m "fix (rm -rf)"', payload: J('git commit -m "fix (rm -rf)"'), expect: 'allow', note: '★FIX6 过拦（两端 deny）→ 两端 allow（commit message 里的括号）' },
+  { id: 'K66 grep -r "(rm -rf)" .', payload: J('grep -r "(rm -rf)" .'), expect: 'allow', note: '★FIX6 过拦 → 两端 allow（grep 模式串里的括号）' },
+  { id: 'K67 sed -n \'s/(rm -rf)/x/p\' f', payload: J("sed -n 's/(rm -rf)/x/p' f"), expect: 'allow', note: '★FIX6 过拦 → 两端 allow（`(` 前是 `/`，**lookbehind 补引号也修不掉**，只有「移出锚位」能修）' },
+  { id: 'K68 ls (rm -rf)', payload: J('ls (rm -rf)'), expect: 'allow', note: '★FIX6 过拦 → 两端 allow（散文裸括号）' },
+  // ── B 面（G3-FIX7/B 新增，K69–K82）：**包装词 ↔ cmd/command/env 必须可互串** ────────────────
+  //   机理（Evaluator G3-FIX6 §9.4 登记项）：FIX6 的前缀是「包装词* → 路径 → (cmd|command|env)」的
+  //   **固定顺序**，包装词与 command/env 不可交错 → 下列真实可执行形态落到前缀之外 = allow
+  //   （相对冻结基线 pre-G3 是**放松**，D12 违规）。G3-FIX7/B：并为**同一个可重复组**（任意顺序、任意嵌套）。
+  { id: 'K69 command time diskpart', payload: J('command time diskpart'), expect: 'deny', note: '★ps1 冻结基线 pre-G3=deny → FIX6=allow（放松）→ FIX7 两端 deny' },
+  { id: 'K70 env nice diskpart', payload: J('env nice diskpart'), expect: 'deny', note: '★同上（ps1 pre-G3 deny → FIX6 allow）' },
+  { id: 'K71 env sudo diskpart', payload: J('env sudo diskpart'), expect: 'deny', note: '★同上' },
+  { id: 'K72 command cmd /c diskpart', payload: J('command cmd /c diskpart'), expect: 'deny', note: '★同上（`command` 后接 Windows 包装 `cmd /c`）' },
+  { id: 'K73 command sudo diskpart', payload: J('command sudo diskpart'), expect: 'deny', note: '★同上' },
+  { id: 'K74 env cmd /c diskpart', payload: J('env cmd /c diskpart'), expect: 'deny', note: '★同上' },
+  { id: 'K75 command nohup rmdir /s /q x', payload: J('command nohup rmdir /s /q x'), expect: 'deny', note: '★同上（ps1 pre-G3 的 rmdir 命令位锚 = deny）' },
+  { id: 'K76 env time rmdir /s /q x', payload: J('env time rmdir /s /q x'), expect: 'deny', note: '★同上' },
+  { id: 'K77 sudo command time diskpart', payload: J('sudo command time diskpart'), expect: 'deny', note: '★同上（三层交错）' },
+  { id: 'K78 command env diskpart', payload: J('command env diskpart'), expect: 'deny', note: '★同上' },
+  { id: 'K79 env -i diskpart', payload: J('env -i diskpart'), expect: 'deny', note: '★`env` 带**选项**的真实形态（ps1 pre-G3 无锚 `\\bdiskpart\\b` = deny → FIX6 allow）；FIX7 按真实形态收进闭集' },
+  { id: 'K80 env VAR=1 diskpart', payload: J('env VAR=1 diskpart'), expect: 'deny', note: '★`env` 带**赋值参数**的真实形态（同上）；这是**向上**新增拦截，不是放松' },
+  { id: 'K81 /usr/bin/env diskpart', payload: J('/usr/bin/env diskpart'), expect: 'deny', note: '顺序固定时已覆盖 —— 作守卫：互串修法**不得**把它改回 allow' },
+  { id: 'K82 command env -i time diskpart', payload: J('command env -i time diskpart'), expect: 'deny', note: '四种前缀项交错嵌套（D7 邻居）' },
+  // ── B 面反向守卫（G3-FIX7/B）：放宽只到「闭集可重复」，**不得**变成「任意单词」──────────────
+  { id: 'K83 x diskpart（反向守卫）', payload: J('x diskpart'), expect: 'allow', note: '★`x` 不是命令 → 必须仍 allow（B 面修法的边界）' },
+  { id: 'K84 x command diskpart（反向守卫）', payload: J('x command diskpart'), expect: 'allow', note: '★同上：`x` 不在闭集里' },
+  { id: 'K85 commit -m "env nice diskpart"', payload: J('git commit -m "env nice diskpart"'), expect: 'allow', note: '★引号内散文：互串闭集不得点着引号内文本' },
+  { id: 'K86 timeout diskpart（反向守卫）', payload: J('timeout diskpart'), expect: 'allow', note: '★包装词必须整词匹配（`time` ⊄ `timeout`），否则「闭集可重复」会滑向「任意单词」' },
+  { id: 'K87 sudorm --help（反向守卫）', payload: J('sudorm --help'), expect: 'allow', note: '★同上（`sudo` ⊄ `sudorm`）。⚠️ 注意 `sudorm -rf /tmp/t` **不入本语料**：sh 的既有裸 `rm -rf` 规则（L512，无命令位锚，FIX4 起）会 deny，ps1 allow —— 既存两端分歧，不作闸门断言' },
 ];
 
 /**
@@ -347,6 +394,11 @@ export const IDENTITY_CORPUS: DecisionCase[] = [
   { id: 'L14 包装词嵌套后接非命令词', payload: J('sudo time nice nohup x diskpart'), expect: 'allow', note: '反向守卫：`x` 不是命令，nohup 会执行 `x` 而非 diskpart' },
   { id: 'L15 子 shell 命令位', payload: J('(rmdir /s /q x)'), expect: 'deny', note: '与 L16 成对' },
   { id: 'L16 参数位 rmdir', payload: J('echo "rmdir /s /q x"'), expect: 'allow', note: '反向守卫：echo 后是文本' },
+  // G3-FIX7/A 新增两对：**同一个 `(` / `{`，前面是锚/包装词 → deny；前面是普通词/引号 → allow**
+  { id: 'L17 块命令位 { rmdir /s /q x; }', payload: J('{ rmdir /s /q x; }'), expect: 'deny', note: '与 L18 成对（同一载荷只差「是否被引号包住」）' },
+  { id: 'L18 引号内花括号 printf', payload: J("printf '{ rmdir /s /q x }'"), expect: 'allow', note: '反向守卫：引号内 `{` 不是命令位（FIX7 修法的边界）' },
+  { id: 'L19 子 shell + 嵌套块', payload: J('if true; then (rmdir /s /q x); fi'), expect: 'deny', note: '与 L20 成对（`;` 锚 + `then ` 包装 + `(`）' },
+  { id: 'L20 grep 模式串内括号', payload: J('grep -r "(rmdir /s /q x)" .'), expect: 'allow', note: '反向守卫：`(` 前面不是锚也不是包装词' },
 ];
 
 /** 拼一行可读的失败明细（载荷 / ps1 / sh / 期望） */

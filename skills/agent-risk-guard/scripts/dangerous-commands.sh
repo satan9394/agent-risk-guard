@@ -410,20 +410,36 @@ esac
 # G3-FIX6/A：**保留但不再被任何危险基座规则引用**（历史锚，供对照/未来非命令位用途）。
 CMD_SEG='(^|[;&|])[[:space:]]*'
 # G3-FIX6/A（**命令位前缀的单一定义** —— 本文件唯一权威副本，全部危险基座规则**引用**它）：
-#   形态 = 命令位锚 + 包装词序列(可重复) + 可选绝对路径前缀 + 可选 cmd/cmd.exe/command/env 包装。
-#   1) 命令位锚 `(^|[;&|]|\(|\{)`：行首/语句分隔符/子 shell `(`/块 `{` —— bash 真实执行其后命令的位置。
-#   2) 包装词闭集 `(sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)`：**均真实执行其后命令**。
-#      · `time|nice|nohup|setsid|doas|exec|ionice|busybox` 是 FIX5 只补了 sudo 而丢掉的一整类
-#        （`time diskpart` / `nice rmdir /s /q x` / `nohup rmdir /s /q x` 8 条回归）。
-#      · `then|do|else` 是 if/for 的**命令位保留词**：放在**包装词位**（而非锚位）与处方等价——
-#        `if true; then rmdir /s /q x; fi`（`;` 锚 + `then ` 包装 + `rmdir`）、
-#        `for i in 1; do del x; done`（`;` 锚 + `do ` 包装 + `del `）**照样 deny**；
-#        而 `git commit -m "do rm docs"` / `echo "do rm"` 这类**引号内散文**不会被点着（若把 `\bdo\b`
-#        放进锚位，`do` 前只需一个词边界，`"do rm"` 会被新造过拦）。方向恒为「多看见危险、不少看见」。
-#   3) 路径前缀限「以 / 开头」（`/[^[:space:];&|]*/`），避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
+#   形态 = 命令位锚 + **可重复前缀项序列**（每一项都落在「真实执行其后命令」的位置上）。
+#   1) 命令位锚 `(^|[;&|])`：**只认** 行首 / 语句分隔符（`grep -E` 的 `^` 按行）。
+#      G3-FIX7/A：`\(` `\{` 由**锚位**移入**前缀项**（见 2）。理由（实测见 IMPLEMENTATION_RESULT_G3-FIX7 §A）：
+#      正则看不到引号，把括号放锚位 = 「文本里只要出现 `(` / `{` 就算命令位」——
+#      `printf '{ diskpart }'` / `echo "(diskpart)"` / `git commit -m "fix (rm -rf)"` /
+#      `grep -r "(rm -rf)" .` / `sed -n 's/(rm -rf)/x/p' f` / `ls (rm -rf)` 等**合法命令**
+#      实测由 allow → deny（其中 `printf '{ diskpart }'` 是验收清单点名的「零过拦」项）。
+#      移入前缀项后：`(rmdir /s /q x)` / `{ rmdir /s /q x; }` / `if true; then (rmdir /s /q x); fi`
+#      **仍 deny**（它们的 `(` / `{` 前面是**锚**或**已消费的包装词**），而 `echo (rm -rf)` 的 `(`
+#      前面是 `echo `（不是前缀项）→ allow。**与 ps1 端对 `then|do|else` 的处置同构**。
+#   2) 可重复前缀项（**任意顺序、任意嵌套**，G3-FIX7/B）：
+#      · 包装词闭集 `(sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)`：均真实执行其后命令
+#      · 子 shell `\(` / 块 `\{`
+#      · 绝对路径 `/[^[:space:];&|]*/`（限「以 / 开头」，避免 `cat ./etc/mkfs.conf` 这类相对路径误伤）
+#      · Windows 包装 `cmd[.exe] /c `、shell 内建 `command [-p] `、
+#        `env [-i|-0|-v|--xxx|-u NAME|-C DIR|-S STR|VAR=v]… ` —— `env` 的**带参数**选项
+#        （`-u NAME` / `-C DIR` / `-S STR`）按真实形态逐个列出（G3-FIX7/B），与 `cmd /c`（Windows 形态）、
+#        `command -p` 同批；`command -v|-V` **故意不列**（只查路径、不执行）。
+#      · `then|do|else` 放在**包装词位**（而非锚位）：`if true; then rmdir /s /q x; fi`（`;` 锚 +
+#        `then ` 包装 + `rmdir`）**照样 deny**；而 `git commit -m "do rm docs"` 这类**引号内散文**
+#        不会被点着（若把 `do` 放进锚位，`"do rm"` 会被新造过拦）。
+#      G3-FIX7/B：FIX6 是「包装词* → 路径 → (cmd|command|env)」的**固定顺序**，包装词与 command/env
+#      **不可交错** → `command time diskpart` / `env nice diskpart` / `env sudo diskpart` /
+#      `command cmd /c diskpart` 等 **≥10 条真实可执行形态**落到前缀之外 → allow（相对**冻结基线**
+#      是放松，D12 违规）。并为**同一个可重复组**后消除（任意顺序、任意嵌套）。
 #   ⚠️ **不得放宽成「任意单词」**：`x diskpart`（x 不是命令）必须仍 allow —— 见闸门 K18/K22/K26/L 段反向守卫。
-#   捕获组编号（sed 抽取式规则 L434 依赖）：\1 锚 \2 包装序列 \3 包装词 \4 路径 \5 cmd/command/env。
-CMD_PRE='(^|[;&|]|\(|\{)[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)[[:space:]]+)*(/[^[:space:];&|]*/)?(cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+|env[[:space:]]+)?'
+#   捕获组编号（sed 抽取式规则 L445 依赖）：\1 锚 \2 可重复前缀项序列 \3 包装词 \4 command 的 `-p`
+#     \5 env 的 `-x|VAR=v` 序列 \6 env 序列内的单项（绝对路径项 `/[^[:space:];&|]*/` **不带括号**，
+#     故不占组号）；规则里的 rm 实参 = **\7**。
+CMD_PRE='(^|[;&|])[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)[[:space:]]+|\([[:space:]]*|\{[[:space:]]*|/[^[:space:];&|]*/|cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+(-p[[:space:]]+)?|env[[:space:]]+((-[i0v]|-[uCS][[:space:]]+[^[:space:]]+|--[a-z-]+[^[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)*)*'
 # echo/printf 引号参数剥离（对齐 .ps1 $cmdTest）：echo "xxx" → echo ""（无引号 rm 是真实危险，不剥）
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 # G3-FIX4/R1：同一剥离规则施加到**空引号归一后**的 cmdNoq 上——rm / Remove-Item 删除族专用。
@@ -440,9 +456,13 @@ fi
 if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_PRE}rm([[:space:]]|-)"; then
     # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
     # G3-FIX5/A：抽取式同步 CMD_PRE（否则 `sudo rm --help` 抽不到实参 → 误拦；ps1 rule 16 的豁免前瞻同批加前缀）
-    # G3-FIX6/A：抽取式**改为引用同一个 ${CMD_PRE}**（不再自带第二份硬编码副本）；实参捕获组随前缀扩到 \6
-    #   （\1 锚 \2 包装序列 \3 包装词 \4 路径 \5 cmd/command/env，见 L415 定义处注释）。
-    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE "s#.*${CMD_PRE}rm[[:space:]]*([^;&|]*)#\\6#p" | head -1 | sed 's/[[:space:]]*$//')
+    # G3-FIX6/A：抽取式**改为引用同一个 ${CMD_PRE}**（不再自带第二份硬编码副本）。
+    # G3-FIX7/B：前缀改为「可重复前缀项序列」后新增 2 个捕获组（command 的 `-p`、env 的 `-x|VAR=v`），
+    #   故实参捕获组由 \6 **顺延到 \7**（\1 锚 \2 序列 \3 包装词 \4 -p \5 env序列 \6 env单项；
+    #   绝对路径项不带括号，不占组号）。组号写错的后果**可功能验证**：sed 报
+    #   `invalid reference \N` 或抽不到实参 → `rm --help` / `sudo rm --help` / `rm'' --help`
+    #   由 allow 变 deny（见闸门 K9/K30 与探针 L01–L03）。实测见 `_g3fix7_diag_groups.mjs`。
+    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE "s#.*${CMD_PRE}rm[[:space:]]*([^;&|]*)#\\7#p" | head -1 | sed 's/[[:space:]]*$//')
     case "$rmseg" in
         -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
         *) deny_command "rm is permanent deletion. Use trash command." ;;

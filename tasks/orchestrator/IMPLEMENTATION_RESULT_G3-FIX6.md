@@ -312,7 +312,19 @@ L410（16c 引号插词 rm）、L420（16e `$cmdNaked` rm 补查）、L509（rul
      按 D12 第二选项「保留分歧并如实登记」处理，并已写进闸门文件头与 L 段注释。
    - `echo "Format-Volume guide"`（sh deny / ps1 allow）——sh 的 `format-volume` 规则读未剥离 echo 的原文，pre-G3 即存在。
 2. **`then|do|else` 的位置偏离**：见 §1.2。若 Evaluator 判定必须逐字照抄处方，切换成本 = 改 2 处定义（每端 1 行），语料无需改（`K39`–`K56` 期望不变），但会新增 3 条引号内散文过拦（`git commit -m "do rm docs"` 等）。
-3. **`(` / `{` 锚对引号内文本仍可能过拦**（与既有 `;`/`|` 锚同性质，pre-G3 即如此）：例如 `git commit -m "fix (rm -rf)"`。本轮**未**扩大该面（新增的只有包装词与 `(`/`{` 两个字面锚，后者在 FIX5 前由 ps1 的**无锚**规则覆盖，故不是新增过拦）。登记为加固候选。
+3. **`(` / `{` 锚对引号内文本的过拦 —— ⚠️ 本节原文口径已被 G3-FIX7 实测推翻，现更正如下**
+   （原文写的是：「本轮**未**扩大该面（新增的只有包装词与 `(`/`{` 两个字面锚，后者在 FIX5 前由 ps1 的**无锚**规则覆盖，**故不是新增过拦**）」）。
+   **更正（G3-FIX7 §A，两端真实 spawn 实测）**：该口径**与实测相反**，`(`/`{` 字面锚**确属本卡新造过拦**，两端都有：
+   - **ps1**：pre-G3 的**无锚**规则只有 `format`/`diskpart`/`del`/`erase`/`ri`/`rd`/`rmdir`（`\b…\b`），
+     而 **`rm` 族（rule 16）在 pre-G3 本来就是命令位锚** `(?:^|[;&|\r\n])`；故 `echo '(rm -rf)'`、
+     `git commit -m "fix (rm -rf)"`、`grep -r "(rm -rf)" .` 在 pre-G3/FIX5 **都是 allow** → 本卡 **deny**。
+   - **sh**：`\(` `\{` 锚在 sh 端**历来不存在**（pre-G3 = `CMD_SEG='(^|[;&|])…'`，FIX5 亦无），
+     故 `printf '{ diskpart }'`、`git commit -m "fix (rm -rf)"` 在 sh 端**更不可能是"非新增"**。
+   - 实测规模（`_g3fix7_probe.mjs`，FIX6 冻结字节）：**14 条合法载荷由 allow → deny**
+     （含验收清单点名的 `printf '{ diskpart }'`），另加 D7 邻居 `echo (rm -rf)`、
+     `git log --grep="(rm -rf)"`、`echo "(time diskpart)"`、`printf %s "(rm -rf)"`、
+     `x { rmdir /s /q x; }`。**G3-FIX7/A 已修**（`\(` `\{` 由锚位移入可重复前缀项）。
+   原文的「登记为加固候选」因此升级为**必修项**，见 `IMPLEMENTATION_RESULT_G3-FIX7.md` §A。
 4. **未覆盖（沿用 FIX5 口径）**：`fdisk/parted/wipefs` 在 ps1 端仍无规则（sh 有）→ 分歧保留；`icacls` 两端不同形；`~`/`$PATH` 变量前缀、`$( )` 内嵌包装（部分由 10/31 段兜住）。
 5. **未做**：xhs 树的 ps1（21 KB 精简变体，**不在 6 份同步清单**）本轮未动、未跑其自有套件（与 FIX4/FIX5 一致，非遗漏）；`hook-redact-test` 的夹具值未改（本轮不涉及脱敏面）。
 6. **诚实披露**：本轮第一次跑红线脚本时，我在 UTF-8 **无 BOM** 的 `.ps1` 里写了中文注释并用 `powershell.exe -File` 执行 → **PowerShell 5.1 解析失败（我的 harness 问题，不是产品缺陷）**；补 BOM + `Parser::ParseFile` 复核（0 error）后重跑，结果见 §6。所有红线**单次运行即通过**，未出现需要按 D10 复跑的假红。

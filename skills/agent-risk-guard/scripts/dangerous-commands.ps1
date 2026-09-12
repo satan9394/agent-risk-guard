@@ -235,19 +235,31 @@ $cmdTest = $cmdTest -replace "(?i)\bprint\s*\(['""][^'""]*['""]\)", 'print()'
 # 在 $cmdTest 基础上进一步剥离内部单/双引号与反引号，用于补查删除类插词变体
 $cmdNaked = $cmdTest -replace '["''`]', ''
 # ---- G3-FIX6/A：命令位前缀的**单一定义**（本文件唯一权威副本；全部危险基座规则**引用**它）----
-#   形态 = 命令位锚 + 包装词序列(可重复) + 可选绝对路径前缀 + 可选 cmd/cmd.exe/command/env 包装。
-#   1) 命令位锚 `(?:^|[;&|\r\n]|\(|\{)`：行首/语句分隔符/换行/子 shell/块 —— 均**真实执行**其后命令。
-#   2) 包装词闭集 `(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)`：真实执行其后命令。
-#      · 前八个是 FIX5 只补了 sudo 而丢掉的一整类（`time diskpart` / `nice rmdir /s /q x` /
-#        `nohup rmdir /s /q x` 8 条退出码回归），本轮两端一起补回。
-#      · `then|do|else` 是 if/for 的命令位保留词，放在**包装词位**而非锚位：与处方**行为等价**
-#        （`if true; then rmdir /s /q x; fi` = `;` 锚 + `then ` 包装 + `rmdir`；
-#         `for i in 1; do del x; done` = `;` 锚 + `do ` 包装 + `del `）**照样 deny**，
-#         但 `git commit -m "do rm docs"` / `echo "do rm"` 这类**引号内散文**不会被点着
-#        （若把 `\bthen\b|\bdo\b|\belse\b` 放进锚位，`do` 前只需一个词边界 → 引号内 `do rm` 变成新过拦）。
-#   3) 路径前缀限「以 / 开头」，避免 `cat ./etc/mkfs.conf` 这类相对路径误伤。
+#   形态 = 命令位锚 + **可重复前缀项序列**（每一项都落在「真实执行其后命令」的位置上）。
+#   1) 命令位锚 `(?:^|[;&|\r\n])`：**只认** 行首 / 语句分隔符 / 换行。
+#      G3-FIX7/A：`\(` `\{` 由**锚位**移入**前缀项**（见 2）。理由（实测见 IMPLEMENTATION_RESULT_G3-FIX7 §A）：
+#      正则看不到引号，把括号放锚位 = 「文本里只要出现 `(` / `{` 就算命令位」——
+#      `printf '{ diskpart }'` / `echo "(diskpart)"` / `git commit -m "fix (rm -rf)"` /
+#      `grep -r "(rm -rf)" .` / `sed -n 's/(rm -rf)/x/p' f` / `ls (rm -rf)` 等**合法命令**
+#      实测由 allow → deny（其中 `printf '{ diskpart }'` 是验收清单点名的「零过拦」项）。
+#      移入前缀项后：`(rmdir /s /q x)` / `{ rmdir /s /q x; }` / `if true; then (rmdir /s /q x); fi`
+#      **仍 deny**（它们的 `(` / `{` 前面是**锚**或**已消费的包装词**），而 `echo (rm -rf)` 的 `(`
+#      前面是 `echo `（不是前缀项）→ allow。**与本文件对 `then|do|else` 的处置同构**。
+#   2) 可重复前缀项（**任意顺序、任意嵌套**，G3-FIX7/B）：
+#      · 包装词闭集 `sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else`（真实执行其后命令）
+#      · 子 shell `\(` / 块 `\{`
+#      · 绝对路径 `/[^\s;&|]*/`（限「以 / 开头」，避免 `cat ./etc/mkfs.conf` 这类相对路径误伤）
+#      · Windows 包装 `cmd[.exe] /c `、shell 内建 `command [-p] `、`env [-i|-0|-v|--xxx|-u NAME|-C DIR|-S STR|VAR=v]… `
+#        —— `env` 的**带参数**选项（`-u NAME` / `-C DIR` / `-S STR`）按真实形态逐个列出（G3-FIX7/B），
+#        与 `cmd /c`（Windows 形态）、`command -p` 同批；`command -v|-V` **故意不列**（只查路径、不执行）。
+#      `then|do|else` 之所以在**包装词位**而非锚位：`if true; then rmdir /s /q x; fi` = `;` 锚 +
+#      `then ` 包装 + `rmdir`，照样 deny；但 `git commit -m "do rm docs"` 这类**引号内散文**不会被点着。
+#      G3-FIX7/B：FIX6 是「包装词* → 路径 → (cmd|command|env)」的**固定顺序**，包装词与 command/env
+#      **不可交错** → `command time diskpart` / `env nice diskpart` / `env sudo diskpart` /
+#      `command cmd /c diskpart` 等 **≥10 条真实可执行形态**落到前缀之外 → allow（相对**冻结基线**
+#      是放松，D12 违规）。并为**同一个可重复组**后消除（任意顺序、任意嵌套）。
 #   ⚠️ **不得放宽成「任意单词」**：`x diskpart`（x 不是命令）必须仍 allow —— 见闸门 K18/K22/K26/L 段反向守卫。
-$CMD_PRE = '(?i)(?:^|[;&|\r\n]|\(|\{)\s*(?:(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)\s+)*(?:/[^\s;&|]*/)?(?:cmd(?:\.exe)?\s+/c\s+|command\s+|env\s+)?'
+$CMD_PRE = '(?i)(?:^|[;&|\r\n])\s*(?:(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)\s+|\(\s*|\{\s*|/[^\s;&|]*/|cmd(?:\.exe)?\s+/c\s+|command\s+(?:-p\s+)?|env\s+(?:(?:-i|-0|-v|--[a-z-]+[^\s]*|-[uCS]\s+[^\s]+|[A-Za-z_][A-Za-z0-9_]*=[^\s]*)\s+)*)*'
 
 # ---- ========== 危险命令模式匹配 ========== ----
 # 全部为致命级别 — 硬拦截，不询问
