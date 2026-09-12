@@ -23,6 +23,16 @@
 #   [F2] `redact_cmd()` 步骤 3 的 JSON 转义补齐**全部 C0 控制字符（含 TAB）**——旧实现只转义 \ " CR 与换行，
 #        命令含 TAB 时输出非法 JSON（调用方 JSON.parse 失败 → 相当于放行）。
 #   [F3] 纯注释放行改为「整串第一个非空白字符是 #」（旧实现用逐行锚点，`危险命令\n# 注释` 被提前放行）。
+# 2026-09-11 G3（跨端判定收敛 + 跨端判定闸门）：
+#   [T3] 空引号归一：判定前只删除**空引号对**（'' / ""）→ `rm'' --help` ≡ `rm --help`（放行），
+#        而 `rm'' -rf /tmp/t` → `rm -rf /tmp/t` **仍然 deny**（归一后照常跑全部规则，无短路）。
+#        注意：回显/脱敏仍用**原始命令**（cmdOrig），故生产出口与 core/ps1 的逐字一致性不变。
+#   [T5/T2 + 大小写整类] 判定规则 grep 一律 `-i`（ps1 的 `-match` 默认大小写不敏感，本侧旧实现漏了）；
+#        唯一例外 `git switch -C` 保持**大小写敏感**（ps1 L481 用 -cmatch 精确大写，`-c` 为安全的新建分支）。
+#   [T9/T10] command 非字符串按 PowerShell `[string]` 转换语义处理：null → 缺字段 deny；`[]`/`{}` →
+#        空串 deny；`["rm","-rf","/tmp/t"]` → "rm -rf /tmp/t" deny；`123`/`true`/`{"a":1}` → 同 ps1 放行。
+#   以上跨端一致性由 packages/core/test/decision-parity.test.ts 守住（真实 spawn + 进程 stdin）。
+#
 # 注意：这与 .ps1 不同之处仅在平台相关项（reg delete / icacls / certutil 等 Windows 工具不在此列）
 
 set -euo pipefail
@@ -124,7 +134,8 @@ redact_text() {
 redact_cmd() {
     local safe
     # 1) 逐行脱敏：sed 天然按行处理，故命令词锚定的规则（-p / --user）不会跨原始行命中别的命令
-    safe=$(printf '%s' "$cmd" | redact_text)
+    # G3：回显/脱敏用**原始命令**（空引号归一前的 cmdOrig），保证生产出口与 core/ps1 逐字一致
+    safe=$(printf '%s' "$cmdOrig" | redact_text)
     # 2) 跨行 PEM 补脱敏：PEM 是三端唯一允许跨行的规则，而步骤 1 的逐行处理必然漏掉它。
     #    把换行临时映射为 \002（非 '-'、非空白）以便 [^-]* 跨过，跑完立即还原为换行；
     #    本趟只跑 PEM 规则，其余规则保持「不跨行」的语义。
@@ -188,6 +199,7 @@ fi
 
 # ---- 读取 stdin（G5：空输入不再放行，交由下方 fail-closed 状态机处理）----
 cmd=""
+cmdOrig=""
 tool_name=""
 inputJson=$(cat 2>/dev/null || true)
 
@@ -228,7 +240,8 @@ tn=sane(d.get("tool_name"))
 ti=d.get("tool_input")
 if not isinstance(ti,dict):
     print("NO_TI\t"+tn, end=""); sys.exit(0)
-if "command" not in ti:
+if "command" not in ti or ti.get("command") is None:
+    # G3/T9：JSON null 与「缺 command 键」同义（对齐 ps1 L204 的 `$null -eq ...command`）→ deny
     print("NO_CMD\t"+tn, end=""); sys.exit(0)
 print("OK\t"+tn, end="")' 2>/dev/null) || parsed=""
     # 协议字段用 TAB 分隔；python3 已把 tool_name 内的 TAB/换行折叠为空格，故解析仍是单行两字段
@@ -271,9 +284,26 @@ if command -v python3 >/dev/null 2>&1; then
     cmd=$(printf '%s' "$inputJson" | python3 -c 'import sys,json
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
+def ps_cast(v):
+    # G3/T9/T10：复刻 PowerShell 的 [string] 转换（ps1 L205 的 [string]$data.tool_input.command）
+    if v is None: return ""
+    if v is True: return "True"
+    if v is False: return "False"
+    if isinstance(v,str): return v
+    if isinstance(v,int): return str(v)
+    if isinstance(v,float): return repr(v)
+    if isinstance(v,list): return " ".join(ps_elem(x) for x in v)
+    if isinstance(v,dict):
+        if not v: return ""          # 空对象 → "" → 落「command 为空」分支 deny（ps1 实测同）
+        return "@{" + "; ".join(str(k)+"="+ps_elem(x) for k,x in v.items()) + "}"
+    return str(v)
+def ps_elem(v):
+    if isinstance(v,list): return "System.Object[]"
+    if isinstance(v,dict): return "System.Management.Automation.PSCustomObject"
+    return ps_cast(v)
 try:
     d=json.load(sys.stdin)
-    print(d.get("tool_input",{}).get("command",""), end="")
+    print(ps_cast(d.get("tool_input",{}).get("command","")), end="")
 except Exception:
     pass' 2>/dev/null) || true
 fi
@@ -295,6 +325,18 @@ sys.stdout.reconfigure(encoding="utf-8")
 print(unicodedata.normalize("NFKC", sys.stdin.read()), end="")') || true
 fi
 
+# ===== G3/T3：空引号归一（对齐 ps1 L365 的 ["'']* 语义）===============================
+# 缺陷（编排者实测）：`rm'' --help` 在 ps1 侧等价于 `rm --help` → 放行；本侧引号插词规则（L332/L462）
+#   把它当「引号插词的 rm」直接 deny → 误拦。
+# 修法：判定前**只删除空的引号对**（'' 与 ""），即 shell 语义下无操作的字符串拼接：
+#   `rm'' --help` → `rm --help`（放行）；`rm'' -rf /tmp/t` → `rm -rf /tmp/t`（**仍 deny**）；
+#   `r''m -rf /tmp/t` → `rm -rf /tmp/t`（**仍 deny**）—— 归一后照常跑**全部**规则，不设短路。
+# ⚠️ 归一方向恒为「多看见」：删空引号只会让命令词与分隔符**相邻**（`;''rm` → `;rm`、`r''m` → `rm`），
+#   不会把危险词藏起来，故不构成新的绕过面（邻居面钉在 decision-parity.test.ts）。
+# 回显/脱敏用原始命令 cmdOrig（见 redact_cmd），故 deny JSON 与 core/ps1 的逐字一致性不受影响。
+cmdOrig="$cmd"
+cmd=$(printf '%s' "$cmd" | sed -E "s/''//g; s/\"\"//g")
+
 # ---- 纯注释命令放行（对齐 .ps1 L215 的「整串开头 `\s*#`」语义）----
 # G5：旧实现用 grep 的**逐行**锚点 `^[[:space:]]*#`，任一行以 # 开头即放行，于是
 #   `rm -rf /tmp/t\n# note`（首行危险、次行注释）被提前放行 = fail-open（ps1 为 deny）。
@@ -311,14 +353,15 @@ CMD_SEG='(^|[;&|])[[:space:]]*'
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 
 # 1) POSIX 删除类（命令边界锚定；echo/printf 参数已剥离；R25：rm --help/-h/--version 无害）
-if printf '%s' "$cmdtest" | grep -qE "${CMD_SEG}rmdir([[:space:]]|-)|${CMD_SEG}unlink([[:space:]]|-)|${CMD_SEG}shred([[:space:]]|-)"; then
+if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}rmdir([[:space:]]|-)|${CMD_SEG}unlink([[:space:]]|-)|${CMD_SEG}shred([[:space:]]|-)"; then
     deny_command "POSIX permanent deletion (rmdir/unlink/shred). Use trash command."
 fi
 # rm：排除 --help/-h/--version（无害）；其余 rm 实参一律拦
-if printf '%s' "$cmdtest" | grep -qE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; then
-    rmseg=$(printf '%s' "$cmdtest" | sed -nE 's/.*(^|[;&|])[[:space:]]*rm[[:space:]]*([^;&|]*)/\2/p' | head -1 | sed 's/[[:space:]]*$//')
+if printf '%s' "$cmdtest" | grep -qiE "(^|[;&|])[[:space:]]*rm([[:space:]]|-)"; then
+    # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
+    rmseg=$(printf '%s' "$cmdtest" | tr '[:upper:]' '[:lower:]' | sed -nE 's/.*(^|[;&|])[[:space:]]*rm[[:space:]]*([^;&|]*)/\2/p' | head -1 | sed 's/[[:space:]]*$//')
     case "$rmseg" in
-        -h|--help|-V|--version) ;;  # 帮助/版本 → 放行
+        -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
         *) deny_command "rm is permanent deletion. Use trash command." ;;
     esac
 fi
@@ -329,137 +372,141 @@ if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}Remove-Item|${CMD_SEG}del([[:sp
 fi
 
 # 引号插词 rm 变体（rm'' -rf / rm" " -rf / r''m，对齐 .ps1 16c；R25：实引号 + 任意引号内内容）
-if printf '%s' "$cmdtest" | grep -qE "${CMD_SEG}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
+if printf '%s' "$cmdtest" | grep -qiE "${CMD_SEG}rm[[:space:]]*[\"''][^;&|]*[[:space:]]*-[a-z]"; then
     deny_command "Quoted-word rm variant is permanent deletion."
 fi
 # 引号插词在命令名内（r''m / r""m）
-if printf '%s' "$cmd" | grep -qE 'r["'"'"']+m([[:space:]]|-)'; then
+if printf '%s' "$cmd" | grep -qiE 'r["'"'"']+m([[:space:]]|-)'; then
     deny_command "Quoted-name rm variant is permanent deletion."
 fi
 
 # 2) find -delete / -exec rm
-if printf '%s' "$cmd" | grep -qE 'find[^;&|\n]*-delete|find[^;&|\n]*-exec[^;&|\n]*rm'; then
+if printf '%s' "$cmd" | grep -qiE 'find[^;&|\n]*-delete|find[^;&|\n]*-exec[^;&|\n]*rm'; then
     deny_command "find -delete/-exec rm is permanent deletion."
 fi
 
 # 3) xargs/for 批量 rm
-if printf '%s' "$cmd" | grep -qE '(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)'; then
+if printf '%s' "$cmd" | grep -qiE '(xargs[^;&|\n]*rm|for[^;]*(;|do)[^;]*rm)'; then
     deny_command "xargs/for rm is permanent deletion."
 fi
 
 # 3b) rm -rf 任意位置（对齐 .ps1 15 区：echo/printf 引号已由 cmdtest 剥离，无引号 echo rm -rf 也是真实危险）
-if printf '%s' "$cmdtest" | grep -qE 'rm[[:space:]]+-r{0,1}f{0,1}[[:space:]]+'; then
+if printf '%s' "$cmdtest" | grep -qiE 'rm[[:space:]]+-r{0,1}f{0,1}[[:space:]]+'; then
     deny_command "rm -rf recursive delete is permanent deletion."
 fi
 
 # 4) Python 删除类（含 __import__/importlib 动态；用 cmdtest 防 print/echo 字符串误伤）
-if printf '%s' "$cmdtest" | grep -qE 'shutil\.rmtree|os\.(remove|unlink|rmdir|removedirs)|pathlib[^;]*\.(unlink|rmdir)|__import__\(["'"'"']shutil["'"'"']\).*rmtree|importlib\.import_module\(["'"'"']shutil["'"'"']\).*rmtree'; then
+if printf '%s' "$cmdtest" | grep -qiE 'shutil\.rmtree|os\.(remove|unlink|rmdir|removedirs)|pathlib[^;]*\.(unlink|rmdir)|__import__\(["'"'"']shutil["'"'"']\).*rmtree|importlib\.import_module\(["'"'"']shutil["'"'"']\).*rmtree'; then
     deny_command "Python permanent deletion detected. Use trash command."
 fi
 
 # 5) Python subprocess 动态执行（对齐 .ps1 33）
-if printf '%s' "$cmd" | grep -qE 'subprocess\.(call|run|Popen|check_call|check_output)'; then
+if printf '%s' "$cmd" | grep -qiE 'subprocess\.(call|run|Popen|check_call|check_output)'; then
     deny_command "Python subprocess dynamic execution detected."
 fi
 
 # 6) Node.js 删除类
-if printf '%s' "$cmd" | grep -qE 'fs\.(rmSync|unlinkSync|rmdirSync|rm\(|unlink\(|rmdir\()|fs\.promises\.rm|rimraf|fs-extra[^;]*remove'; then
+if printf '%s' "$cmd" | grep -qiE 'fs\.(rmSync|unlinkSync|rmdirSync|rm\(|unlink\(|rmdir\()|fs\.promises\.rm|rimraf|fs-extra[^;]*remove'; then
     deny_command "Node.js permanent deletion detected. Use trash command."
 fi
 
 # 6b) Perl/Ruby 解释器 one-liner 删除类（2026-09-10 补：unlink 段首锚定匹配不到 -e/-E 参数中段）
-if printf '%s' "$cmd" | grep -qE '(perl|ruby)[[:space:]]+-[eE][[:space:]]+["'"'"'][^"'"'"']*(unlink|rmdir|shred|File::delete|rm[[:space:]]*-rf)'; then
+if printf '%s' "$cmd" | grep -qiE '(perl|ruby)[[:space:]]+-[eE][[:space:]]+["'"'"'][^"'"'"']*(unlink|rmdir|shred|File::delete|rm[[:space:]]*-rf)'; then
     deny_command "Perl/Ruby one-liner permanent deletion detected."
 fi
 
 # 7) Git 破坏性操作整类（对齐 .ps1 30 + R3：switch -C / worktree / force-with-lease 放宽）
 # 2026-09-10 跨平台测试补缺口：checkout -- <file>、restore <file>（原只匹配整目录形态）、git rm
 # 误伤防线：git restore --help/-h/--version 放行（restore 后跟 --help 不是破坏性操作）
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+restore[[:space:]]+--(help|version)'; then
+# G3：本节整类改 -i（对齐 ps1 的 -match 默认大小写不敏感）。**唯一例外** `git switch -C` 保持
+#   大小写敏感——ps1 L481 用 -cmatch 精确大写，而 `-c` 是安全的新建分支（sh-hook-test 有 allow 用例）。
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+restore[[:space:]]+--(help|version)'; then
     :
-elif printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--([[:space:]]|$)|restore([[:space:]]|$)|switch[[:space:]]+-C)'; then
+elif printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--([[:space:]]|$)|restore([[:space:]]|$))' || printf '%s' "$cmd" | grep -qE 'git[[:space:]]+switch[[:space:]]+-C'; then
     deny_command "git irreversible operation (clean/reset/checkout/restore/switch -C) blocked."
 fi
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+rm([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+rm([[:space:]]|$)'; then
     deny_command "git rm permanently deletes tracked files (no recycle bin)."
 fi
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+worktree[[:space:]]+remove[[:space:]]+--force'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+worktree[[:space:]]+remove[[:space:]]+--force'; then
     deny_command "git worktree remove --force discards changes."
 fi
 # R3+R4 修复：--force 后须空白/结尾（放开 --force-with-lease）；覆盖 -f 短标志（R4-01）
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+push[^;]*--force([[:space:]]|$)|git[[:space:]]+push[^;]*-f([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+push[^;]*--force([[:space:]]|$)|git[[:space:]]+push[^;]*-f([[:space:]]|$)'; then
     deny_command "git push --force/-f overwrites remote history."
 fi
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+branch[[:space:]]+-[dD]'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+branch[[:space:]]+-[dD]'; then
     deny_command "git branch -d/-D deletes branch."
 fi
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+stash[[:space:]]+drop'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+stash[[:space:]]+drop'; then
     deny_command "git stash drop deletes stash."
 fi
 # R3 新发现：wmic shadowcopy delete（勒索软件前置）
-if printf '%s' "$cmd" | grep -qE 'wmic[^;]*(shadowcopy|shadowstorage)[^;]*delete|wmic[^;]*delete'; then
+if printf '%s' "$cmd" | grep -qiE 'wmic[^;]*(shadowcopy|shadowstorage)[^;]*delete|wmic[^;]*delete'; then
     deny_command "wmic delete (shadowcopy/system admin) blocked."
 fi
 
 # 8) 磁盘操作（diskpart/format 用命令边界匹配以防 echo 字符串误伤）
-if printf '%s' "$cmd" | grep -qE "${CMD_SEG}diskpart\b|${CMD_SEG}mkfs\.|${CMD_SEG}fdisk|${CMD_SEG}parted|${CMD_SEG}wipefs"; then
+if printf '%s' "$cmd" | grep -qiE "${CMD_SEG}diskpart\b|${CMD_SEG}mkfs\.|${CMD_SEG}fdisk|${CMD_SEG}parted|${CMD_SEG}wipefs"; then
     deny_command "Disk formatting/partitioning detected."
 fi
-if printf '%s' "$cmd" | grep -qE 'dd[[:space:]].*of=/dev/'; then
+if printf '%s' "$cmd" | grep -qiE 'dd[[:space:]].*of=/dev/'; then
     deny_command "dd writing to device destroys data."
 fi
-if printf '%s' "$cmd" | grep -qE 'truncate[^;]*(/dev/|PhysicalDrive|\\\\\.\\\\)'; then
+if printf '%s' "$cmd" | grep -qiE 'truncate[^;]*(/dev/|PhysicalDrive|\\\\\.\\\\)'; then
     deny_command "truncate to block device destroys data."
 fi
-if printf '%s' "$cmd" | grep -qE "${CMD_SEG}format[[:space:]]+[A-Za-z]:"; then
+# G3：补齐 ps1 L262 的 `\s*[/]` 尾巴——ps1 只拦 `format X: /...`（真格式化），裸 `format C:` 放行；
+#   本侧旧实现漏了该尾巴，`-i` 后大写 `FORMAT C:` 会与 ps1 发散（邻居探针 C15 实测）。对齐后两端同判。
+if printf '%s' "$cmd" | grep -qiE "${CMD_SEG}format[[:space:]]+[A-Za-z]:[[:space:]]*/"; then
     deny_command "format destroys disk data."
 fi
 
 # 9) 远程代码执行（管道到 shell：任意来源，R25 补 base64/xxd/zcat/gunzip/bzip2/tar/xz）
-if printf '%s' "$cmd" | grep -qE '(echo|cat|printf|tee|curl|wget|iwr|base64|xxd|zcat|gunzip|bzip2|tar|xz)[^|;]*\|[[:space:]]*(bash|sh|zsh|pwsh|powershell)'; then
+if printf '%s' "$cmd" | grep -qiE '(echo|cat|printf|tee|curl|wget|iwr|base64|xxd|zcat|gunzip|bzip2|tar|xz)[^|;]*\|[[:space:]]*(bash|sh|zsh|pwsh|powershell)'; then
     deny_command "Pipe to shell is code injection risk."
 fi
 
 # 10) 子展开 / 反引号包裹 + herestring（R25：`/<<< 任意位置）
-if printf '%s' "$cmd" | grep -qE '\$\([^)]*(rm|Remove-Item|del|rmdir|shutdown)|`[^`]*(rm|Remove-Item|del|rmdir|shutdown)|<<<?[[:space:]]*["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s)'; then
+if printf '%s' "$cmd" | grep -qiE '\$\([^)]*(rm|Remove-Item|del|rmdir|shutdown)|`[^`]*(rm|Remove-Item|del|rmdir|shutdown)|<<<?[[:space:]]*["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s)'; then
     deny_command "Command substitution / backtick / herestring with dangerous command."
 fi
 
 # 10b) 变量赋值危险 + 反斜杠/前导斜杠 rm（R25：X=rm; $X -rf / r\m / /rm）
-if printf '%s' "$cmd" | grep -qE '=[[:space:]]*["'"'"']*rm([[:space:]]|["'"'"']|;|$)|=[[:space:]]*["'"'"']*Remove-Item([[:space:]]|["'"'"']|;|$)|(^|[;&|[:space:]])[\\/]{1,2}rm([[:space:]]|-)|r[\\/]m([[:space:]]|-)'; then
+if printf '%s' "$cmd" | grep -qiE '=[[:space:]]*["'"'"']*rm([[:space:]]|["'"'"']|;|$)|=[[:space:]]*["'"'"']*Remove-Item([[:space:]]|["'"'"']|;|$)|(^|[;&|[:space:]])[\\/]{1,2}rm([[:space:]]|-)|r[\\/]m([[:space:]]|-)'; then
     deny_command "Variable assignment / backslash-prefixed rm (dangerous execute)."
 fi
 
 # 11) eval / shell -c 包裹（单双引号 + R25 变量间接 F="rm -rf"; eval $F）
-if printf '%s' "$cmd" | grep -qE 'eval[[:space:]]+(\$[A-Za-z_0-9]+|["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s))'; then
+if printf '%s' "$cmd" | grep -qiE 'eval[[:space:]]+(\$[A-Za-z_0-9]+|["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s))'; then
     deny_command "eval-wrapped dangerous command."
 fi
-if printf '%s' "$cmd" | grep -qE '(bash|sh|pwsh|powershell)[[:space:]]+-c[[:space:]]+(\$[A-Za-z_0-9]+|["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s))'; then
+if printf '%s' "$cmd" | grep -qiE '(bash|sh|pwsh|powershell)[[:space:]]+-c[[:space:]]+(\$[A-Za-z_0-9]+|["'"'"'][^"'"'"']*(rm[[:space:]]*-rf|rmdir[[:space:]]*/s))'; then
     deny_command "shell -c wrapped dangerous command."
 fi
 
 # 12) 系统级操作（无尾随空格变体，对齐 .ps1 28）
-if printf '%s' "$cmd" | grep -qE '(^|[;&|[:space:]])(sudo[[:space:]]+)?(shutdown|reboot|halt|poweroff)([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])(sudo[[:space:]]+)?(shutdown|reboot|halt|poweroff)([[:space:]]|$)'; then
     deny_command "System shutdown/reboot blocked."
 fi
 
 # 13) chmod 全局权限（无 -R 也拦，对齐 .ps1 29）
-if printf '%s' "$cmd" | grep -qE '(^|[;&|[:space:]])chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+'; then
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])chmod[[:space:]]+(-[^[:space:]]+[[:space:]]+)?(777|0777|a\+rwx)[[:space:]]+'; then
     deny_command "chmod global permission (777) is a security risk."
 fi
 
 # 14) docker 破坏扩展（对齐 .ps1 35 + R4-03：volume prune；R25 补 exec）
-if printf '%s' "$cmd" | grep -qE 'docker[[:space:]]+(system[[:space:]]+prune|volume[[:space:]]+(rm|prune)|container[[:space:]]+prune|run[^;]*(rm|rmdir)|exec[^;]*(rm|rmdir))'; then
+if printf '%s' "$cmd" | grep -qiE 'docker[[:space:]]+(system[[:space:]]+prune|volume[[:space:]]+(rm|prune)|container[[:space:]]+prune|run[^;]*(rm|rmdir)|exec[^;]*(rm|rmdir))'; then
     deny_command "docker prune/volume rm/container delete destroys data."
 fi
 
 # 15) git gc --prune / reflog expire（R2）
-if printf '%s' "$cmd" | grep -qE 'git[[:space:]]+gc[^;]*--prune|git[[:space:]]+reflog[[:space:]]+expire'; then
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+gc[^;]*--prune|git[[:space:]]+reflog[[:space:]]+expire'; then
     deny_command "git gc --prune / reflog expire destroys history."
 fi
 
 # 16) 引号插词 rm（rm''-rf，对齐 .ps1 16c；R25：需实引号，rm -h 不误伤）
-if printf '%s' "$cmd" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]*["'"'"'][^[:space:]]*[[:space:]]*-[a-z]'; then
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|[:space:]])rm[[:space:]]*["'"'"'][^[:space:]]*[[:space:]]*-[a-z]'; then
     deny_command "Quoted-word rm variant is permanent deletion."
 fi
 
