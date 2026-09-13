@@ -259,7 +259,23 @@ $cmdNaked = $cmdTest -replace '["''`]', ''
 #      `command cmd /c diskpart` 等 **≥10 条真实可执行形态**落到前缀之外 → allow（相对**冻结基线**
 #      是放松，D12 违规）。并为**同一个可重复组**后消除（任意顺序、任意嵌套）。
 #   ⚠️ **不得放宽成「任意单词」**：`x diskpart`（x 不是命令）必须仍 allow —— 见闸门 K18/K22/K26/L 段反向守卫。
-$CMD_PRE = '(?i)(?:^|[;&|\r\n])\s*(?:(?:sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)\s+|\(\s*|\{\s*|/[^\s;&|]*/|cmd(?:\.exe)?\s+/c\s+|command\s+(?:-p\s+)?|env\s+(?:(?:-i|-0|-v|--[a-z-]+[^\s]*|-[uCS]\s+[^\s]+|[A-Za-z_][A-Za-z0-9_]*=[^\s]*)\s+)*)*'
+#   ── G3-FIX8/A（本轮唯一新增轴）：**包装词自身的选项**纳入前缀 ─────────────────────────────
+#     实测（`_g3fix8_*`，真实 spawn）：`sudo -u root diskpart` / `nice -n 5 diskpart` /
+#     `ionice -c 3 diskpart` / `doas -u root diskpart` / `exec -a name diskpart` / `time -p diskpart`
+#     在 FIX7 两端**全部 allow**，而 **pre-G3 ps1 本就 deny** → 属 D12 意义上的**放松残留**
+#     （FIX5 锚化时丢失，FIX6 只收回「裸包装词」子情形）。本轮把它们收回两端 deny。
+#     判据（源卡 §1）：选项消费**只发生在包装词紧邻位置**，且**不得**写成「吃掉任意 token」——
+#     故逐项限定**确凿吃参**的选项族（`-[A-Za-z]\s+[^\s]+`），其余只吃选项本身：
+#       · 吃参（**独立分支，且在 `-p` 不吃参分支之后**）：`-[A-Za-z]\s+tok`（覆盖 sudo -u/-g/-p/-C/-U/-r/-t/-h/-D、
+#         doas -u、exec -a、nice -n、ionice -c/-n/-p）、`-[CgupS]\s+tok`、`-n\s+tok`
+#       · 不吃参：`-[p]`（**必须排在吃参分支之前**：`time -p` 的 `-p` 不吃参，若排在后面会把
+#         `time -p ls …` 的 `ls` 误当操作数 → 新过拦）、`-[inEpvcutlf]`、`--`（选项终止符）、
+#         `-`（占位）、`sudo VAR=v`
+#     **不纳入**（避免过拦，与 pre-G3 的「无锚 \b…\b」同向）：未知选项字母、`--long=value` 形态、
+#       `--long value` 形态、`env -S 'a b'`（值内含空格）—— 这些在两端仍 allow，如实登记为残余面。
+#     `command` 分支同理收窄为 POSIX 实装的 `-p`（**保留** `command -v|-V` 的 allow）；
+#       `env` 分支收窄为 `-u/-C/-S` 吃参 + `-i/-n/-0/-v` 不吃参。
+$CMD_PRE = '(?i)(?:^|[;&|\r\n])\s*(?:(?:sudo\s+(?:(--\s*)|(-\s*)|(-[ugpCUrthDRT]\s+[^\s]+\s*)|(-[bEHikKlnsPvAe]\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:time\s+(?:(--\s*)|(-\s*)|(-[fo]\s+[^\s]+\s*)|(-[apv]\s*)|(--[a-z-]+[^\s]*\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:nice\s+(?:(--\s*)|(-\s*)|(-[n]\s+[^\s]+\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:ionice\s+(?:(--\s*)|(-\s*)|(-[cnpP]\s+[^\s]+\s*)|(-[tu]\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:doas\s+(?:(--\s*)|(-\s*)|(-[uC]\s+[^\s]+\s*)|(-[ns]\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:exec\s+(?:(--\s*)|(-\s*)|(-[a]\s+[^\s]+\s*)|(-[cl]\s*)|([A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+))*)|(?:(nohup|setsid|busybox|then|do|else)\s+)|\(\s*|\{\s*|/[^\s;&|]*/|cmd(?:\.exe)?\s+/c\s+|command\s+(?:-p\s+)?|env\s+(?:(?:-i|-0|-v|-[uCS]\s+[^\s]+|--[a-z-]+[^\s]*|[A-Za-z_][A-Za-z0-9_]*=[^\s]*)\s+)*)*'
 
 # ---- ========== 危险命令模式匹配 ========== ----
 # 全部为致命级别 — 硬拦截，不询问

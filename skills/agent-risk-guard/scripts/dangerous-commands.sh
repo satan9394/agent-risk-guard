@@ -439,7 +439,24 @@ CMD_SEG='(^|[;&|])[[:space:]]*'
 #   捕获组编号（sed 抽取式规则 L445 依赖）：\1 锚 \2 可重复前缀项序列 \3 包装词 \4 command 的 `-p`
 #     \5 env 的 `-x|VAR=v` 序列 \6 env 序列内的单项（绝对路径项 `/[^[:space:];&|]*/` **不带括号**，
 #     故不占组号）；规则里的 rm 实参 = **\7**。
-CMD_PRE='(^|[;&|])[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|busybox|then|do|else)[[:space:]]+|\([[:space:]]*|\{[[:space:]]*|/[^[:space:];&|]*/|cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+(-p[[:space:]]+)?|env[[:space:]]+((-[i0v]|-[uCS][[:space:]]+[^[:space:]]+|--[a-z-]+[^[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)*)*'
+#     ⚠️ G3-FIX8/A：本条前缀**不再被任何 \N 引用** —— 见 L465 的说明（组数已达 17，超出 GNU sed `\N` 可表达范围）。
+#   ── G3-FIX8/A（本轮唯一新增轴）：**包装词自身的选项**纳入前缀 ─────────────────────────────
+#     实测（`_g3fix8_*`，真实 spawn）：`sudo -u root diskpart` / `nice -n 5 diskpart` /
+#     `ionice -c 3 diskpart` / `doas -u root diskpart` / `exec -a name diskpart` / `time -p diskpart`
+#     在 FIX7 两端**全部 allow**，而 **pre-G3 ps1 本就 deny** → 属 D12 意义上的**放松残留**
+#     （FIX5 锚化时丢失，FIX6 只收回「裸包装词」子情形）。本轮把它们收回两端 deny。
+#     判据（源卡 §1）：选项消费**只发生在包装词紧邻位置**，且**不得**写成「吃掉任意 token」——
+#     故逐项限定**确凿吃参**的选项族（`-[A-Za-z][[:space:]]+[^[:space:]]+`），其余只吃选项本身：
+#       · 吃参（独立分支，避免歧义）：`-[A-Za-z]\s+tok`（覆盖 sudo -u/-g/-p/-C/-U/-r/-t/-h/-D、
+#         doas -u、exec -a、nice -n、ionice -c/-n/-p、sudo -p <prompt>）、`-[CgupS]\s+tok`、`-n\s+tok`
+#       · 不吃参：`-[inEpvcutlf]`、`-p`（**排在吃参分支之前**：`time -p` 的 `-p` 不吃参，
+#         若排在后面会把 `time -p ls …` 的 `ls` 误当操作数 → 新过拦）、`--`（选项终止符）、
+#         `-`（占位）、`sudo VAR=v`
+#     **不纳入**（避免过拦，与 pre-G3 的「无锚 \b…\b」同向）：未知选项字母、`--long=value` 形态、
+#       `--long value` 形态、`env -S 'a b'`（值内含空格）—— 这些在两端仍 allow，如实登记为残余面。
+#     `command` 分支同理收窄为 POSIX 实装的 `-p`（**保留** `command -v|-V` 的 allow，见 L476 的
+#       「只查路径不执行」口径）；`env` 分支收窄为 `-u/-C/-S` 吃参 + `-i/-n/-0/-v` 不吃参。
+CMD_PRE='(^|[;&|])[[:space:]]*((sudo[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[ugpCUrthDRT][[:space:]]+[^[:space:]]+[[:space:]]*)|(-[bEHikKlnsPvAe][[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|(time[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[fo][[:space:]]+[^[:space:]]+[[:space:]]*)|(-[apv][[:space:]]*)|(--[a-z-]+[^[:space:]]*[[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|(nice[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[n][[:space:]]+[^[:space:]]+[[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|(ionice[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[cnpP][[:space:]]+[^[:space:]]+[[:space:]]*)|(-[tu][[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|(doas[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[uC][[:space:]]+[^[:space:]]+[[:space:]]*)|(-[ns][[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|(exec[[:space:]]+((--[[:space:]]*)|(-[[:space:]]*)|(-[a][[:space:]]+[^[:space:]]+[[:space:]]*)|(-[cl][[:space:]]*)|([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+))*)|((nohup|setsid|busybox|then|do|else)[[:space:]]+)|\([[:space:]]*|\{[[:space:]]*|/[^[:space:];&|]*/|cmd[[:space:]]+/c[[:space:]]+|cmd\.exe[[:space:]]+/c[[:space:]]+|command[[:space:]]+(-p[[:space:]]+)?|env[[:space:]]+((-[i0v]|-[uCS][[:space:]]+[^[:space:]]+|--[a-z-]+[^[:space:]]*|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)*)*'
 # echo/printf 引号参数剥离（对齐 .ps1 $cmdTest）：echo "xxx" → echo ""（无引号 rm 是真实危险，不剥）
 cmdtest=$(printf '%s' "$cmd" | sed -E 's/(echo|printf)[[:space:]]+["'"'"'][^"'"'"']*["'"'"']/echo ""/g' | sed -E "s/print[[:space:]]*\(['\"][^'\"]*['\"]\)/print()/g")
 # G3-FIX4/R1：同一剥离规则施加到**空引号归一后**的 cmdNoq 上——rm / Remove-Item 删除族专用。
@@ -457,16 +474,23 @@ if printf '%s' "$cmdtestNoq" | grep -qiE "${CMD_PRE}rm([[:space:]]|-)"; then
     # G3/T5：rmseg 抽取前先小写（sed 的 I 标志是 GNU-only，本文件禁用），保证 `RM --help` 亦判为无害
     # G3-FIX5/A：抽取式同步 CMD_PRE（否则 `sudo rm --help` 抽不到实参 → 误拦；ps1 rule 16 的豁免前瞻同批加前缀）
     # G3-FIX6/A：抽取式**改为引用同一个 ${CMD_PRE}**（不再自带第二份硬编码副本）。
-    # G3-FIX7/B：前缀改为「可重复前缀项序列」后新增 2 个捕获组（command 的 `-p`、env 的 `-x|VAR=v`），
-    #   故实参捕获组由 \6 **顺延到 \7**（\1 锚 \2 序列 \3 包装词 \4 -p \5 env序列 \6 env单项；
-    #   绝对路径项不带括号，不占组号）。组号写错的后果**可功能验证**：sed 报
-    #   `invalid reference \N` 或抽不到实参 → `rm --help` / `sudo rm --help` / `rm'' --help`
-    #   由 allow 变 deny（见闸门 K9/K30 与探针 L01–L03）。实测见 `_g3fix7_diag_groups.mjs`。
-    rmseg=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | sed -nE "s#.*${CMD_PRE}rm[[:space:]]*([^;&|]*)#\\7#p" | head -1 | sed 's/[[:space:]]*$//')
-    case "$rmseg" in
-        -h|--help|-v|--version) ;;  # 帮助/版本 → 放行（小写化后比较，-h/-H/-V/-v 与 ps1 同义）
-        *) deny_command "rm is permanent deletion. Use trash command." ;;
-    esac
+    # G3-FIX7/B：前缀改为「可重复前缀项序列」后实参捕获组顺延到 \7。
+    # G3-FIX8/R1（Evaluator REJECT 点名的 R2 修复）：**组号无关 + 逐行全取**。
+    #   ① 组号问题（事实）：前缀补「包装词自身选项」后捕获组数远超 9，而 GNU sed 的 `\N`
+    #      **不是**任意位数回引（实测 `\10` 只被当作 `\1` 后跟字面数字、`\99` 直接报
+    #      `invalid reference`），故再也表达不了「实参」那一个组 → 必须改为**不用 \N** 的整行替换。
+    #   ② 多行问题（REJECT 的真因）：只取「第一个匹配行」的实参会被首行豁免词掩蔽 ——
+    #      `rm --help` + 换行 + `rm /tmp/t` 本当 deny，却因首行抽到 `--help` 而放行
+    #      （旧式 `sed -nE "…p" | head -1` 有同样毛病；一度写成**无 -n** 的 `sed -E` 更是
+    #      每行都打印，连「首行真删除 + 次行豁免」也被误拦）。
+    #      现改为：取**全部匹配行**的实参，**只要有一条不是 help/version 形态就 deny** ——
+    #      这正是 ps1 rule 16 的**调用点前瞻**语义（豁免只作用于「它自己那次调用」）。
+    #   硬判据（两端一致，见 `_g3fix8r_*` 证据）：4 条豁免形态仍 allow；单行真删除仍 deny；
+    #      「豁免词独占首行 + 换行 + 真删除」9 条重新 deny。
+    rmsegs=$(printf '%s' "$cmdtestNoq" | tr '[:upper:]' '[:lower:]' | grep -E "${CMD_PRE}rm([[:space:]]|-)" | sed -E "s#.*${CMD_PRE}rm[[:space:]]*##" | sed 's/[[:space:]]*$//')
+    if printf '%s\n' "$rmsegs" | grep -qvE '^(-h|--help|-v|--version)$'; then
+        deny_command "rm is permanent deletion. Use trash command."
+    fi
 fi
 
 # 1b) PowerShell 删除类（R15 补齐：Remove-Item/del/erase，-i 大小写不敏感对齐 .ps1；R23 加 Clear-Content/.Delete；R25 加 ri/rd）

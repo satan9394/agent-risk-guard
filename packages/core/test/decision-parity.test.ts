@@ -42,9 +42,22 @@
  *                登记项：FIX6 的固定顺序使 `command time diskpart` 等 ≥10 条真实可执行形态在 ps1 端
  *                相对冻结基线 pre-G3 由 deny → allow，属 D12 放松）。K83–K87 是反向守卫（闭集可重复
  *                **不得**滑向「任意单词」：`x command diskpart` / `timeout diskpart` / `sudorm` 仍 allow）。
- *   L 段 L1–L20：**G3-FIX6/A 新增 + G3-FIX7/A 扩到 20 条**——**跨端身份断言**专用语料
- *                （命令位 / 非命令位成对），由**独立的第二个 test** 断言「两端 decision 逐条一致」
- *                （不看应然），使「单端前缀漂移」提交前必红。L17–L20 是 FIX7/A 的两对括号守卫。
+ *   K 段 K88–K99：**G3-FIX8/A 新增**——**包装词自身的选项**（`sudo -u root` / `nice -n 5` /
+ *                `ionice -c 3` / `doas -u root` / `exec -a name` / `time -p` / `sudo --user=root`）。
+ *                FIX7 只认「包装词 + 空白」，选项把命令词推离命令位 → 两端 allow，而 pre-G3 ps1
+ *                本就 deny（其规则无命令位锚）→ 同属 D12 放松。K97–K99 是反向守卫：选项后是
+ *                **安全命令**（`sudo -u root ls diskpart`）时不得误拦 —— 修法不得「吃掉任意 token」。
+ *   K 段 K100–K116：**G3-FIX8/R3 新增**（独立 Evaluator REJECT 的两条放松面）——
+ *                ① **多行 rm 豁免粒度**（sh 单端）：`rm --help` + 换行 + `rm /tmp/t` 曾被首行豁免掩蔽
+ *                   → 两端 deny；修法取「全部匹配行」，任一行非 help/version 即 deny。
+ *                ② **`env` 长选项**（两端）：`env --ignore-environment diskpart` / `env --unset=FOO …`
+ *                   在 FIX7/HEAD 本就 deny，FIX8 一度收窄 env 分支 → allow；本轮 env/command 分支
+ *                   逐字回到 FIX7 形态。K111–K116 是守卫（长选项后接安全命令、多行无真删除）。
+ *   L 段 L1–L24：**G3-FIX6/A 新增 + G3-FIX7/A 扩到 20 条 + G3-FIX8/A 扩到 22 条 + R3 扩到 24 条**——
+ *                **跨端身份断言**专用语料（命令位 / 非命令位成对），由**独立的第二个 test**
+ *                断言「两端 decision 逐条一致」（不看应然），使「单端前缀漂移」提交前必红。
+ *                L17–L20 是 FIX7/A 的两对括号守卫；L21–L22 是 FIX8/A 的包装词选项守卫；
+ *                L23–L24 是 R3 的多行豁免守卫。
  *   M 段 M1–M15：**G24 新增**——**rule 16 的 help/version 豁免粒度**。豁免只能作用于「它自己那次
  *                直接调用」，**不得**退化成整条命令级抑制（旧 ps1 用第二个 `-and ($cmd -notmatch …)`
  *                做整串否定 → 一处 `rm --help` 就把同一条命令里另一处真删除一并放行）。
@@ -374,6 +387,63 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'K85 commit -m "env nice diskpart"', payload: J('git commit -m "env nice diskpart"'), expect: 'allow', note: '★引号内散文：互串闭集不得点着引号内文本' },
   { id: 'K86 timeout diskpart（反向守卫）', payload: J('timeout diskpart'), expect: 'allow', note: '★包装词必须整词匹配（`time` ⊄ `timeout`），否则「闭集可重复」会滑向「任意单词」' },
   { id: 'K87 sudorm --help（反向守卫）', payload: J('sudorm --help'), expect: 'allow', note: '★同上（`sudo` ⊄ `sudorm`）。⚠️ 注意 `sudorm -rf /tmp/t` **不入本语料**：sh 的既有裸 `rm -rf` 规则（L512，无命令位锚，FIX4 起）会 deny，ps1 allow —— 既存两端分歧，不作闸门断言' },
+  // ── C 面（G3-FIX8/A 新增，K88–K99）：**包装词自身的选项**必须落在命令位前缀之内 ──────────────
+  //   机理（源卡 FIX_BRIEF_G3-FIX8 §1）：FIX7 的前缀只认「包装词 + 空白」，于是包装词**自身选项**
+  //   （`sudo -u root` / `nice -n 5` / `ionice -c 3` / `doas -u root` / `exec -a name` / `time -p`）
+  //   把命令词推离命令位 → 两端 allow；而 **pre-G3 ps1 本来就 deny**（其规则无命令位锚），
+  //   故这是 D12 意义上的**放松残留**（FIX5 锚化时丢失，FIX6 只收回「裸包装词」子情形）。
+  //   修法：在包装词分支后消费**该包装词自身**的选项族 —— 吃参选项用 `-[A-Za-z]\s+tok`，
+  //   不吃参用 `-[p]`/`-[inEpvcutlf]`，`--` 作选项终止符；**不得**写成「吃掉任意 token」。
+  //   K95–K99 是反向守卫：选项后跟安全命令 / 引号内散文 / 未知选项 / 非本包装词的选项。
+  { id: 'K88 sudo -u root diskpart', payload: J('sudo -u root diskpart'), expect: 'deny', note: '★FIX7 放松（ps1 pre-G3=deny → FIX7 两端 allow）→ 本轮两端 deny' },
+  { id: 'K89 sudo -n diskpart', payload: J('sudo -n diskpart'), expect: 'deny', note: '★同上（`-n` 是非交互短选项，不吃参）' },
+  { id: 'K90 sudo -u root rmdir /s /q x', payload: J('sudo -u root rmdir /s /q x'), expect: 'deny', note: '★同上（删除族 + 包装词选项）' },
+  { id: 'K91 nice -n 5 diskpart', payload: J('nice -n 5 diskpart'), expect: 'deny', note: '★同上（`-n <N>` 吃参）' },
+  { id: 'K92 ionice -c 3 diskpart', payload: J('ionice -c 3 diskpart'), expect: 'deny', note: '★同上（`-c <class>` 吃参）' },
+  { id: 'K93 doas -u root diskpart', payload: J('doas -u root diskpart'), expect: 'deny', note: '★同上（`-u <user>` 吃参）' },
+  { id: 'K94 exec -a name diskpart', payload: J('exec -a name diskpart'), expect: 'deny', note: '★同上（`-a <name>` 吃参）' },
+  { id: 'K95 time -p diskpart', payload: J('time -p diskpart'), expect: 'deny', note: '★同上（`-p` 不吃参，但 `time -p diskpart` 里 `diskpart` 仍是命令词）' },
+  { id: 'K96 sudo --user=root diskpart', payload: J('sudo --user=root diskpart'), expect: 'deny', note: '★同上（`--long=value` 形态：由 `-[A-Za-z]\\s+tok` 分支兜住）' },
+  { id: 'K97 sudo -u root ls diskpart（反向守卫）', payload: J('sudo -u root ls diskpart'), expect: 'allow', note: '★选项后是**安全命令**：`ls` 才是命令词，`diskpart` 是它的实参 —— 修法不得吃掉任意 token' },
+  { id: 'K98 nice -n 5 cat file（反向守卫）', payload: J('nice -n 5 cat file'), expect: 'allow', note: '★同上（无危险基座 → 必须仍 allow）' },
+  { id: 'K99 sudo -u root x diskpart（反向守卫）', payload: J('sudo -u root x diskpart'), expect: 'allow', note: '★`x` 不是命令词：选项消费后仍必须停在「非命令位」语义上' },
+  // ── C 面续（G3-FIX8/R3 新增，K100–K116）：**REJECT 的两条放松面** ───────────────────────────
+  //   ① 多行 rm 豁免漏洞（sh 单端）：FIX8 一度把 rm 实参抽取式写成「无 -n 的 sed -E」→ **每一行**都被
+  //      打印，`head -1` 取到首行的豁免词 → 「`rm --help` + 换行 + 真删除」被放行（ps1 一直是 deny）。
+  //      修法：取**全部匹配行**的实参，只要有一条不是 help/version 形态就 deny（= ps1 的调用点前瞻语义）。
+  //      下列 K100–K108 是 Evaluator 点名的 9 条（含 8 种写法）。
+  //   ② `env` 长选项被收窄（**两端**）：FIX8 一度把 env 分支写成 `-[uCS] tok | -[in0v] | VAR=v`，
+  //      丢掉 `--[a-z-]+` → `env --ignore-environment diskpart` 由 FIX7 的 **deny/deny** 退回 allow。
+  //      修法：env/command 分支**逐字回到 FIX7 形态**（前缀语言 ⊇ FIX7 ⇒ 不可能产生 deny→allow）。
+  //   ③ K109–K116 是**守卫**：长选项后跟安全命令、纯豁免形态、多行但无真删除。
+  { id: 'K100 rm --help 首行 + 换行 + 真删除', payload: J('rm --help\nrm /tmp/t'), expect: 'deny', note: '★REJECT R2：sh 曾 allow（首行豁免掩蔽次行真删除）→ 两端 deny' },
+  { id: 'K101 裸 --help 首行 + 换行 + 真删除', payload: J('--help\nrm /tmp/t'), expect: 'deny', note: '★REJECT R2（Evaluator 原始形态之一）' },
+  { id: 'K102 裸 -h 首行 + 换行 + 真删除', payload: J('-h\nrm /tmp/t'), expect: 'deny', note: '★同上' },
+  { id: 'K103 裸 -v 首行 + 换行 + 真删除', payload: J('-v\nrm /tmp/t'), expect: 'deny', note: '★同上（`-v` 在小写化后等同版本标志，必须由「任一行非豁免」兜住）' },
+  { id: 'K104 裸 --version 首行 + 换行 + 真删除', payload: J('--version\nrm /tmp/t'), expect: 'deny', note: '★同上' },
+  { id: 'K105 首行 echo rm --help + 换行 + 真删除', payload: J('echo rm --help\nrm /tmp/t'), expect: 'deny', note: '★同上（首行含豁免词但不是命令位）' },
+  { id: 'K106 --help 首行 + 换行 + sudo 真删除', payload: J('rm --help\nsudo rm /tmp/t'), expect: 'deny', note: '★同上（次行带 CMD_PRE 前缀）' },
+  { id: 'K107 --version 首行 + 换行 + 真删除带后续语句', payload: J('rm --version\nrm /tmp/t; ls'), expect: 'deny', note: '★同上（次行有分隔符）' },
+  { id: 'K108 --help 首行 + 换行 + 绝对路径真删除', payload: J('rm --help\n/usr/bin/rm /tmp/t'), expect: 'deny', note: '★同上（绝对路径前缀）' },
+  { id: 'K109 env --ignore-environment diskpart', payload: J('env --ignore-environment diskpart'), expect: 'deny', note: '★REJECT R1：FIX7/HEAD 两端本为 deny，FIX8 一度收窄 env 长选项 → allow；本轮逐字回到 FIX7 形态' },
+  { id: 'K110 env --unset=FOO diskpart', payload: J('env --unset=FOO diskpart'), expect: 'deny', note: '★同上（`--long=value` 形态）' },
+  { id: 'K111 env --ignore-environment ls（守卫）', payload: J('env --ignore-environment ls'), expect: 'allow', note: '★长选项后是安全命令 → 必须 allow（防「长选项一律吃参」）' },
+  { id: 'K112 env --ignore-environment ls diskpart（守卫）', payload: J('env --ignore-environment ls diskpart'), expect: 'allow', note: '★同上（`diskpart` 是 `ls` 的实参）' },
+  { id: 'K113 env -i ls diskpart（守卫）', payload: J('env -i ls diskpart'), expect: 'allow', note: '★FIX7 既有守卫：`-i` 不吃参' },
+  { id: 'K114 env VAR=1 ls（守卫）', payload: J('env VAR=1 ls'), expect: 'allow', note: '★赋值形态后接安全命令' },
+  { id: 'K115 rm --help 首行 + 换行 + 安全命令（守卫）', payload: J('rm --help\nls -la'), expect: 'allow', note: '★多行但无真删除 → 豁免仍生效' },
+  { id: 'K116 ls -la 首行 + 换行 + rm --help（守卫）', payload: J('ls -la\nrm --help'), expect: 'allow', note: '★同上（豁免在第二行）' },
+  // ── C 面续（G3-FIX8/R2 新增，K117–K121）：**逐包装词的选项族**（防「吃掉任意 token」）──────────
+  //   修法从「单一泛化族 `-<任意字母> <操作数>`」改为**逐包装词**列确凿吃参的短选项：
+  //     sudo `[ugpCUrthDRT]`+不吃参 `[bEHikKlnsPvAe]`；time `[fo]`+`[apv]`；nice `[n]`；
+  //     ionice `[cnpP]`+`[tu]`；doas `[uC]`+`[ns]`；exec `[a]`+`[cl]`。
+  //   于是：`-n` 对 sudo 不吃参（`sudo -n diskpart` 仍 deny）而对 nice 吃参（`nice -n 5 diskpart` 仍 deny）；
+  //   `-v`/`-p` 对 sudo/time 不吃参 → **不会**把后面的安全命令误当操作数。
+  { id: 'K117 time -p ls diskpart（守卫）', payload: J('time -p ls diskpart'), expect: 'allow', note: '★`-p` 对 time 不吃参 → `ls` 才是命令词（修掉上一版 `-[p]` 可选操作数造成的收窄）' },
+  { id: 'K118 sudo -v ls diskpart（守卫）', payload: J('sudo -v ls diskpart'), expect: 'allow', note: '★`-v` 对 sudo 不吃参 → 不得把 `ls` 当操作数（泛化族会误拦）' },
+  { id: 'K119 sudo -b diskpart', payload: J('sudo -b diskpart'), expect: 'deny', note: '★`-b` 是 sudo 的不吃参选项 → 消费后 `diskpart` 仍是命令词' },
+  { id: 'K120 doas -n diskpart', payload: J('doas -n diskpart'), expect: 'deny', note: '★`-n` 是 doas 的不吃参选项（同族的 `nice -c 3 diskpart` 走 allow：`-c` 不是 nice 的）' },
+  { id: 'K121 nice -c 3 diskpart（守卫）', payload: J('nice -c 3 diskpart'), expect: 'allow', note: '★非本包装词的选项**不得**被消费（与 FIX7 同判，防「吃掉任意 token」）' },
   // ── M 段（G24 新增，M1–M15）：**help/version 豁免的粒度** ─────────────────────────────────
   //   缺陷（G24）：ps1 rule 16 的豁免写成 `-and ($cmd -notmatch $CMD_PRE + 'rm\s+(--help|…)')`
   //   —— `-notmatch` 作用于**整个 $cmd**，于是命令里**任意位置**出现一次 `rm --help`，
@@ -432,6 +502,12 @@ export const IDENTITY_CORPUS: DecisionCase[] = [
   { id: 'L18 引号内花括号 printf', payload: J("printf '{ rmdir /s /q x }'"), expect: 'allow', note: '反向守卫：引号内 `{` 不是命令位（FIX7 修法的边界）' },
   { id: 'L19 子 shell + 嵌套块', payload: J('if true; then (rmdir /s /q x); fi'), expect: 'deny', note: '与 L20 成对（`;` 锚 + `then ` 包装 + `(`）' },
   { id: 'L20 grep 模式串内括号', payload: J('grep -r "(rmdir /s /q x)" .'), expect: 'allow', note: '反向守卫：`(` 前面不是锚也不是包装词' },
+  // G3-FIX8/A 新增两对：**包装词自身选项**消费后，命令位是否仍在
+  { id: 'L21 包装词选项 + 命令位', payload: J('sudo -u root diskpart'), expect: 'deny', note: '与 L22 成对（同一前缀，只差命令词后是否有安全命令）' },
+  { id: 'L22 包装词选项 + 参数位', payload: J('sudo -u root ls diskpart'), expect: 'allow', note: '反向守卫：选项消费后 `ls` 才是命令词，`diskpart` 是它的实参' },
+  // G3-FIX8/R3 新增一对：**多行 rm 豁免的粒度**
+  { id: 'L23 多行首行豁免 + 次行真删除', payload: J('rm --help\nrm /tmp/t'), expect: 'deny', note: '与 L24 成对（同一首行，只差次行是否有真删除）' },
+  { id: 'L24 多行首行豁免 + 次行安全', payload: J('rm --help\nls -la'), expect: 'allow', note: '反向守卫：豁免只在「它自己那次调用」上生效，但不得因换行而误拦' },
 ];
 
 /** 拼一行可读的失败明细（载荷 / ps1 / sh / 期望） */
