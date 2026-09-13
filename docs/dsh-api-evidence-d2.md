@@ -54,7 +54,7 @@ if (denialReason !== void 0) return await next({ kind: "post-result", exec, resu
 
 - RG-I01 永久删除 deny+trash → 由 pre-execute listener 或 guard 承载，均可行
 - RG-I02/RG-I03（自保护、ALLOW+DENY=DENY）→ **guard 层天然单调**，正是文档语义；pre-execute 瀑布本身不是单调的（先到先得），所以自保护类不变量应注册为 guard
-- RG-I04 fail-closed → listener/guard 异常需自身 catch，运行时不会自动 fail-closed（deny-risk-commands 对非 pwsh/bash 工具直接 next() 放行）
+- RG-I04 fail-closed → ⚠️ **原结论「运行时不会自动 fail-closed」已于 2026-09-13 更正**：外部实测（`Composable_Agent_Harness` 项目 Mission 1 的引导测试，证据见 `composable-mission-01/evidence/N2-gates.md`）显示——`tools/pre-execute` 的 listener **抛异常 / reject 时该次调用被拒**（即 **fail-closed**）；漏写 `return next()`（返回 undefined）会报 `Cannot read properties of undefined (reading 'kind')`，**同样不是静默放行**。故「不会自动 fail-closed」不成立。**本机未复现**（复现需往 profile 装一个会抛异常的插件＝写生产配置），此处标记为「与外部实测冲突、待本机复现」。**仍成立的部分**：listener/guard 应自行 catch 以免误伤正常调用；`deny-risk-commands` 对非 pwsh/bash 工具仍直接 `next()` 放行。
 - 本机 deny-risk-commands 纯正则门禁即 RG-I05 的活例：正则黑名单挡得住字面量，挡不住结构等价（编码/别名/实例方法），需要 policy 层兜底
 
 ## 4. 遗留（仍未验证）
