@@ -144,7 +144,12 @@ const hook = process.argv[3];
 const s = JSON.parse(fs.readFileSync(p, 'utf8'));
 s.hooks = s.hooks || {};
 if (!s.hooks.PreToolUse) {
-  s.hooks.PreToolUse = [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + hook + '"', timeout: 10 }] }];
+  // 2026-09-13 修复（实测）：路径**无空白/引号时不加引号**。带引号写法在本机两种 spawn 机制
+  // （cmd /c 与直接 spawnArgs）下都会让 hook 静默失效——powershell 收到字面引号报
+  // `Illegal characters in path`、退出 4294770688、不产出 deny；去引号后同一批危险载荷能正常 deny。
+  // 该缺陷会让本脚本的 -Fix 动作**写回一个失效的注册**（即"自愈"其实制造裸奔）。含空白时才退回加引号。
+  const hookArg = /[\s"]/.test(hook) ? '"' + hook + '"' : hook;
+  s.hooks.PreToolUse = [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + hookArg, timeout: 10 }] }];
 }
 fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
 '@ | Set-Content -Path $helper -Encoding UTF8

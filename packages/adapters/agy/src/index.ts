@@ -45,6 +45,10 @@ export function renderAgyDecision(decision: { decision: string; reason?: string 
 
 /** 生成 agy 全局 hooks.json 内容（PreToolUse → run_command → adapter 脚本，绝对路径） */
 export function agyHooksConfig(adapterScript: string, timeoutSec = 10): string {
+  // 2026-09-13 修复（实测，同 scripts/riskguard-wiring-check.ps1）：路径无空白/引号时**不加引号**。
+  // 带引号写法在本机两种 spawn 机制下会让 hook 静默失效（powershell 报 Illegal characters in path、
+  // 退出 4294770688、不产出 deny）；去引号后同一批危险载荷能正常 deny。含空白时才退回加引号。
+  const hookArg = /[\s"]/.test(adapterScript) ? `"${adapterScript}"` : adapterScript;
   return JSON.stringify(
     {
       'riskguard-dangerous-commands': {
@@ -54,7 +58,7 @@ export function agyHooksConfig(adapterScript: string, timeoutSec = 10): string {
             hooks: [
               {
                 type: 'command',
-                command: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${adapterScript}"`,
+                command: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ${hookArg}`,
                 timeout: timeoutSec,
               },
             ],
