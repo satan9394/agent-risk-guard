@@ -1,4 +1,4 @@
-# test-all.ps1 — RiskGuard monorepo 统一测试运行器
+﻿# test-all.ps1 — RiskGuard monorepo 统一测试运行器
 # 用法：& .\test-all.ps1
 # 依赖：Node >= 22.18（原生 TS type-stripping，无需构建）
 
@@ -23,6 +23,11 @@ Run-Test "core/policy-engine" @("$ROOT\packages\core\test\policy-engine.test.ts"
 Run-Test "core/normalize" @("$ROOT\packages\core\test\normalize.test.ts")
 Run-Test "core/path-junction (M7 D3 real)" @("$ROOT\packages\core\test\path-junction.test.ts")
 Run-Test "core/classify-fuzz (M7)" @("$ROOT\packages\core\test\classify-fuzz.test.ts")
+# 2026-09-13 补：两个**跨端闸门**此前只跑在 CI（CI 用 glob `packages/core/test/*.test.ts` 自动带上），
+# 本地这份手工清单漏了它们 —— 而它们正是 G24 那类「两端判定发散」唯一能挡住的东西。
+# 代价：decision-parity 单套实测 ~250 s（它真实 spawn 两端、逐条喂 ~211 条载荷）。
+Run-Test "core/decision-parity (cross-end gate; slow ~250s)" @("$ROOT\packages\core\test\decision-parity.test.ts")
+Run-Test "core/redact-parity (cross-end redaction gate)" @("$ROOT\packages\core\test\redact-parity.test.ts")
 Run-Test "e2e/cli" @("$ROOT\tests\e2e\cli.e2e.test.ts")
 Run-Test "product (merge/manifest/compat/hook schema)" @("$ROOT\tests\product\product.test.ts")
 Run-Test "release-hardening (config-read/runtime-state/alias/merge)" @("$ROOT\tests\release-hardening\release-hardening.test.ts")
@@ -48,57 +53,42 @@ Run-Test "acs schema conformance v0.1.0 (official JSON Schema, ajv)" @("$ROOT\te
 Run-Test "compatibility v2 (migration + boundaries)" @("$ROOT\tests\compatibility\compatibility-v2.test.ts")
 Run-Test "conformance framework (C1-C10)" @("$ROOT\tests\conformance\conformance.test.ts")
 
-# hook 管线验证（D3，PS 驱动真实脚本 + RedirectStandardInput）
-Write-Output "=== hook pipeline (CC/Codex PreToolUse, D3 real) ==="
-$hookOut = powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT\..\agent-risk-guard-audit\tests\hook-rules-test.ps1" 2>&1
-$hookOut | Select-Object -Last 4
-if ($LASTEXITCODE -ne 0) {
-    Write-Output "❌ hook pipeline FAILED"
-    $script:fails++
-} else {
-    Write-Output "✅ hook pipeline PASS"
-}
-Write-Output ""
+# ============ hook 判定回归（D3：真实 spawn；ps1 五套 + sh 四套）============
+# 套件来源 = **仓库内** `skills/agent-risk-guard/tests/`，与 CI 用的是同一份、同一位置。
+# （改动前这里指向仓库外的 `..\agent-risk-guard-audit\tests\`；那个树不在 git 里，CI checkout 拿不到，
+#   且它会随开发漂移 —— 2026-09-13 实测仓库内那份 `hook-redact-test.ps1` 就落后了两代。
+#   套件本身是自定位的：ps1 用 `Join-Path $PSScriptRoot '..\scripts\...'`，sh 默认同路径并支持传参。）
+# ps1 两套引擎各跑一遍：D9 记录 `hook-bypass-regression.ps1` 无 BOM → PS 5.1 报 18/18、pwsh 报 20/20，
+#   两者都 exit 0，**计数不同不是回归**；引擎缺失时跳过并说明。
+$hookTests = Join-Path $ROOT 'skills\agent-risk-guard\tests'
+$ps1Suites = @('hook-rules-test', 'hook-bypass-regression', 'hook-fp-regression', 'hook-audit-reregress', 'hook-redact-test')
+$shSuites = @('sh-hook-test.sh', 'sh-audit-edge.sh', 'sh-audit-bypass.sh', 'sh-failclosed-test.sh')
 
-Write-Output "=== hook bypass regression (R8) ==="
-$bypassOut = powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT\..\agent-risk-guard-audit\tests\hook-bypass-regression.ps1" 2>&1
-$bypassOut | Select-Object -Last 4
-if ($LASTEXITCODE -ne 0) {
-    Write-Output "❌ hook bypass regression FAILED"
-    $script:fails++
-} else {
-    Write-Output "✅ hook bypass regression PASS"
+foreach ($eng in @('powershell', 'pwsh')) {
+    if (-not (Get-Command $eng -ErrorAction SilentlyContinue)) {
+        Write-Output "=== ps1 hook suites ($eng) — 引擎缺失，跳过 ==="
+        Write-Output ""
+        continue
+    }
+    Write-Output "=== ps1 hook suites ($eng, 5 suites) ==="
+    foreach ($s in $ps1Suites) {
+        $suitePath = Join-Path $hookTests "$s.ps1"
+        $out = & $eng -NoProfile -ExecutionPolicy Bypass -File $suitePath 2>&1
+        $tail = ($out | Select-Object -Last 1)
+        Write-Output "[$eng/$s] $tail"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output "❌ $s ($eng) FAILED"
+            $script:fails++
+        }
+    }
+    Write-Output ""
 }
-Write-Output ""
 
-Write-Output "=== hook FP regression (R8) ==="
-$fpOut = powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT\..\agent-risk-guard-audit\tests\hook-fp-regression.ps1" 2>&1
-$fpOut | Select-Object -Last 4
-if ($LASTEXITCODE -ne 0) {
-    Write-Output "❌ hook FP regression FAILED"
-    $script:fails++
-} else {
-    Write-Output "✅ hook FP regression PASS"
-}
-Write-Output ""
-
-Write-Output "=== hook audit re-regress (GAN R8) ==="
-$auditOut = powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT\..\agent-risk-guard-audit\tests\hook-audit-reregress.ps1" 2>&1
-$auditOut | Select-Object -Last 4
-if ($LASTEXITCODE -ne 0) {
-    Write-Output "❌ hook audit re-regress FAILED"
-    $script:fails++
-} else {
-    Write-Output "✅ hook audit re-regress PASS"
-}
-Write-Output ""
-
-# sh 版 hook（Linux/macOS）：wsl bash 驱动（Windows 路径转 /mnt/ 形式；R25：59+edge40+bypass186 三套件）
-Write-Output "=== hook sh (Linux/macOS, WSL; 3 suites) ==="
-$shSuites = @('sh-hook-test.sh', 'sh-audit-edge.sh', 'sh-audit-bypass.sh')
+# sh 版 hook（Linux/macOS）：wsl bash 驱动（Windows 路径转 /mnt/ 形式；四套件）
+Write-Output "=== sh hook suites (Linux/macOS, WSL; 4 suites) ==="
 $shFailed = $false
 foreach ($shName in $shSuites) {
-    $shWinPath = (Resolve-Path "$ROOT\..\agent-risk-guard-audit\tests\$shName").Path
+    $shWinPath = (Resolve-Path (Join-Path $hookTests $shName)).Path
     $shMnt = '/mnt/' + (($shWinPath -replace '^([A-Za-z]):', '$1' -replace '\\', '/').ToLowerInvariant())
     $shOut = wsl bash $shMnt 2>&1
     $shTail = $shOut | Select-Object -Last 2

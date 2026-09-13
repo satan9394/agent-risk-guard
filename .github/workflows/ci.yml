@@ -51,7 +51,8 @@ jobs:
           if [ -z "$ART" ] || [ ! -d "$ART" ]; then echo "artifact dir not found"; exit 1; fi
           cd "$ART" && sha256sum -c SHA256SUMS.txt
 
-  # ps1 / sh hook 与回收站 D3 实测仅 Windows + 本机环境可跑，保持本地 test-all.ps1
+  # 回收站 D3 实测仍只在 Windows + 本机环境可跑，保持本地 test-all.ps1；
+  # 但 hook 判定回归已全部进 CI：sh 四套（下方 sh-hook）+ ps1 五套（下方 ps1-hook）。
 
   # sh（Linux/macOS）hook 跨平台验证：GitHub macOS runner 即真 Mac（BSD 工具链），
   # Ubuntu runner 覆盖 GNU 工具链；2026-09-10 起把 WSL/Git Bash 本地实测固化为 CI。
@@ -79,6 +80,7 @@ jobs:
           chmod +x skills/agent-risk-guard/tests/sh-hook-test.sh
           chmod +x skills/agent-risk-guard/tests/sh-audit-edge.sh
           chmod +x skills/agent-risk-guard/tests/sh-audit-bypass.sh
+          chmod +x skills/agent-risk-guard/tests/sh-failclosed-test.sh
 
       - name: bash syntax check for hook and suites
         run: |
@@ -86,6 +88,7 @@ jobs:
           bash -n skills/agent-risk-guard/tests/sh-hook-test.sh
           bash -n skills/agent-risk-guard/tests/sh-audit-edge.sh
           bash -n skills/agent-risk-guard/tests/sh-audit-bypass.sh
+          bash -n skills/agent-risk-guard/tests/sh-failclosed-test.sh
 
       - name: Run sh hook suite 1 (main rules)
         run: bash skills/agent-risk-guard/tests/sh-hook-test.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
@@ -95,3 +98,54 @@ jobs:
 
       - name: Run sh hook suite 3 (bypass / false-positive audit)
         run: bash skills/agent-risk-guard/tests/sh-audit-bypass.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
+
+      # 2026-09-13 补：G5 的 fail-closed 套件此前**不在 CI**（只在本机 WSL 跑过）。
+      - name: Run sh hook suite 4 (fail-closed semantics / JSON validity)
+        run: bash skills/agent-risk-guard/tests/sh-failclosed-test.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
+
+  # ── ps1 hook 判定回归（5 套 × 双引擎）─────────────────────────────────────────────
+  # 2026-09-13 补：此前 ps1 五套**完全不在 CI**，只在本地 `test-all.ps1` 里跑 ——
+  # 正是 R10 的第 2 条假象「闸门存在 ≠ 闸门被执行」。windows-latest 自带
+  # powershell.exe(5.1) 与 pwsh(7)，与本机本地双引擎口径一致。
+  # 套件取自仓库内 `skills/agent-risk-guard/tests/`（自定位到 `../scripts/` 的 hook），
+  # 与本地 test-all.ps1 用的是同一份、同一位置（改动前本地指向仓库外的 audit 树，CI 拿不到）。
+  # ⚠️ D9：`hook-bypass-regression.ps1` 无 BOM → PS 5.1 报 18/18、pwsh 报 20/20（**都 exit 0**）；
+  #    计数不同不是回归，故本 job 只断言**退出码**，不断言条数。
+  ps1-hook:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show environment
+        shell: pwsh
+        run: |
+          Write-Host "pwsh       : $($PSVersionTable.PSVersion)"
+          & powershell -NoProfile -Command '"powershell : " + $PSVersionTable.PSVersion.ToString()'
+
+      - name: Run ps1 hook suites — Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $suites = @('hook-rules-test','hook-bypass-regression','hook-fp-regression','hook-audit-reregress','hook-redact-test')
+          $failed = @()
+          foreach ($s in $suites) {
+            Write-Host "=== $s (PS 5.1) ==="
+            & powershell -NoProfile -ExecutionPolicy Bypass -File "skills\agent-risk-guard\tests\$s.ps1"
+            Write-Host "exit=$LASTEXITCODE"
+            if ($LASTEXITCODE -ne 0) { $failed += $s }
+          }
+          if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join ', ')"; exit 1 }
+          Write-Host "ps1 hook suites (PS 5.1): 5/5 green"
+
+      - name: Run ps1 hook suites — PowerShell 7 (pwsh)
+        shell: pwsh
+        run: |
+          $suites = @('hook-rules-test','hook-bypass-regression','hook-fp-regression','hook-audit-reregress','hook-redact-test')
+          $failed = @()
+          foreach ($s in $suites) {
+            Write-Host "=== $s (pwsh 7) ==="
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File "skills/agent-risk-guard/tests/$s.ps1"
+            Write-Host "exit=$LASTEXITCODE"
+            if ($LASTEXITCODE -ne 0) { $failed += $s }
+          }
+          if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join ', ')"; exit 1 }
+          Write-Host "ps1 hook suites (pwsh 7): 5/5 green"
