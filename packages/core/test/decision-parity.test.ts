@@ -92,9 +92,13 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const HERE = import.meta.dirname;
-// HERE = <ws>/agent-risk-guard/packages/core/test → 四层上溯到 <ws>，再进 agent-risk-guard-audit
-const DEFAULT_PS1 = resolve(HERE, '../../../../agent-risk-guard-audit/scripts/dangerous-commands.ps1');
-const DEFAULT_SH = resolve(HERE, '../../../../agent-risk-guard-audit/scripts/dangerous-commands.sh');
+// HERE = <repo>/packages/core/test → 三层上溯到 <repo>，再进 skills/agent-risk-guard/scripts
+// 2026-09-13 修复：此前指向**仓库外**的兄弟目录 `agent-risk-guard-audit/`，而 CI 只 checkout 仓库本身
+//   → 该路径在 CI 上永远不存在，本闸门**从未在 CI 跑起来过**（主干因此连续变红）。
+//   现改为指向**仓库内**那一份（与 `test-all.ps1` 和 CI 用的是同一份、同一位置）。
+//   变异验证仍可用 `RG_PARITY_PS1` / `RG_PARITY_SH` 覆盖。
+const DEFAULT_PS1 = resolve(HERE, '../../../skills/agent-risk-guard/scripts/dangerous-commands.ps1');
+const DEFAULT_SH = resolve(HERE, '../../../skills/agent-risk-guard/scripts/dangerous-commands.sh');
 
 export type Decision = 'allow' | 'deny';
 export interface DecisionCase {
