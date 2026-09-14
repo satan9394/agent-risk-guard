@@ -278,6 +278,19 @@ CMD_PRE='(^|[;&|])[[:space:]]*((sudo|time|nice|nohup|setsid|doas|exec|ionice|bus
 > 2. **上一条给出的「可直接采用的精确形态」不可直接采用**：`-[ugpCUrthD]\s+\S+\s+` 会把 `sudo -u root ls diskpart` 的 `ls` 当操作数，与本卡 §3 反向守卫「必须 allow」冲突；把 `-c`/`-n` 同时放进「不吃参」与「吃参」两组会重新引入歧义。FIX8 实际采用：吃参族 `-[A-Za-z]\s+tok` / `-[CgupS]\s+tok` / `-n\s+tok`，不吃参族 `-[inEpvcutlf]` 与**可选操作数**的 `-[p]`（详见 G3-FIX8 §1.2）。
 > 3. **「`command -v|-V` 刻意不覆盖，故 `command -v diskpart` 保持 allow」结论对、理由错**：实测 pre-G3 与 FIX7 两端**本就 allow**（该前缀从来只认 `-p`，没有 `-v` 分支）；FIX8 把该分支收窄为 POSIX 实装 `-p` 后仍 allow。
 > 4. **上一条「每新增一个 `(...)` 都要重算 sed 的实参组号」在 FIX8 已被结构性消除** —— 前缀增到 17 组后，GNU sed 的 `\N`（`\1..\9`，且 `\10`+ 只被当作 `\1` 后跟字面数字）**再也表达不了实参组**：沿用 `\7` 会让 `rm --help` / `sudo rm --help` / `rm'' --help` / `/usr/bin/rm --help` 全部 allow → deny。FIX8 已把抽取式改为**组号无关**的整行替换（`dangerous-commands.sh` L484）。
+>
+> ### ⚠️⚠️ 对上面这个审计块的更正（2026-09-13，由 G3-FIX8 的**独立 Evaluator 复验**发现；**该块原文同样保留**）
+>
+> G3-FIX8 经独立 Evaluator 两轮裁决（**FAIL → 唯一一次 Repair → PASS**）。复验实测推翻了本审计块中的两处说法：
+>
+> 1. **第 2 点「`-[ugpCUrthD]\s+\S+\s+` 会把 `sudo -u root ls diskpart` 的 `ls` 当操作数」不成立。**
+>    Evaluator 用 .NET 重建该提议形态实测：`sudo -u root ls diskpart` **不命中** diskpart 规则（`ls` 未被消费），
+>    反向守卫本就不会被破坏 —— 所谓"冲突"不存在。真正拦不住的是 `exec -c diskpart` 这一类
+>    （详见 `IMPLEMENTATION_RESULT_G3-FIX8.md` §9-4 的相应更正）。故"不可直接采用"若仍成立，**理由需要另换一条**，不能引用此处被证伪的那条。
+> 2. **第 4 点里的「前缀增到 17 组」不是实测值。** 实测（`_g3fix8_count_groups.mjs`，两种独立数法一致，并经 Evaluator 逐字符扫描复核）：
+>    被判 FAIL 的那一版 **21 组**；FIX8 终版（逐包装词选项族）**49 组**。
+>    本文件、G3-FIX8 报告与其代码注释里曾同时出现 16 / 17 / 21 三个互斥数字 —— **一律以终版 49 为准**，17 是中间迭代的误记。
+>    该点**结论不受影响**（`\N` 在 `N>9` 时 GNU sed 无法表达，FIX8 改为组号无关，**依然成立**）。
 
 4. **`env` 的解析边界**：`env -S 'a b' diskpart`（`-S` 的值里含空格，实测 allow，见 §8-3）与 `env -iS…` 这类粘连形态不覆盖。`command -v|-V` **刻意不覆盖**（只查路径、不执行），故 `command -v diskpart` 保持 allow（闸门外的探针 G16）。
 5. **未做**：xhs 树的 ps1（21 KB 精简变体，不在同步清单）本轮未动、未跑其自有套件（与 FIX4/FIX5/FIX6 一致）；`hook-redact-test` 夹具未改（本轮不涉及脱敏面）。

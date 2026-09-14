@@ -6,11 +6,59 @@
 
 当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`；单一版本源 `packages/core/src/version.ts`）。
 
-- `v0.1.0` / `v0.1.1`（2026-09-04）与 `v0.1.2` / `v0.2.0` / `v0.2.1` / `v0.2.2` 已发布为 GitHub Pre-release；历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记；**不是**当前产品稳定版声明。
+- 已发布为 GitHub Pre-release 的版本：**`v0.1.0` 起至 `v0.3.0`**（`v0.1.0` / `v0.1.1` / `v0.1.2` 于 2026-09-04；`v0.2.0` / `v0.2.1` / `v0.2.2` 于 2026-09-05；`v0.3.0` 于 2026-09-07）。历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记，**不是**当前产品稳定版声明。
+- **每个版本的"出了什么问题 + 改变了什么"另有中英双语发行说明**：见 [`docs/release-notes/`](docs/release-notes/)——GitHub Release 的正文即取自该目录，且**缺对应说明文件时发版会失败**。`v0.3.1` 的说明已就绪，**尚未打 tag**。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased] - v0.3.0 Real Agent Conformance
+## [Unreleased]
+
+> 定位：**v0.3.1 —— 让"保护已生效"这句话可自证**。中英双语发行说明见
+> [`docs/release-notes/v0.3.1.md`](docs/release-notes/v0.3.1.md)（含"出了什么问题"与"改变了什么"）；
+> 本节只记仓库侧要点。**v0.3.1 尚未打 tag** —— 打 tag 后由 `release.yml` 取用该说明文件发版。
+> 依据：`git log v0.3.0..HEAD`（59 个提交 / 143 文件）。
+
+### Fixed
+
+- **CLI 退出码契约**（G1/G7）：`0` = 成功 / `1` = 操作失败 / `2` = 用法错误；**hook 运行时恒 `0`**（拒绝是决策，不是错误）。
+  同时修复 hook 运行时入口的 fail-open（`tool_input.command` 形状）。
+- **ps1 规则 16d 死代码**（G4）：`[[:space:]]` 在 .NET 正则中无效 → 该规则**从未生效过**，已改为 `\s`。
+- **sh hook fail-closed**（G5）：空 stdin / 畸形 JSON / 缺 `command` / 含 TAB / 首行危险+次行 `#`
+  → 一律 deny 且输出合法 JSON（50 例矩阵：非法 JSON 7→0、裸 exit 2→0、两端分歧 18→2）。
+- **ps1 密钥脱敏**（G15，日志与 deny 回显两条出口）+ **三端脱敏对齐**（G15b，经 REJECT→FIX→FIX2→FIX3 四轮；
+  根因是 **sh 生产出口从未接线**，parity 闸门只测测试入口故恒绿）。
+- **G24**：ps1 rule 16 的 help/version 豁免由"**整条命令级抑制**"改为"**只豁免它自己那次调用**"
+  （此前 `rm --help; rm <文件>` 会被整条放行）。
+- **G3-FIX8**：把包装词**自身的选项**纳入命令位前缀 → `sudo -u root diskpart`、`nice -n 5 diskpart` 等
+  **8 条真实危险命令由两端放行改为两端 deny**（对 `5e51b06` 冻结字节做全量决策差：**`deny→allow = 0`**）。
+- **接线自愈不再写回失效注册**：`-Fix` 模板的带引号 `-File "<路径>"` 实测会让 hook 静默失效，改为路径无空白时不加引号。
+
+### Changed
+
+- **doctor 从"查存在"升级为"查新鲜度"**（G2）：比对规则条数与 hook 脚本 SHA256 是否与单一源一致，不一致报 WARN。
+- **G3 跨端判定收敛 + 常设 `decision-parity` 闸门**：语料 196 → **245 decision + 24 identity 断言**；
+  闸门必须由**变异体**证明"回退修复会让它变红"（防自证式闸门）。
+- **CI 补全**：sh hook 套件进 macOS + Ubuntu；**ps1 五套 × 双引擎（PowerShell 5.1 与 pwsh 7）
+  与 `sh-failclosed-test.sh` 进 CI**（此前 ps1 五套**完全不在 CI**）。
+- **`test-all.ps1` 对齐**：套件源由**仓库外**改到仓库内、补齐两个**从未在本地跑过**的跨端 parity 闸门、
+  并补 UTF-8 BOM（此前 PowerShell 5.1 根本解析不了它）。
+- **分发面收敛**：**ps1 ×7 + sh ×3 同哈希**，ps1 **BOM 逐份为 True**
+  （此前有一份漏带 BOM 的旧副本仍在分发，且其中仍含已修的漏洞）。
+
+### Security
+
+- 顺带修复：回收站清空类绕过拦截、macOS/Linux 跨平台规则缺口、DSH 块设备规则修订。
+- **八个切片逐个独立验收**（G1+G7 / G2 / G4 / G5 / G15 / G15b / G24 / G3-FIX8），
+  其中 **G15b 与 G3-FIX8 各经历多轮 REJECT → Repair → PASS**。过程教训：**修复动作本身五次引入了新的放松**。
+
+### Docs
+
+- 新增 `docs/release-notes/`：**每个版本的中英双语发行说明**（"出了什么问题 + 改变了什么"），
+  同时是 GitHub Release 正文的**唯一来源**——`release.yml` 缺该文件即发版失败（fail-closed）。
+- 新增 `docs/adding-an-agent.md` 与两个 Issue 模板（申请新增 Agent / 报告某 Agent 的安全机制与环境）。
+- 公开面脱敏：清除跟踪文件中的本机绝对路径与私人操作叙事（**技术结论一字未改**）。
+
+## [0.3.0] - 2026-09-07（v0.3.0 Real Agent Conformance，已发布）
 
 > 定位：**从「构建基础设施」转向「真实 Agent 会话验证」**。Phase B（v0.3.0）的五类工作闭环：
 > ① 5-Agent Conformance——OpenCode / Claude Code / DSH / AGY 拿到真实会话 D3 硬拦截证据；Codex 应用形态拿到

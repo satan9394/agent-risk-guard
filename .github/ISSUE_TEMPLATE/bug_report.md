@@ -1,26 +1,30 @@
 ---
 name: Bug report
-about: 报告缺陷（不要让绕过向量出现在公开 issue 里——利用/绕过类问题走 SECURITY.md 私密渠道）
+about: Report a defect. Do NOT post bypass/exploit payloads publicly — those go to SECURITY.md. 报告缺陷；绕过类问题请走 SECURITY.md 私密渠道。
 title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-**描述**
-简洁说明问题现象。
+**What happened / 现象**
+A concise description of the problem. 简洁说明问题现象。
 
-**复现步骤**
-1. 输入命令 / 载荷：`...`
-2. 期望行为：`allow` / `deny`
-3. 实际行为：`allow` / `deny`
+**Steps to reproduce / 复现步骤**
+1. Command or payload: `...` （输入命令 / 载荷）
+2. Expected: `allow` / `deny` （期望行为）
+3. Actual: `allow` / `deny` （实际行为）
 
-**环境**
-- Agent / 表面（claude / codex / opencode / dsh…）：
-- 平台：Windows / macOS / Linux
-- Node 版本：`node --version` 输出
+**Environment / 环境**
+- Agent & surface (claude / codex / opencode / dsh / agy …)：
+- Platform：Windows / macOS / Linux
+- Node version (`node --version`)：
+- RiskGuard version, or the commit you installed from：
 
-**日志 / 报错**
-贴关键输出（hook 日志、CLI stdout、报错堆栈）。
+**Logs / 日志**
+Paste the relevant output — hook log, CLI stdout, stack trace. 贴关键输出。
 
-**备注**
-如果是**绕过（bypass）**、**规则误拦可导致数据丢失**、**权限提升**类问题，请**不要**在 issue 里贴完整载荷，改走 [SECURITY.md](SECURITY.md) 私密报告渠道。
+**⚠️ Before you post / 提交前必读**
+If this is a **bypass**, a **rule miss that could cause data loss**, or a **privilege escalation**, do **NOT**
+paste the full payload here — report it privately via [SECURITY.md](../SECURITY.md).
+如果是**绕过**、**可能导致数据丢失的漏拦**、**权限提升**类问题，**不要**在这里贴完整载荷，改走
+[SECURITY.md](../SECURITY.md) 的私密渠道。

@@ -1,5 +1,26 @@
 # PRODUCT_STATE — agent-risk-guard
 
+> ## ⚠️ 现状更正（2026-09-13）——**本文是内部过程记录，不是当前产品状态的权威来源**
+>
+> 本文（含下方各"最新状态"块）停在 2026-09-11，之后又有多个切片闭环与一次公开发布。**权威状态按此顺序取**：
+> `README.md` 支持矩阵 → `packages/installer/compatibility.json`（D 级单一事实源）
+> → `docs/release-notes/`（每版"出了什么问题 + 改了什么"，中英双语）→ `CHANGELOG.md`。
+>
+> 2026-09-11 之后**至少**发生：
+> - **G15b 三端脱敏对齐**闭环（根因是 **sh 生产出口从未接线**，经四轮 REJECT→FIX→FIX2→FIX3）
+> - **G5 sh hook fail-closed** 闭环（空 stdin / 畸形 JSON / 缺 command / 含 TAB / 首行危险+次行 `#` → 改为 deny + 合法 JSON）
+> - **G3 跨端判定收敛**：FIX4 → FIX5 → FIX6 → FIX7 → **FIX8 全部闭环**；常设 `decision-parity` 闸门
+>   语料 **196 → 245 decision + 24 identity**，"回退修复必须让闸门变红"成为常设要求
+> - **G24**（help 豁免粒度）与 **G3-FIX8**（包装词自身选项）两个安全修复均由**独立 Evaluator** 验收
+>   （G24 PASS；G3-FIX8 经 **FAIL → 唯一一次 Repair → PASS**）
+> - **CI 补全**：ps1 五套 × 双引擎 + `sh-failclosed-test.sh` 进 CI（此前 ps1 五套完全不在 CI）；
+>   `test-all.ps1` 套件源改到仓库内，并补齐两个**从未在本地跑过**的 parity 闸门
+> - **仓库公开发布**：8 个版本的中英双语发行说明、两个 Issue 模板、`docs/adding-an-agent.md`；
+>   公开 README 更正了两处会误导的说法（DSH 实际生效的是规则补丁而非插件；Claude Code 行改述实际注册的 hook）
+> - 详见 `CHANGELOG.md` 的 `[Unreleased]`（v0.3.1）段与 `docs/release-notes/`
+>
+> 本文与 `PRODUCT_GAP_MAP.md` 中"下一轮 = X"之类的表述**均已过期**，保留原文以追溯编排过程。
+
 - 更新：2026-09-11 · Orchestrator Round 21（切片 #4 = G15 已闭环）
 - 状态机：G4 ✅ → G1+G7 ✅ → G2 ✅ → **G15 ✅（ACCEPT）** → 下一轮：G15b（脱敏残留）或 G5（sh/agy fail-open）
 

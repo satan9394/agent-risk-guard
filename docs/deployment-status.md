@@ -3,6 +3,28 @@
 > 铁律：开发产物只在工作区；生产目录改动待用户确认。
 > 本文件记录「生产实际接线」与「工作区单源」的差距，作为同步清单依据。
 
+> ## ⚠️ 本文是 2026-08-24 的**时点快照**，其中多条结论**已经过期**（2026-09-13 加注更正）
+>
+> 本文保留原文不改，作为历史证据。**不要把下面的结论当作现状**。至少以下几条已经变化：
+>
+> - **「Claude Code 实际没有删除拦截」已不再成立**：`~/.claude/settings.json` 的 `PreToolUse`
+>   （matcher `Bash` → `~/.claude/hooks/dangerous-commands.ps1`）已接线，危险载荷实测被 deny；
+>   2026-09-13 复核时仍在位。
+>   ——但它**丢失过一次**（settings.json 只剩 `Setup`），而当时 hook 脚本在位、哈希正确、套件全绿。
+>   这就是"看起来在、其实不在"。**任何"已接线"的结论都必须现场实测，不能引用本文或任何旧文档。**
+> - **生产 hook 脚本已多次升级**：本文引用的 6899B / 7425B 等字节数为**当时值**。当前单源
+>   `dangerous-commands.ps1` = `0DFDCD5596F76827` / 44327 B / BOM=True，**ps1 ×7 份同哈希**（含 xhs 树）；
+>   `dangerous-commands.sh` = `A809CCFB9311F0EC` / 51754 B，**sh ×3 份同哈希**。
+> - **Codex 不再是「唯一真实生效」**：OpenCode / DSH / AGY 都有真实会话 D3 证据。
+>   注意 **DSH 的保护来自 `deny-risk-commands` 规则补丁（正则层），不是 `@riskguard/dsh` 插件**
+>   （插件已实现且有测试，但未接进任何 profile）——README 支持矩阵已注明。
+> - **回归套件已补齐**：`hook-bypass-regression` / `hook-redact-test` / `sh-failclosed-test` 等已在 CI 与本地运行器里。
+>
+> **当前权威状态（按此为准，不按本文）**：
+> `README.md` 的支持矩阵 → `packages/installer/compatibility.json`（D 级单一事实源）
+> → 本机实际接线用只读巡检复核：`pwsh -File scripts/riskguard-wiring-check.ps1`（缺失/漂移时退出码非 0）。
+> 各版本"出了什么问题、改了什么"见 [`docs/release-notes/`](release-notes/)。
+
 ## 已确认的生产接线
 
 | Agent | 接线点 | 状态 | 证据 |

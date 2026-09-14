@@ -1,5 +1,12 @@
 # PRODUCT_GAP_MAP — agent-risk-guard（Orchestrator 第三阶段综合）
 
+> ## ⚠️ 再次更正（2026-09-13）
+>
+> 本文件与其下方的"状态更新"块**均停留在 2026-09-11**。此后 **G15b / G5 / G3-FIX4–FIX8 / G24 /
+> G3-FIX8 全部闭环**，CI 补齐了 ps1 五套 × 双引擎与 `sh-failclosed-test.sh`，仓库也已公开发布。
+> **当前状态的权威顺序**：`README.md` 支持矩阵 → `packages/installer/compatibility.json`
+> → `docs/release-notes/` → `CHANGELOG.md`。本文件保留原文以追溯编排过程，**不要据此判断"哪一项还没做"**。
+
 > **状态更新（2026-09-11 · Round 23）** — 本文件是 Round 1-6 的原始合成，**保留不改写**（历史可追溯）；
 > 下列为已发生的状态变化，权威现状以 `PRODUCT_STATE.md` 为准：
 >
