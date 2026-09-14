@@ -96,7 +96,7 @@ Architecture contract details: [docs/adapter-contract.md](docs/adapter-contract.
 
 | Agent | Integration | Pre-execution hard block | Verification level | Status |
 |---|---|---|---|---|
-| **DeepSeek Harness (DSH)** | `pre-execute` cascade + monotonic `guard()` invariant | ✅ Yes | Windows D3 (real-session interception records); macOS/Linux D1 | ✅ Verified |
+| **DeepSeek Harness (DSH)** | What actually runs is the **`deny-risk-commands` rule patch** injected into the profile (regex matching). The `@riskguard/dsh` plugin (`pre-execute` cascade + monotonic `guard()` invariant) **is implemented and tested but is not wired into any profile** | ✅ Yes (**at the rule-patch layer**) | Windows D3 (real-session interception records); macOS/Linux D1 | ✅ Verified (**protection comes from the rule patch, not the plugin**) |
 | **Claude Code** | `PreToolUse` hook + CLAUDE.md rules | ✅ Yes (machine-level gate; still blocks under bypassPermissions) | Windows D3 (real-session permission-rule block); macOS/Linux D1 | ✅ Verified (local Windows) |
 | **Codex** | rules-compiler → AGENTS.md + production PreToolUse hook (app/CLI share `~/.codex/`, dual registration) | ✅ Yes (hook wired; DENY/ALLOW tested) | Windows D3 (app `approval_policy=never` + `sandbox=unelevated` policy layer, real-session manual test 2026-09-06; **CLI 0.153.4 hook real-session test 2026-09-07**); macOS/Linux D1 | ✅ Verified (local Windows) |
 | **OpenCode** | `tool.execute.before` TS plugin + AGENTS.md | ✅ Yes (production plugin registered; still blocks with bash allow) | Windows D3 (real session `BLOCKED_BY_GLOBAL_SAFETY_GUARD`); macOS/Linux D1 | ✅ Verified (local Windows) |
@@ -109,6 +109,23 @@ Architecture contract details: [docs/adapter-contract.md](docs/adapter-contract.
 The single source of truth for verification levels is `packages/installer/compatibility.json`: **D0** = Unsupported; **D1** = Implementation exists; **D2** = Automated test verified; **D3** = Real agent execution verified; **D4** = Repeated / production verified. D3/D4 are product capability levels — they do not mean a given machine is currently `ACTIVE` (machine state comes from `riskguard status` → Runtime). The levels above come from that file (CI runs `check-compatibility-docs` to prevent drift).
 
 > Honest note: the early interception for Claude Code and OpenCode in the [3-agent deletion test](docs/d3-deletion-test-3agents.md) largely came from **model-level rules** (CLAUDE.md / AGENTS.md) and the plugin-injected trash tool. Since v0.1.0 the **machine-level hard gates** have been re-verified with real D3 sessions (see [docs/deployment-status.md](docs/deployment-status.md)): in real `claude -p --permission-mode bypassPermissions` and `opencode run` sessions, `git reset --hard` was rejected by the RiskGuard hook/plugin before the tool ran (Claude Code `permission-rule`, OpenCode `BLOCKED_BY_GLOBAL_SAFETY_GUARD`), and uncommitted changes survived. DSH keeps machine-level `pre-execute` gate evidence. AGY (Antigravity CLI 1.1.27) was verified through `~/.gemini/config/hooks.json` PreToolUse in a real session. Codex (app form: VS Code extension + codex.exe) is blocked by the app policy/sandbox layer (`approval_policy=never` + `sandbox=unelevated`, user-verified manually on 2026-09-06 with "blocked by policy"), and a **Codex CLI 0.153.4 real-session re-test (2026-09-07)** confirmed the RiskGuard PreToolUse hook also blocks at the tool layer (hook log deny timestamps match; uncommitted changes preserved). Cursor / Windsurf / Grok machine-level hard blocking still await real-session verification. All blocking has been audited by the [GAN adversarial review](docs/GAN-AUDIT-5AGENTS.md) (17 findings, all fixed).
+>
+> ⚠️ Two things that are easy to misread, stated up front: ① **DSH is protected by the `deny-risk-commands` rule patch (regex / substring matching), not by the `@riskguard/dsh` plugin** — the plugin has an implementation and tests under `packages/dsh/` but is **not wired into any profile**, so "the DSH check is green" does not mean "the plugin is wired"; ② for the Claude Code row, what is actually registered on this machine is a `PreToolUse` entry (matcher `Bash` → `dangerous-commands.ps1`), while the id the installer writes is `riskguard-pre-tool-hook` — same hook, but **the same name does not imply the same origin**, so check the config file itself when debugging wiring.
+
+## Community & contributing
+
+This project is **open source, and open to use, questions and issues**. Coverage is still narrow — only a handful of agents have been verified in real sessions — and new AI coding agents appear almost every month. **If the agent you use is not in the matrix above, that is exactly what we want to hear about.**
+
+Two entry points (the issue templates are ready):
+
+- **[New agent support request](https://github.com/satan9394/agent-risk-guard/issues/new?template=new_agent_request.yml)** — we mainly want three things: does it have a **pre-execution interception point**, the **JSON shape** of the tool call, and **one piece of real blocking evidence**.
+- **[Agent security mechanism / environment report](https://github.com/satan9394/agent-risk-guard/issues/new?template=agent_security_report.yml)** — use this if you already run RiskGuard on that agent and found a rule too strict or too weak, or found that the agent's own sandbox already covers part of it.
+
+Before writing code, read **[Adding a new agent](docs/adding-an-agent.md)**: it lists everything needed to wire an agent up, where the code goes, how to test it yourself, and the hard constraints we hold to. A suggestion without code is very welcome too — **a screenshot of that agent's hook/plugin documentation is usually enough for us to say whether a hard gate is possible**, and "this agent can only support soft constraints" is itself a useful result.
+
+**Three kinds of information we especially want**: ① an agent's hook/plugin contract (config path + event shape + denial shape); ② whether that hook is **fail-open or fail-closed** when it fails (empty stdin tests this); ③ a real-session record of a block **or a miss**, with version and date.
+
+> ⚠️ **Security vulnerabilities do not go in public issues**: a rule bypass, or any way to actually get a dangerous command executed, goes through [SECURITY.md](SECURITY.md).
 
 ## OS support
 
@@ -289,6 +306,7 @@ RiskGuard is **one layer of defense-in-depth, not an absolute security boundary*
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Security**: [SECURITY.md](SECURITY.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **Release notes** (the problem + what changed, for every version, bilingual): [docs/release-notes/](docs/release-notes/)
 
 > **Version note**: current unified product version is **`v0.3.0 Developer Preview`** (`package.json` = `0.3.0`; single version source in `packages/core/src/version.ts`).
-> The historical Git tag `v1.0.0` is kept and not deleted (it marks an earlier release, not the current stable claim); `v0.1.0` / `v0.1.2` / `v0.2.0` / `v0.2.1` / `v0.2.2` are published Developer Preview (Pre-release) releases. Some platforms/agents still lack real-environment verification (macOS / Linux; real D3 for Copilot CLI / Windsurf / Cursor), so no `1.0 Stable` claim is made. See `docs/TODO.md` and `CHANGELOG.md`.
+> The historical Git tag `v1.0.0` is kept and not deleted (it marks an earlier release, not the current stable claim); the published Developer Preview (Pre-release) releases run from **`v0.1.0` through `v0.3.0`** — see [docs/release-notes/](docs/release-notes/) for the problem each one solved and what it changed. Some platforms/agents still lack real-environment verification (macOS / Linux; real D3 for Copilot CLI / Windsurf / Cursor), so no `1.0 Stable` claim is made. See `docs/TODO.md` and `CHANGELOG.md`.

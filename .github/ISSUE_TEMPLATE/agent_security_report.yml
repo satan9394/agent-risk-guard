@@ -1,0 +1,90 @@
+name: "Agent security mechanism / environment report"
+description: "Tell us what an agent's OWN protections are, and whether RiskGuard's rules behave correctly on it. 报告某 Agent 自带的安全机制与运行环境。"
+title: "[AGENT-ENV] "
+labels: ["agent-environment"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this to report **how an agent protects (or fails to protect) itself**, and how RiskGuard behaves on it.
+        This is deliberately different from a new-agent request: you may already run RiskGuard on this agent and
+        have found that a rule is too strict, too weak, or that its native sandbox already covers some of it.
+
+        用这个模板报告**某个 Agent 自身的安全机制**，以及 RiskGuard 在它上面的实际表现。
+        它和"申请新增 Agent"不同：你可能已经在这个 Agent 上跑了 RiskGuard，发现某条规则过严/过松，
+        或者发现它自带的沙箱已经覆盖了一部分。
+
+        > ⚠️ **A bypass in an existing rule is a security issue** — report it via
+        > [SECURITY.md](https://github.com/satan9394/agent-risk-guard/blob/main/SECURITY.md), not here.
+        > **绕过现有规则属于安全漏洞**，请走 SECURITY.md，不要开公开 Issue。
+
+  - type: input
+    id: agent
+    attributes:
+      label: "Agent name and version / Agent 名称与版本"
+      placeholder: "e.g. Claude Code 2.1.267 / Codex 0.153.4 / OpenCode 0.6.1"
+    validations:
+      required: true
+
+  - type: input
+    id: riskguard-version
+    attributes:
+      label: "RiskGuard version / commit (if you run it here)"
+      placeholder: "e.g. v0.3.0, or the commit you installed from"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: native
+    attributes:
+      label: "What does the agent protect natively? / 它自带哪些保护（可多选）"
+      options:
+        - label: "Sandbox / filesystem isolation (沙箱或文件系统隔离)"
+        - label: "Permission or approval prompts (权限提示 / 逐次确认)"
+        - label: "Pre-execution hook or plugin API (执行前 hook 或插件 API)"
+        - label: "Static command rules / deny-list (静态命令规则或黑名单)"
+        - label: "Nothing meaningful — it runs what the model asks (基本没有)"
+        - label: "I don't know (不确定)"
+
+  - type: textarea
+    id: config-locations
+    attributes:
+      label: "Where do its settings live? / 配置落在哪"
+      description: "Paths and the relevant keys. Say which ones actually change execution behaviour."
+      placeholder: |
+        e.g.
+          ~/.codex/config.toml   -> approval_policy = "never", sandbox = "unelevated"
+          ~/.codex/hooks.json    -> PreToolUse (Bash) -> powershell hook
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: "What did you actually observe? / 实测到什么"
+      description: |
+        Be concrete: which command, what the agent did, and what the guardrail did or failed to do.
+        If you have not tested it, say "not tested" rather than guessing — an untested claim is worse than a gap.
+      placeholder: |
+        e.g. `git reset --hard HEAD` in a real session -> hook denied, working tree preserved (log line at 03:48:46)
+             `rm -rf ./build` in a non-interactive run -> allowed because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: gap
+    attributes:
+      label: "What is missing or wrong? / 缺什么、哪里不对"
+      description: "Rule too strict (false positive)? Too weak (false negative)? Documentation wrong? Say which."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: "Before submitting / 提交前"
+      options:
+        - label: "Everything above is measured, not assumed — and I marked anything I did not test. (上面都是实测，未测的已标注)"
+          required: true
+        - label: "This is not a vulnerability report. (这不是漏洞报告)"
+          required: true

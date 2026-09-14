@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "🔒 Security vulnerability / 安全漏洞（不要开公开 Issue）"
+    url: https://github.com/satan9394/agent-risk-guard/blob/main/SECURITY.md
+    about: "A bypass in an existing rule, or any way to get a dangerous command executed, goes here — privately. 绕过规则或任何能让危险命令执行的方式，请走私密渠道。"
+  - name: "📖 Adding a new agent (contributor guide) / 新增一个 Agent 需要什么"
+    url: https://github.com/satan9394/agent-risk-guard/blob/main/docs/adding-an-agent.md
+    about: "Read this before opening a new-agent request — it lists exactly what we need to wire an agent up. 提「新增 Agent」之前先看这份，里面列了我们接线所需的全部信息。"
+  - name: "📐 Adapter contract / 适配器契约"
+    url: https://github.com/satan9394/agent-risk-guard/blob/main/docs/adapter-contract.md
+    about: "How an agent adapter translates platform events into the shared policy core. 适配层如何把平台事件翻译成共享策略内核的输入。"

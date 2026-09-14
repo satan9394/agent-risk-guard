@@ -99,9 +99,9 @@ MATCHES-ORIGINAL-EXPECTED-HASH=True
 | `agent-risk-guard-audit/scripts/dangerous-commands.ps1`（主源） | `D6D726D20288C2AFE602BE488D17A6C05F90DB1C46E4A78BC2E2A6A99FBCA9CA` | True | 24004 |
 | `agent-risk-guard/assets/hooks/dangerous-commands.ps1` | 同上 | True | 24004 |
 | `agent-risk-guard/skills/agent-risk-guard/scripts/dangerous-commands.ps1` | 同上 | True | 24004 |
-| `C:\Users\Satanchen\.claude\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
-| `C:\Users\Satanchen\.codex\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
-| `C:\Users\Satanchen\.gemini\config\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
+| `~\.claude\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
+| `~\.codex\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
+| `~\.gemini\config\hooks\dangerous-commands.ps1` | 同上 | True | 24004 |
 
 `distinct hashes = 1 (ALL IDENTICAL)`；universal 两处（主源 + skills 副本）同为 `13FEB6CCA35710909783EAD23DCD73C6CAA8CDAA899616DC0205DFB93D9796BB`、BOM=True、17685 字节，`distinct = 1`。
 

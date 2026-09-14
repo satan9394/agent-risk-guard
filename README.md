@@ -96,10 +96,11 @@ AI Coding Agent
 
 | Agent | 集成（Integration） | 执行前硬拦截 | 验证等级 | 状态 |
 |---|---|---|---|---|
-| **DeepSeek Harness (DSH)** | `pre-execute` 瀑布 + `guard()` 单调不变量 | ✅ 是 | Windows D3（真实会话拦截记录 `Error: 全局铁律…`）；macOS/Linux D1 | ✅ Verified |
-| **Claude Code** | `PreToolUse` hook（`riskguard-pre-tool-hook`）+ CLAUDE.md 规则 | ✅ 是（机器层硬门禁；bypassPermissions 下仍拦截） | Windows D3（真实会话 permission-rule 阻断）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
+| **DeepSeek Harness (DSH)** | 实际生效的是 profile 注入的 **`deny-risk-commands` 规则补丁**（正则匹配）；`@riskguard/dsh` 插件（`pre-execute` 瀑布 + `guard()` 单调不变量）**已实现且有测试，但尚未接入任何 profile** | ✅ 是（在**规则补丁**这一层） | Windows D3（真实会话拦截记录 `Error: 全局铁律…`）；macOS/Linux D1 | ✅ Verified（**保护来自规则补丁，不是插件**） |
+| **Claude Code** | `PreToolUse` hook（matcher `Bash` → `dangerous-commands.ps1`）+ CLAUDE.md 规则 | ✅ 是（机器层硬门禁；bypassPermissions 下仍拦截） | Windows D3（真实会话 permission-rule 阻断）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook（应用/CLI 共用 `~/.codex/` 双注册） | ✅ 是（hook 已接线；DENY/ALLOW 实测） | Windows D3（应用 `approval_policy=never`+`sandbox=unelevated` 策略层真实拦截 + **CLI 0.153.4 hook 真实会话 2026-09-07**）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **OpenCode** | `tool.execute.before` TS 插件 + AGENTS.md | ✅ 是（生产插件已注册；bash allow 仍拦截） | Windows D3（真实会话 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
+| **Antigravity CLI (AGY)** | `PreToolUse` hook（matcher `run_command`）@ `~/.gemini/config/hooks.json` | ✅ 是（适配器 `agy-dangerous-commands.ps1`，fail-closed，带 BOM） | Windows D3（真实会话 2026-09-06：git 硬重置被 deny、未提交改动保留）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
 | **Cursor** | `preToolUse` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
 | **Windsurf** | `pre_run_command` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
 | **Grok** | `PreToolUse` adapter | 🟡 弱（Grok hook 默认为 fail-open） | D1 + 单元测试；边界依赖 Rules/Sandbox | 🟡 Experimental（软约束为主） |
@@ -108,6 +109,23 @@ AI Coding Agent
 验证等级单一事实源为 `packages/installer/compatibility.json`：**D0**＝Unsupported；**D1**＝Implementation exists；**D2**＝Automated test verified；**D3**＝Real agent execution verified；**D4**＝Repeated / production verified。D3/D4 是产品能力等级，不代表某台机器当前 `ACTIVE`（机器状态看 `riskguard status` 的 Runtime）。本表各 Agent 的等级来自该文件（CI 有 `check-compatibility-docs` 防漂移）。
 
 > 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。AGY（Antigravity CLI 1.1.27）经 `~/.gemini/config/hooks.json` PreToolUse 真实会话验证（git reset --hard 被 deny、未提交修改保留）。Codex 应用形态（VS Code 扩展 + codex.exe）拦截来自应用策略/沙箱层（`approval_policy=never` + `sandbox=unelevated`，用户 2026-09-06 应用内手动验证 blocked by policy），并经 **Codex CLI 0.153.4 真实会话补测（2026-09-07）**确认 RiskGuard PreToolUse hook 亦在工具层拦截（hook 日志 deny 吻合、未提交改动保留）。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。所有拦截经 [GAN 对抗审查](docs/GAN-AUDIT-5AGENTS.md)（17 findings 全修复）验证无已知绕过。
+>
+> ⚠️ 两处**易被误读**的地方，先说清楚：① **DSH 的保护来自 `deny-risk-commands` 规则补丁（正则/子串匹配），不是 `@riskguard/dsh` 插件**——插件在 `packages/dsh/` 有实现与测试，但**没有接进任何 profile**，所以"DSH 巡检 OK"不等于"插件已接线"；② Claude Code 那一行的 hook 条目，本机实际注册的是 `PreToolUse`（matcher `Bash` → `dangerous-commands.ps1`），而安装器写入的条目 id 是 `riskguard-pre-tool-hook`——两者指同一个 hook，但**同名不代表同源**，排查接线时请以配置文件原文为准。
+
+## 欢迎使用与贡献
+
+本项目**已开源，欢迎任何人使用、提问、提 Issue**。覆盖面还很窄——目前只在少数几个 Agent 上做过真实会话验证，而 AI 编码 Agent 这个赛道几乎每个月都有新面孔。**如果你在用的 Agent 不在上面的矩阵里，那正是我们想知道的。**
+
+两种入口（Issue 模板已就绪）：
+
+- **[申请补充 Agent 类型](https://github.com/satan9394/agent-risk-guard/issues/new?template=new_agent_request.yml)** —— 最想知道三件事：它**有没有执行前拦截点**、工具调用的 **JSON 形状**、以及一条**真实的拦截证据**。
+- **[报告某 Agent 的安全机制 / 环境情况](https://github.com/satan9394/agent-risk-guard/issues/new?template=agent_security_report.yml)** —— 如果你已经在这个 Agent 上跑了 RiskGuard，发现某条规则过严 / 过松，或者发现它自带的沙箱已经覆盖了一部分，用这个。
+
+动手之前建议先读 **[新增一个 Agent 需要什么](docs/adding-an-agent.md)**：里面列了接线所需的全部信息、代码落点、自测命令，以及我们会守的硬约束。只想提一句建议、不想写代码也完全可以——**一份该 Agent 的 hook/插件文档截图，通常就够我们判断"能不能做硬门禁"**，而"这个 Agent 只能做软约束"本身也是有用结论。
+
+**特别欢迎的三类信息**：① 某个 Agent 的 hook / 插件契约（配置路径 + 事件形状 + 拒绝返回形状）；② 该 hook 在**失败时**是 fail-open 还是 fail-closed（用空 stdin 就能测）；③ 一条真实会话里的**拦截或漏拦**记录（含版本与日期）。
+
+> ⚠️ **安全漏洞不要开公开 Issue**：绕过规则、或任何能让危险命令真正执行的方式，请走 [SECURITY.md](SECURITY.md)。
 
 ## 操作系统支持
 
@@ -301,6 +319,7 @@ pwsh scripts/riskguard-wiring-check.ps1 -Fix
 - **贡献指南**：[CONTRIBUTING.md](CONTRIBUTING.md)
 - **安全报告**：[SECURITY.md](SECURITY.md)
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
+- **发行说明（每版「出了什么问题 + 改变了什么」，中英双语）**：[docs/release-notes/](docs/release-notes/)
 
 > **版本说明**：当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`，单一版本源见 `packages/core/src/version.ts`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；`v0.1.0` / `v0.1.2` / `v0.2.0` / `v0.2.1` / `v0.2.2` 为已发布的 Developer Preview（Pre-release）。当前仍存在未完成真实环境验证的平台与 Agent（macOS / Linux、Copilot CLI / Windsurf / Cursor 真实 D3 待补），因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；已发布的 Developer Preview（Pre-release）为 **`v0.1.0` 起至 `v0.3.0`**，逐版「出了什么问题 + 改变了什么」见 [docs/release-notes/](docs/release-notes/)。当前仍存在未完成真实环境验证的平台与 Agent（macOS / Linux、Copilot CLI / Windsurf / Cursor 真实 D3 待补），因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。

@@ -1,0 +1,97 @@
+name: "New agent support request / 申请补充 Agent 类型"
+description: "Ask us to cover an AI coding agent that RiskGuard does not support yet. 申请补充我们尚未覆盖的 Agent。"
+title: "[AGENT] "
+labels: ["new-agent"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping widen the coverage.
+
+        RiskGuard is a **deterministic guardrail** for AI coding agents: a pre-execution hook plus a shared
+        policy core that decides allow / deny. So the question we actually need answered is not
+        "does this agent exist" but **"how does it run shell commands, and is there an interception point we can
+        hook into"**. Please fill in what you can — "I don't know" is a perfectly good answer and still helps.
+
+        谢谢你来帮忙扩大覆盖面。本项目是**确定性护栏**（执行前 hook + 共享策略内核），
+        所以真正要回答的不是"这个 Agent 存不存在"，而是 **"它怎么执行 shell 命令、有没有可供挂载的拦截点"**。
+        填不出来的写"不确定"也很有用。
+
+        > ⚠️ **Security problems do NOT go here.** If you found a bypass in an existing rule, use
+        > [SECURITY.md](https://github.com/satan9394/agent-risk-guard/blob/main/SECURITY.md) instead.
+        > **安全漏洞不要开公开 Issue**，请走 SECURITY.md 的渠道。
+
+  - type: input
+    id: agent
+    attributes:
+      label: "Agent name and version / Agent 名称与版本"
+      description: "The exact thing you run, e.g. `windsurf --version` output."
+      placeholder: "e.g. Windsurf 1.2.3 / Zed 0.150.1 / Aider 0.60"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: "Platform / 平台"
+      placeholder: "e.g. Windows 11 23H2 / macOS 14.5 / Ubuntu 24.04 (WSL2)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: interception
+    attributes:
+      label: "Does it expose a pre-execution interception point? / 是否有执行前拦截点"
+      description: "This is the make-or-break question: without one we can only give guidance, not a hard gate."
+      options:
+        - "Yes — a hook / plugin API that can BLOCK a tool call (有 hook 或插件 API，能阻止工具调用)"
+        - "Yes — but it can only observe, or only ask the user to confirm (有，但只能观察或请求确认)"
+        - "No — only a sandbox / permission policy (没有，只有沙箱或权限策略)"
+        - "I don't know (不确定)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command-path
+    attributes:
+      label: "How does it run shell commands? / 它怎么执行 shell 命令"
+      description: "Config file path, the hook/plugin schema, the JSON shape of the tool call, and how a decision is returned."
+      placeholder: |
+        Example of the level of detail that lets us start:
+          config:  ~/.windsurf/hooks.json
+          event:   PreToolUse, matcher "Bash"
+          stdin:   {"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}
+          deny  =  stdout {"permissionDecision":"deny"} and exit 0
+          allow =  empty stdout and exit 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Evidence that it actually runs / 真实运行的证据"
+      description: |
+        Raw output beats description. Ideally: one dangerous command being blocked AND one safe command being
+        allowed, with the agent version and the date. If you have not tested it yet, say so.
+      placeholder: |
+        Paste raw hook output / log lines here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: "Anything else / 其它"
+      description: "Links, docs, prior art, or why this agent matters to you."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: "Before submitting / 提交前"
+      options:
+        - label: "I searched existing issues and this agent is not already tracked. (我已搜索过现有 Issue)"
+          required: true
+        - label: "This is not a security vulnerability report. (这不是漏洞报告)"
+          required: true

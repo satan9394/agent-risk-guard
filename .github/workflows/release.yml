@@ -68,13 +68,30 @@ jobs:
           if [ -z "$TGZ" ]; then echo "tarball not found"; exit 1; fi
           cd dist && sha256sum "$(basename "$TGZ")" > SHA256SUMS.txt && cat SHA256SUMS.txt
 
+      # 发行说明必须双语且必须存在。缺文件 → 本步失败 → 不发版（fail-closed）。
+      # 规则与模板见 docs/release-notes/README.md 与 TEMPLATE.md。
+      # 背景：此前用 `--generate-notes` 自动生成正文，导致 v0.3.0 / v0.2.2 只剩一行 `**Full Changelog**` 链接。
+      - name: Require bilingual release notes (fail-closed)
+        run: |
+          NOTES="docs/release-notes/${{ github.ref_name }}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::缺少发行说明 $NOTES —— 每个版本都必须写明「出了什么问题」与「改变了什么」，中英双语。"
+            echo "::error::请参照 docs/release-notes/TEMPLATE.md 新建该文件后重新打 tag/重跑工作流。"
+            exit 1
+          fi
+          echo "OK: $NOTES"
+          head -1 "$NOTES"
+
       - name: Publish GitHub Release (Pre-release, §十二)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          NOTES="docs/release-notes/${{ github.ref_name }}.md"
+          # 标题取发行说明的一级标题，让同一个文件同时决定"标题 + 正文"
+          TITLE="$(head -1 "$NOTES" | sed 's/^# //')"
           gh release create "${{ github.ref_name }}" \
             dist/*.tar.gz \
             dist/SHA256SUMS.txt \
-            --title "${{ github.ref_name }}" \
+            --title "$TITLE" \
             --prerelease \
-            --generate-notes
+            --notes-file "$NOTES"

@@ -5,7 +5,7 @@
 
 ## 待用户确认（阻塞中，2026-08-29 R3 生态融合）
 
-- [x] **生产 skill 目录同步（R3）**：生产 `C:\Users\Satanchen\.claude\skills\custom\agent-risk-guard-audit\` 的 `assets/dsh/deny-risk-commands.patch.yml` 35 → 47 条（解释器 one-liner / git 破坏清单 / Windows wrapper），同步仓库最新 patch 与文档（2026-09-10 已同步至 69 条新版）。**⚠️ 2026-09-13 复核更正**：原写「四处副本哈希一致」**不实**——复核当日该树 hooks 三份仍是 G24 之前的旧版（`dangerous-commands.ps1` = 17739 B / `9BB6374D8FC25B54`，其 L175 仍是旧 rule 16「整条命令级否定」，即 G24 修掉的那个静默泄漏；`dangerous-commands-universal.ps1` 与它**同哈希**＝误拷）。已于 2026-09-13 同步为 canonical：`9889F367F2944756` / `AC566BE720A9006C` / `F80DABF048C3E98A`，同步前备份于 `scripts.bak-20260913-041246`。**该树仍缺** `dangerous-commands-agy.ps1` 与 `agy-dangerous-commands.ps1`；`agent-risk-guard-audit-xhs-publish/scripts/` 仍为旧变体（不在本次授权范围，已登记待决）。
+- [x] **生产 skill 目录同步（R3）**：生产 `~\.claude\skills\custom\agent-risk-guard-audit\` 的 `assets/dsh/deny-risk-commands.patch.yml` 35 → 47 条（解释器 one-liner / git 破坏清单 / Windows wrapper），同步仓库最新 patch 与文档（2026-09-10 已同步至 69 条新版）。**⚠️ 2026-09-13 复核更正**：原写「四处副本哈希一致」**不实**——复核当日该树 hooks 三份仍是 G24 之前的旧版（`dangerous-commands.ps1` = 17739 B / `9BB6374D8FC25B54`，其 L175 仍是旧 rule 16「整条命令级否定」，即 G24 修掉的那个静默泄漏；`dangerous-commands-universal.ps1` 与它**同哈希**＝误拷）。已于 2026-09-13 同步为 canonical：`9889F367F2944756` / `AC566BE720A9006C` / `F80DABF048C3E98A`，同步前备份于 `scripts.bak-20260913-041246`。**该树仍缺** `dangerous-commands-agy.ps1` 与 `agy-dangerous-commands.ps1`；`agent-risk-guard-audit-xhs-publish/scripts/` 仍为旧变体（不在本次授权范围，已登记待决）。
 - [x] **DSH 门禁同步（R3）**：`~/.dsh/profiles/web/cordis.patch.yml` 的 deny-risk-commands 35 → 47 条，让新规则在 pre-execute 门禁真实生效（2026-09-10 已升至 69 条含 dd/format 修订，热加载生效）
 
 ## 已授权可执行（待安排）
