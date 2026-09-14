@@ -12,7 +12,7 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.3.0 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与各 Agent 适配器已实现并通过自动化测试；
+> **状态：`v0.3.1 Developer Preview`**。核心策略引擎、事务式 CLI 安装器、DSH 插件与各 Agent 适配器已实现并通过自动化测试；
 > 生产接线已在本机单点验证（Claude Code / OpenCode / Codex / DSH / AGY），macOS / Linux 尚未在真实环境实测（详见 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)）。
 > v0.2.0 新增 **OWASP ACS v0.1 experimental gateway**（`riskguard acs evaluate`）、**Compatibility Schema v2**（真实执行边界）、**Capability taxonomy** 与 **Agent Security Conformance Framework**（C1–C10）。v0.2.1 补齐 **Wire Schema Conformance**：官方 OWASP ACS v0.1.0 JSON Schema（pinned 快照）成为最终兼容性判据，新增 `acs evaluate --wire`（official JSON-RPC Request/Response Envelope）。v0.2.2 冻结 ACS 协议层：新增 **ACS version gate**（官方 wire gateway 精确拒绝不支持版本，返回 `-32001`，绝不误当作 0.1.0 处理）与 **release workflow**（GitHub Release 真正上传可校验的 `tar.gz` + `SHA256SUMS.txt`）。**v0.3.0 Real Agent Conformance**：定位从「构建基础设施」转向「真实 Agent 会话验证」——**5 个 Agent 全部拿到真实会话硬拦截证据（D3）**：OpenCode / Claude Code / DSH / AGY 由 RiskGuard hook / plugin 真实会话验证，Codex 为「应用策略/沙箱层（`approval_policy=never` + `sandbox=unelevated`）+ **Codex CLI 0.153.4 hook 真实会话补测（2026-09-07）**」双证据；另完成 **GAN 对抗审查**（17 findings：P0×10/P1×6/P2×1 全部修复）与 **installer UX**（`detect` 全量检测含 agy、`install` 交互式选择）。
 
@@ -321,5 +321,5 @@ pwsh scripts/riskguard-wiring-check.ps1 -Fix
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 - **发行说明（每版「出了什么问题 + 改变了什么」，中英双语）**：[docs/release-notes/](docs/release-notes/)
 
-> **版本说明**：当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`，单一版本源见 `packages/core/src/version.ts`）。
+> **版本说明**：当前统一产品版本为 **`v0.3.1 Developer Preview`**（`package.json` = `0.3.1`，单一版本源见 `packages/core/src/version.ts`）。
 > 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；已发布的 Developer Preview（Pre-release）为 **`v0.1.0` 起至 `v0.3.0`**，逐版「出了什么问题 + 改变了什么」见 [docs/release-notes/](docs/release-notes/)。当前仍存在未完成真实环境验证的平台与 Agent（macOS / Linux、Copilot CLI / Windsurf / Cursor 真实 D3 待补），因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。

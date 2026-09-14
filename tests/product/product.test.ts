@@ -24,6 +24,7 @@ import {
 import { saveManifest, loadManifest, removeManifest, hasManifest, manifestDir, type AgentManifest } from '../../packages/installer/src/manifest.ts';
 import { loadCompatibility, levelAtLeast, describeAgent } from '../../packages/installer/src/compatibility.ts';
 import { classifyShellCommand, normalizeFullWidth } from '../../packages/core/src/normalize.ts';
+import { PRODUCT_VERSION } from '../../packages/core/src/version.ts';
 
 const HOOK_PATH = join(fileURLToPath(new URL('.', import.meta.url)), '../../packages/cli/src/hooks/pre-tool-hook.ts');
 
@@ -125,7 +126,9 @@ test('manifest: manifestDir 定位到 <home>/.riskguard/manifests', () => {
 test('compatibility: schema 版本与产品版本一致', () => {
   const c = loadCompatibility();
   assert.equal(c.schemaVersion, '2.0');
-  assert.equal(c.productVersion, '0.3.0');
+  // 2026-09-13：原为硬编码 `'0.3.0'`，每次发版都要手改，忘了就让 CI 变红（v0.3.1 升级时实测踩到）。
+  // 改为**从单一版本源推导**——这才是「版本一致」这条不变式本身该有的写法。
+  assert.equal(c.productVersion, PRODUCT_VERSION, `compatibility.json productVersion=${c.productVersion} 与单一版本源 ${PRODUCT_VERSION} 不一致（升版时忘记同步）`);
   assert.equal(typeof c.levels.D3, 'string');
 });
 

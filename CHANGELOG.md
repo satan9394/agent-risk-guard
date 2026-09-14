@@ -4,14 +4,14 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.3.0 Developer Preview`**（`package.json` = `0.3.0`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.3.1 Developer Preview`**（`package.json` = `0.3.1`；单一版本源 `packages/core/src/version.ts`）。
 
 - 已发布为 GitHub Pre-release 的版本：**`v0.1.0` 起至 `v0.3.0`**（`v0.1.0` / `v0.1.1` / `v0.1.2` 于 2026-09-04；`v0.2.0` / `v0.2.1` / `v0.2.2` 于 2026-09-05；`v0.3.0` 于 2026-09-07）。历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记，**不是**当前产品稳定版声明。
 - **每个版本的"出了什么问题 + 改变了什么"另有中英双语发行说明**：见 [`docs/release-notes/`](docs/release-notes/)——GitHub Release 的正文即取自该目录，且**缺对应说明文件时发版会失败**。`v0.3.1` 的说明已就绪，**尚未打 tag**。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
-## [Unreleased]
+## [0.3.1] - 2026-09-14（v0.3.1 让"保护已生效"可自证，已发布）
 
 > 定位：**v0.3.1 —— 让"保护已生效"这句话可自证**。中英双语发行说明见
 > [`docs/release-notes/v0.3.1.md`](docs/release-notes/v0.3.1.md)（含"出了什么问题"与"改变了什么"）；
