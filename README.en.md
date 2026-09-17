@@ -115,9 +115,9 @@ Architecture contract details: [docs/adapter-contract.md](docs/adapter-contract.
 
 The single source of truth for verification levels is `packages/installer/compatibility.json`: **D0** = Unsupported; **D1** = Implementation exists; **D2** = Automated test verified; **D3** = Real agent execution verified; **D4** = Repeated / production verified. D3/D4 are product capability levels — they do not mean a given machine is currently `ACTIVE` (machine state comes from `riskguard status` → Runtime). The levels above come from that file (CI runs `check-compatibility-docs` to prevent drift).
 
-> Honest note: the early interception for Claude Code and OpenCode in the [3-agent deletion test](docs/d3-deletion-test-3agents.md) largely came from **model-level rules** (CLAUDE.md / AGENTS.md) and the plugin-injected trash tool. Since v0.1.0 the **machine-level hard gates** have been re-verified with real D3 sessions (see [docs/deployment-status.md](docs/deployment-status.md)): in real `claude -p --permission-mode bypassPermissions` and `opencode run` sessions, `git reset --hard` was rejected by the RiskGuard hook/plugin before the tool ran (Claude Code `permission-rule`, OpenCode `BLOCKED_BY_GLOBAL_SAFETY_GUARD`), and uncommitted changes survived. DSH keeps machine-level `pre-execute` gate evidence. AGY (Antigravity CLI 1.1.27) was verified through `~/.gemini/config/hooks.json` PreToolUse in a real session. Codex (app form: VS Code extension + codex.exe) is blocked by the app policy/sandbox layer (`approval_policy=never` + `sandbox=unelevated`, user-verified manually on 2026-09-06 with "blocked by policy"), and a **Codex CLI 0.153.4 real-session re-test (2026-09-07)** confirmed the RiskGuard PreToolUse hook also blocks at the tool layer (hook log deny timestamps match; uncommitted changes preserved). Cursor / Windsurf / Grok machine-level hard blocking still await real-session verification. All blocking has been audited by the [GAN adversarial review](docs/GAN-AUDIT-5AGENTS.md) (17 findings, all fixed).
+> On "early interception": the Claude Code and OpenCode blocks in the [3-agent deletion test](docs/d3-deletion-test-3agents.md) came largely from **model-level rules** and the plugin-injected trash tool; the **machine-level hard gates** were only re-verified from v0.1.0 onward. The evidence and source behind every row above is recorded in [docs/deployment-status.md](docs/deployment-status.md) and [docs/real-agent-conformance-final-report.md](docs/real-agent-conformance-final-report.md), and all blocking has been audited by the [GAN adversarial review](docs/GAN-AUDIT-5AGENTS.md) (17 findings, all fixed).
 >
-> ⚠️ Two things that are easy to misread, stated up front: ① **DSH is protected by the `deny-risk-commands` rule patch (regex / substring matching), not by the `@riskguard/dsh` plugin** — the plugin has an implementation and tests under `packages/dsh/` but is **not wired into any profile**, so "the DSH check is green" does not mean "the plugin is wired"; ② for the Claude Code row, what is actually registered on this machine is a `PreToolUse` entry (matcher `Bash` → `dangerous-commands.ps1`), while the id the installer writes is `riskguard-pre-tool-hook` — same hook, but **the same name does not imply the same origin**, so check the config file itself when debugging wiring.
+> ⚠️ When debugging wiring: for the Claude Code row, what is actually registered on this machine is a `PreToolUse` entry (matcher `Bash` → `dangerous-commands.ps1`), while the id the installer writes is `riskguard-pre-tool-hook` — same hook, but **the same name does not imply the same origin**, so read the config file itself.
 
 ## Community & contributing
 
@@ -186,7 +186,7 @@ node bin/riskguard.mjs detect --json   # full boolean map
 node bin/riskguard.mjs status
 ```
 
-`status` distinguishes two concepts: **Capability** (D0–D4 support for that agent, from the single source of truth `compatibility.json`) and **Runtime** (what is actually happening on this machine). Runtime values: `NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` (full runtime self-test passed, really blocking) / `BROKEN` (manifest present but wiring missing/corrupt). It also shows **Verification** mode: `dynamic` (Claude Code / Codex — real interception runtime self-test) vs `static` (OpenCode / DSH — wiring + artifact + integrity), never conflated.
+`status` distinguishes two concepts: **Capability** (the product's D0–D4 support for that agent, from `compatibility.json`) and **Runtime** (what is actually happening on this machine: `NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN` — `ACTIVE` means the full runtime self-test passed).
 
 **3. Health check** (PASS / WARN / FAIL / SKIP; uninstalled agents count as SKIP, not FAIL):
 
@@ -203,7 +203,7 @@ node bin/riskguard.mjs install --all --dry-run      # skip interaction, install 
 node bin/riskguard.mjs install --agent claude       # install one only (cc/claude/claude-code equivalent; oc=opencode)
 ```
 
-Since v0.3.0, `riskguard detect` scans the full known registry (Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose); `install` without `--agent` interactively lists detected agents (enter numbers, e.g. `1,3` / `all` / Enter for all; non-interactive environments auto-install all without hanging), and `--all`/`--yes` skips interaction. When wiring is broken (BROKEN), install detects it as **repair** (prints `repaired successfully`) and returns to ACTIVE; only "no changes + healthy ACTIVE" reports `already installed`. Install is **non-destructive**: merges preserve user fields; corrupt JSON / no permission / IO errors abort with zero writes; an OpenCode plugin at the target path with same name but different content (SHA256 mismatch) is refused; any failure rolls back to the pre-install state (including restoring the old manifest), leaving no half-done state.
+`detect` scans Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose. `install` without `--agent` lists detected agents for interactive selection (`1,3` / `all` / Enter), and non-interactive environments auto-install all without hanging. Install is **non-destructive**: merges preserve user fields, corrupt config / missing permission / IO errors abort with zero writes, and any failure rolls back to the pre-install state; when wiring is broken (`BROKEN`) install treats it as a **repair**.
 
 **5. Uninstall** (precise inverse: removes only RiskGuard-injected entries, keeps user changes made after install):
 
@@ -226,8 +226,6 @@ cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS 
 - `acs evaluate` = **payload compatibility mode** (RiskGuard convenience interface); `acs evaluate --wire` = **official ACS v0.1.0 schema-conformant wire mode** (Request Envelope → Response Envelope).
 - Invalid input never throws a stack trace: payload mode prints `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` with `extensions.riskguard.degraded = true` (fail-closed); wire mode returns JSON-RPC errors (-32700/-32600/-32602).
 - The official OWASP ACS v0.1.0 JSON Schema is pinned in `tests/vendor/owasp-acs-v0.1.0/` (read-only; upstream commit recorded in the README) and is the Release Gate since v0.2.1.
-
-> Windows PowerShell: `Get-Content … -Raw | node packages/cli/src/index.ts` remains usable as the low-level stdin-JSON → Decision-JSON entry; advanced agent wiring lives in `packages/adapters/<agent>/src` and `docs/deployment-status.md`.
 
 **7. Exit codes** (contract for scripts / CI; also listed by `riskguard help`):
 
@@ -261,17 +259,6 @@ In other words:
 Agent tries permanent delete  →  RiskGuard →  DENY  →  the command never runs (recycle bin suggested)
 ```
 
-## Features
-
-- **Hard blocking before execution** — decided and blocked by a deterministic policy engine before execution, not by whether the model "remembers" the rules.
-- **Trash-first deletion policy** — permanent deletion is always DENY with a recycle-bin (trash) suggestion; recoverability first.
-- **Cross-agent policy core** — one policy core drives multiple agents from a single source of truth; consistent behavior.
-- **Fail-closed decisions** — parse failure and unknown operations are always rejected (better to over-block and let a human allow, than to under-block).
-- **Sensitive resource protection** — read-only gating on `.ssh` / `.env` / private keys etc.
-- **Obfuscation resistance** — recognizes common obfuscations and shell-wrapping bypasses (partially).
-- **Secret-safe audit logging** — audit and block messages auto-redact tokens / API keys / passwords.
-- **Self-protection** — RiskGuard's own configuration cannot be deleted or tampered with.
-
 ## Security Model
 
 RiskGuard is **one layer of defense-in-depth, not an absolute security boundary**. Please understand these limits:
@@ -294,17 +281,30 @@ RiskGuard is **one layer of defense-in-depth, not an absolute security boundary*
 - [docs/ecosystem-benchmark.md](docs/ecosystem-benchmark.md) — ecosystem benchmark (allowlister / CC Safety Net etc.) and roadmap
 - [docs/dsh-api-evidence-d2.md](docs/dsh-api-evidence-d2.md) — DSH `pre-execute` + `guard()` source-level evidence
 - [docs/dsh-live-wiring-guide.md](docs/dsh-live-wiring-guide.md) — DSH plugin live wiring guide
-- [docs/devlog-2026-09-04-v0.1.2.md](docs/devlog-2026-09-04-v0.1.2.md) — devlog v0.1.0 → v0.1.2 (installer finalization + portable runtime)
-- [docs/devlog-2026-09-05-v0.2.0.md](docs/devlog-2026-09-05-v0.2.0.md) — devlog v0.2.0 (ACS Alignment Foundation)
-- [docs/devlog-2026-09-05-v0.2.1.md](docs/devlog-2026-09-05-v0.2.1.md) — devlog v0.2.1 (Wire Schema Conformance)
-- [docs/devlog-2026-09-05-v0.2.2.md](docs/devlog-2026-09-05-v0.2.2.md) — devlog v0.2.2 (ACS Protocol Finalization)
-- [docs/devlog-2026-09-07-v0.3.0.md](docs/devlog-2026-09-07-v0.3.0.md) — devlog v0.3.0 (Real Agent Conformance)
+- **Devlogs**: [v0.1.0 → v0.1.2](docs/devlog-2026-09-04-v0.1.2.md) · [v0.2.0](docs/devlog-2026-09-05-v0.2.0.md) · [v0.2.1](docs/devlog-2026-09-05-v0.2.1.md) · [v0.2.2](docs/devlog-2026-09-05-v0.2.2.md) · [v0.3.0](docs/devlog-2026-09-07-v0.3.0.md)
 - [docs/TODO.md](docs/TODO.md) — TODO list (incl. pending production-sync items)
 
 ## Development & security verification
 
-- **GAN-style adversarial review (maker-checker)**: during development the project uses "generator/discriminator" adversarial review with repeated **independent discriminator audits** (core / installer / opencode / adapter / hook), with fix maps kept on record. For v0.3.0 the 5 production agent gates were fully audited (workflow fan-out independent discriminators), producing 17 findings (P0×10/P1×6/P2×1) — case variants, fail-open, download-then-execute chains, quote/backtick insertion, `bash -xec` unwrapping, the `arm` false-exclusion, the `os.system` regex bug, `-EncodedCommand` base64, xargs/-execdir, git single-file restore, and more — **all fixed and re-verified** (see [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md)). Note this is a **development/review methodology** — RiskGuard's runtime does **not** depend on any GAN / neural-network model. See [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md).
-- Tests: `tests/` covers policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial (corpus + rule self-tests) — **312/312 passing** (local, platform-independent suite; includes real Windows trash / junction execution; CI runs the platform-independent suite on Ubuntu, while the local `test-all.ps1` additionally runs D3 hook pipelines and the WSL sh suite).
+- **Independent discriminator review (maker-checker)**: every slice is reviewed by a discriminator that did **not** write it, under the rule that "reverting the fix must turn some test red" — so gates cannot become self-fulfilling. For v0.3.0 the five production agent gates were fully audited, producing 17 findings (P0×10 / P1×6 / P2×1), **all fixed and re-verified** — see [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) and [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md). This is a **development methodology**; the runtime does **not** depend on any model.
+- Tests: `tests/` covers policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial (corpus + rule self-tests) — **380/380 passing**; CI runs the platform-independent suite on Ubuntu, while the local `test-all.ps1` additionally runs D3 hook pipelines and the WSL sh suite.
+
+## Wiring check (ongoing hygiene)
+
+After installing, it is worth periodically confirming that the wiring is **still in place** and that the scripts
+still match the single rule source — Claude Code's `PreToolUse` entry was once **silently reverted by an external
+tool**, while the hook file was present, its hash was correct and every suite was green.
+
+```powershell
+# read-only inspection (non-zero exit when something is missing or drifted; prints [OK]/[!!] per item)
+pwsh scripts/riskguard-wiring-check.ps1
+
+# inspect and self-heal from the in-repo single source (backs up to ~/.risk-guard-backup/ first)
+pwsh scripts/riskguard-wiring-check.ps1 -Fix
+```
+
+It checks the three ps1 production wirings against the in-repo source, the OpenCode plugin, the DSH patch, and
+whether the entries in `settings.json` / `hooks.json` / `config.toml` are actually registered.
 
 ## Community & license
 
@@ -315,5 +315,4 @@ RiskGuard is **one layer of defense-in-depth, not an absolute security boundary*
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 - **Release notes** (the problem + what changed, for every version, bilingual): [docs/release-notes/](docs/release-notes/)
 
-> **Version note**: current unified product version is **`v0.3.1 Developer Preview`** (`package.json` = `0.3.1`; single version source in `packages/core/src/version.ts`).
-> The historical Git tag `v1.0.0` is kept and not deleted (it marks an earlier release, not the current stable claim); the published Developer Preview (Pre-release) releases run from **`v0.1.0` through `v0.3.0`** — see [docs/release-notes/](docs/release-notes/) for the problem each one solved and what it changed. Some platforms/agents still lack real-environment verification (macOS / Linux; real D3 for Copilot CLI / Windsurf / Cursor), so no `1.0 Stable` claim is made. See `docs/TODO.md` and `CHANGELOG.md`.
+> The historical Git tag `v1.0.0` is kept and not deleted: it marks an earlier release and **is not a current stability claim**. For why no `1.0 Stable` claim is made, see [OS support](#os-support) and the [Support Matrix](#support-matrix).

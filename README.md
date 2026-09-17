@@ -113,9 +113,9 @@ AI Coding Agent
 
 验证等级单一事实源为 `packages/installer/compatibility.json`：**D0**＝Unsupported；**D1**＝Implementation exists；**D2**＝Automated test verified；**D3**＝Real agent execution verified；**D4**＝Repeated / production verified。D3/D4 是产品能力等级，不代表某台机器当前 `ACTIVE`（机器状态看 `riskguard status` 的 Runtime）。本表各 Agent 的等级来自该文件（CI 有 `check-compatibility-docs` 防漂移）。
 
-> 诚实声明：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 中的早期拦截主要来自**模型层规则**（CLAUDE.md / AGENTS.md）与插件注入的 trash 工具；v0.1.0 起已在本机补上**机器层硬门禁**的真实 D3 复核（见 [docs/deployment-status.md](docs/deployment-status.md)）：真实 `claude -p --permission-mode bypassPermissions` 与 `opencode run` 会话中，`git reset --hard` 均被 RiskGuard hook / plugin 在工具执行前拒绝（Claude Code 侧 `permission-rule`、OpenCode 侧 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`），未提交改动存活。DSH 保持机器级 `pre-execute` 门禁拦截实锤。AGY（Antigravity CLI 1.1.27）经 `~/.gemini/config/hooks.json` PreToolUse 真实会话验证（git reset --hard 被 deny、未提交修改保留）。Codex 应用形态（VS Code 扩展 + codex.exe）拦截来自应用策略/沙箱层（`approval_policy=never` + `sandbox=unelevated`，用户 2026-09-06 应用内手动验证 blocked by policy），并经 **Codex CLI 0.153.4 真实会话补测（2026-09-07）**确认 RiskGuard PreToolUse hook 亦在工具层拦截（hook 日志 deny 吻合、未提交改动保留）。Cursor / Windsurf / Grok 的机器层硬拦截仍待真实会话复核。所有拦截经 [GAN 对抗审查](docs/GAN-AUDIT-5AGENTS.md)（17 findings 全修复）验证无已知绕过。
+> 关于「早期拦截」：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 里的拦截主要来自**模型层规则**与插件注入的 trash 工具；v0.1.0 起才补上**机器层硬门禁**的真实会话复核。上表每一行的证据与来源见 [docs/deployment-status.md](docs/deployment-status.md) 与 [docs/real-agent-conformance-final-report.md](docs/real-agent-conformance-final-report.md)，全部拦截经 [GAN 对抗审查](docs/GAN-AUDIT-5AGENTS.md)（17 findings 全修复）验证无已知绕过。
 >
-> ⚠️ 两处**易被误读**的地方，先说清楚：① **DSH 的保护来自 `deny-risk-commands` 规则补丁（正则/子串匹配），不是 `@riskguard/dsh` 插件**——插件在 `packages/dsh/` 有实现与测试，但**没有接进任何 profile**，所以"DSH 巡检 OK"不等于"插件已接线"；② Claude Code 那一行的 hook 条目，本机实际注册的是 `PreToolUse`（matcher `Bash` → `dangerous-commands.ps1`），而安装器写入的条目 id 是 `riskguard-pre-tool-hook`——两者指同一个 hook，但**同名不代表同源**，排查接线时请以配置文件原文为准。
+> ⚠️ 排查接线时注意：Claude Code 那一行，本机实际注册的是 `PreToolUse`（matcher `Bash` → `dangerous-commands.ps1`），而安装器写入的条目 id 是 `riskguard-pre-tool-hook`——两者指同一个 hook，但**同名不代表同源**，请以配置文件原文为准。
 
 ## 欢迎使用与贡献
 
@@ -184,7 +184,7 @@ node bin/riskguard.mjs detect --json   # {claude-code, codex, opencode, dsh} 布
 node bin/riskguard.mjs status
 ```
 
-status 区分两个概念：**Capability**（RiskGuard 对该 Agent 理论/实测支持到 D0–D4，来自单一事实源 `compatibility.json`）与 **Runtime**（这台机器当前实际状态）。Runtime 取值 `NOT_DETECTED`（Agent 不存在）/ `DETECTED`（Agent 在，RiskGuard 未装）/ `INSTALLED`（已装待确认）/ `ACTIVE`（完整 runtime self-test 通过，真的在拦截）/ `BROKEN`（manifest 在但接线缺失损坏）。另显示 **Verification** 模式：`dynamic`（Claude Code / Codex——真实执行 interception runtime self-test）/ `static`（OpenCode / DSH——wiring + artifact + integrity），两种不混同。
+`status` 区分两个概念：**Capability**（产品对该 Agent 支持到 D0–D4，来自 `compatibility.json`）与 **Runtime**（这台机器的实际状态：`NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN`——`ACTIVE` 表示完整 runtime self-test 通过）。
 
 **3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
 
@@ -201,7 +201,7 @@ node bin/riskguard.mjs install --all --dry-run      # 跳过交互，直接全�
 node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
 ```
 
-`riskguard detect`（v0.3.0 起）全量检测已知 Agent（含 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose），`install` 无 `--agent` 时对已检测到的 Agent 做交互式选择（输入编号/逗号，如 `1,3` / `all` / 回车默认全装；非交互环境自动全装不卡死），`--all`/`--yes` 跳过交互。已安装但 wiring 损坏（BROKEN）时，install 会识别为 **repair**（输出 `repaired successfully`），成功恢复后 ACTIVE；仅「无改动 + 健康 ACTIVE」才报 `already installed`。安装**非破坏性**：merge 保留用户字段；损坏 JSON / 无权限 / IO 错误立即终止零写入；OpenCode 插件目标同名异内容（SHA256 不符）拒绝安装；任一步失败回滚到安装前（含旧 manifest 恢复），不留下半成品。
+`detect` 覆盖 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose。`install` 无 `--agent` 时对检测到的 Agent 做交互式选择（`1,3` / `all` / 回车全装），非交互环境自动全装不卡死。安装是**非破坏性**的：merge 保留用户字段，配置损坏 / 无权限 / IO 错误立即终止且零写入，任一步失败回滚到安装前；wiring 损坏（`BROKEN`）时 install 自动识别为 **repair**。
 
 **5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
 
@@ -221,11 +221,9 @@ cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
 cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
 ```
 
-- `acs evaluate` = **payload compatibility mode**（RiskGuard convenience interface）；`acs evaluate --wire` = **official ACS v0.1.0 schema-conformant wire mode**（Request Envelope → Response Envelope；§四十七/§四十八/§四十九）。
-- 非法输入不抛 stack trace：payload mode 输出 `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` 且 `extensions.riskguard.degraded = true`（fail-closed，§十八）；wire mode 输出 JSON-RPC error（-32700/-32600/-32602，§四十/§四十一）。
-- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（upstream commit 记录在 README；只读，§五十五），是 v0.2.1 起的 Release Gate（§五十三）。
-
-> Windows PowerShell：`Get-Content … -Raw | node packages/cli/src/index.ts` 仍可用作 stdin-JSON → Decision-JSON 的底层判定入口；高级 agent 接入见 `packages/adapters/<agent>/src` 与 `docs/deployment-status.md`。
+- `acs evaluate` = payload 兼容模式；`acs evaluate --wire` = 官方 ACS v0.1.0 schema 一致的 wire 模式（Request Envelope → Response Envelope）。
+- 非法输入不抛 stack trace：payload 模式输出 `decision: deny` + `extensions.riskguard.degraded = true`；wire 模式输出 JSON-RPC error（`-32700` / `-32600` / `-32602`）。
+- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（只读），是 Release Gate。
 
 **7. 退出码约定**（脚本 / CI 可依赖；`riskguard help` 亦列出）：
 
@@ -259,17 +257,6 @@ RiskGuard CLI 输出:
 Agent 尝试永久删除  →  RiskGuard →  DENY  →  命令没有真正执行（建议走回收站）
 ```
 
-## Features（用户价值）
-
-- **Hard blocking before execution** — 在执行前由确定性策略引擎判定并阻断，不依赖模型是否「记得」规则。
-- **Trash-first deletion policy** — 永久删除一律 DENY，建议走回收站（trash），可恢复优先。
-- **Cross-agent policy core** — 同一策略内核驱动多个 Agent，单一事实源，行为一致。
-- **Fail-closed decisions** — 解析失败、未知操作一律拒绝（宁可误拦可人工放行，不可漏拦）。
-- **Sensitive resource protection** — .ssh / .env / 私钥等敏感路径只读门控。
-- **Obfuscation resistance** — 识别常见混淆与 shell 包裹绕过（部分）。
-- **Secret-safe audit logging** — 审计与拦截消息自动脱敏 token / API Key / 口令。
-- **Self-protection** — RiskGuard 自身配置不可被删除或篡改。
-
 ## Security Model
 
 RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全边界**。请务必理解以下边界：
@@ -287,25 +274,23 @@ RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全�
 - [docs/adapter-contract.md](docs/adapter-contract.md) — 适配器契约（Vendor Payload → RiskEvent → Decision）与验证等级（D0–D4，单一事实源见 compatibility.json）
 - [docs/deployment-status.md](docs/deployment-status.md) — 本机生产接线现状与同步清单
 - [docs/d3-deletion-test-3agents.md](docs/d3-deletion-test-3agents.md) — 三 Agent 删除测试真实会话实证
+- [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) — 5 Agent 对抗审查（17 findings 全修复）
+- [docs/real-agent-conformance-final-report.md](docs/real-agent-conformance-final-report.md) — v0.3.0 最终验收报告（A/B 对照、各 Agent 等级）
 - [docs/ecosystem-benchmark.md](docs/ecosystem-benchmark.md) — 生态对标（allowlister / CC Safety Net 等）与融合决策、Roadmap
 - [docs/dsh-api-evidence-d2.md](docs/dsh-api-evidence-d2.md) — DSH `pre-execute` + `guard()` 源码级实证
 - [docs/dsh-live-wiring-guide.md](docs/dsh-live-wiring-guide.md) — DSH 插件真实接入指南
-- [docs/devlog-2026-09-04-v0.1.2.md](docs/devlog-2026-09-04-v0.1.2.md) — 开发日志：v0.1.0 → v0.1.2（安装器收尾 + portable runtime 分发）
-- [docs/devlog-2026-09-05-v0.2.0.md](docs/devlog-2026-09-05-v0.2.0.md) — 开发日志：v0.2.0（ACS Alignment Foundation）
-- [docs/devlog-2026-09-05-v0.2.1.md](docs/devlog-2026-09-05-v0.2.1.md) — 开发日志：v0.2.1（ACS Schema Conformance Patch，官方 JSON Schema 判据 + wire mode）
-- [docs/devlog-2026-09-05-v0.2.2.md](docs/devlog-2026-09-05-v0.2.2.md) — 开发日志：v0.2.2（ACS Protocol Finalization，version gate + release assets）
-- [docs/devlog-2026-09-07-v0.3.0.md](docs/devlog-2026-09-07-v0.3.0.md) — 开发日志：v0.3.0（Real Agent Conformance，5-Agent D3 / GAN 审查闭环 / installer UX / Codex 应用形态真相 / ps1 资产入仓库）
+- **开发日志**：[v0.1.0→v0.1.2](docs/devlog-2026-09-04-v0.1.2.md) · [v0.2.0](docs/devlog-2026-09-05-v0.2.0.md) · [v0.2.1](docs/devlog-2026-09-05-v0.2.1.md) · [v0.2.2](docs/devlog-2026-09-05-v0.2.2.md) · [v0.3.0](docs/devlog-2026-09-07-v0.3.0.md)
 - [docs/real-agent-conformance-status.md](docs/real-agent-conformance-status.md) — v0.3.0 Real Agent Conformance 进度与诚实结论（D3 evidence 格式 / runner / 三家 adapter / 环境探测）
 - [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
 
 ## 开发与安全验证
 
-- **GAN 式对抗审查（maker-checker）**：本项目在开发过程中用「生成者 / 判别者」对抗思想做多轮**独立判别器复审**（core / installer / opencode / adapter / hook），并留存修复映射。v0.3.0 对 5 Agent 生产拦截做全量对抗审查（workflow fan-out 独立判别器），产出 17 findings（P0×10 / P1×6 / P2×1）——大小写变体、fail-open、落盘执行链、引号/反引号插词、`bash -xec` 解包、`arm` 误排除、`os.system` 正则错位、`-EncodedCommand` base64、xargs/-execdir、git 单文件 restore 等——**全部修复并复验**（见 [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md)）。注意：这是一种**开发／审查方法论**，RiskGuard **运行时并不依赖任何 GAN / 神经网络模型**。详见 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。
-- 测试：`tests/` 含 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 312/312 通过（本机，平台无关组；含 Windows trash / junction 真实执行；CI 在 Ubuntu 跑平台无关组，本机 test-all.ps1 另含 D3 hook 管线与 WSL sh 套件）。
+- **独立判别器对抗审查（maker-checker）**：每个切片都由**未参与实现**的判别器复审，且要求「回退该修复必须让某个测试变红」，防止闸门变成自证式。v0.3.0 对 5 个 Agent 的生产拦截做全量对抗审查，产出 17 findings（P0×10 / P1×6 / P2×1）**全部修复并复验**——见 [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) 与 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。这是一种**开发方法论**；RiskGuard 运行时**不依赖任何模型**。
+- 测试：`tests/` 覆盖 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 **380/380** 通过；CI 在 Ubuntu 跑平台无关组，本机 `test-all.ps1` 另含 D3 hook 管线与 WSL sh 套件。
 
 ## 生产接线巡检（日常治理）
 
-历史教训：claude-code `settings.json` 的 PreToolUse 曾多次被**外部还原丢失**（hooks 只剩 Setup、bypassPermissions），防护静默失效（fail-open）；dsh 升级（0.1.1 → 0.1.5-rc.1）后规则修订也出现过「生产已改、仓库未同步」的漂移。提供只读巡检脚本，把「接线在位 + 单一规则源 hash 一致」立为日常动作：
+安装后建议定期核对「接线是否还在位、脚本是否与单一规则源一致」——Claude Code 的 `PreToolUse` 就曾**被外部还原丢失**，而当时 hook 文件在位、哈希正确、套件全绿，防护却在静默失效。本仓库提供只读巡检脚本：
 
 ```powershell
 # 只读巡检（缺失/漂移时退出码非 0，输出逐项 [OK]/[!!]）
@@ -315,7 +300,7 @@ pwsh scripts/riskguard-wiring-check.ps1
 pwsh scripts/riskguard-wiring-check.ps1 -Fix
 ```
 
-检查范围：ps1 三处生产（claude-code / codex / agy）← 仓库 `assets/hooks/dangerous-commands.ps1`；opencode 生产插件 ← `assets/opencode/agent-risk-guard.ts`；dsh web patch ← `assets/dsh/deny-risk-commands.patch.yml`（headless 为组合文件，仅校验规则数）；以及 cc settings.json / codex hooks.json+config.toml / agy hooks.json 的接线在位。建议每周运行一次，或接入计划任务。
+检查范围：三处 ps1 生产接线与仓库单源的哈希一致性、opencode 插件、dsh patch，以及 settings.json / hooks.json / config.toml 的接线在位。
 
 ## 社区与协议
 
@@ -326,5 +311,4 @@ pwsh scripts/riskguard-wiring-check.ps1 -Fix
 - **版本历史**：[CHANGELOG.md](CHANGELOG.md)
 - **发行说明（每版「出了什么问题 + 改变了什么」，中英双语）**：[docs/release-notes/](docs/release-notes/)
 
-> **版本说明**：当前统一产品版本为 **`v0.3.1 Developer Preview`**（`package.json` = `0.3.1`，单一版本源见 `packages/core/src/version.ts`）。
-> 历史 Git tag `v1.0.0` 保留不作删除（它代表此前发布标记，非当前产品稳定版声明）；已发布的 Developer Preview（Pre-release）为 **`v0.1.0` 起至 `v0.3.0`**，逐版「出了什么问题 + 改变了什么」见 [docs/release-notes/](docs/release-notes/)。当前仍存在未完成真实环境验证的平台与 Agent（macOS / Linux、Copilot CLI / Windsurf / Cursor 真实 D3 待补），因此不宣称 1.0 Stable。详见 `docs/TODO.md` 与 `CHANGELOG.md`。
+> 历史 Git tag `v1.0.0` 保留不删：它是早期发布标记，**不代表当前稳定版**。尚无 1.0 Stable 声明的原因见上方 [操作系统支持](#操作系统支持) 与 [支持矩阵](#支持矩阵)。
