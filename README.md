@@ -1,302 +1,179 @@
 # Agent Risk Guard
 
-**Deterministic safety guardrails for AI coding agents.**
+**Deterministic runtime guardrails for AI coding agents.**
 
-**[English](README.en.md) | [中文](README.md)**
+在 AI Agent 真正执行 Shell、文件系统与 Git 高风险操作**之前**做确定性检查。它不依赖模型"记得安全规则"，
+而是在 Agent 与操作系统之间插入一道独立的执行门禁。
 
-**Cross-agent runtime security enforcement with experimental OWASP ACS v0.1.0 schema alignment.**
+```text
+AI Coding Agent
+      ↓
+ Agent Adapter        （各家的 hook / plugin / pre-execute / tool.before）
+      ↓
+ Agent Risk Guard     （统一 RiskEvent → Policy Engine，纯函数、fail-closed）
+      ↓
+ ALLOW / DENY / SAFE ALTERNATIVE
+      ↓
+ Operating System
+```
 
-在 AI Agent 真正执行文件删除、Shell 命令、Git 破坏性操作之前，进行确定性安全拦截——把「永久删除」变成「回收站」，把破坏性操作挡在执行之前。
+一次真实的拦截输出（未改动）：
+
+```text
+Agent attempts:  remove-item C:\proj\important -Recurse -Force
+
+{
+  "decision": "deny",
+  "ruleId": "RG-FS-001",
+  "reason": "永久删除禁止，请使用回收站",
+  "safeAlternative": { "operation": "trash" }
+}
+```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-一次真实的拦截输出：
-
-```text
-Agent attempts:  remove-item C:\proj\important -Recurse -Force
-
-RiskGuard CLI 输出:
-{
-  "decision": "deny",
-  "ruleId": "RG-FS-001",
-  "reason": "永久删除禁止，请使用回收站",
-  "safeAlternative": { "operation": "trash", "description": "使用统一 trash 能力（Windows Recycle Bin / macOS Trash / freedesktop Trash）" }
-}
-```
-
-也就是：
-
-```text
-Agent 尝试永久删除  →  RiskGuard →  DENY  →  命令没有真正执行（建议走回收站）
-```
-
-> **状态：`v0.3.1 Developer Preview`**（Pre-release）。核心策略引擎、事务式 CLI 安装器与各 Agent 适配器已实现，
-> 并有自动化测试覆盖；**在真实 Agent 会话中验证过拦截**的是 Claude Code、OpenCode、Antigravity CLI
-> ——危险命令在执行前被拒绝、未提交的改动存活。**macOS / Linux 已实现，但尚未在真实环境实测。**
+> **状态：`v0.3.1 Developer Preview`**（Pre-release）。
+> **已在 Claude Code / OpenCode / Antigravity CLI 的真实 Agent 会话中验证执行前拦截**；macOS / Linux 已实现，
+> 但尚未在真实环境实测。
 >
-> 每个 Agent 究竟覆盖到什么程度（含「Codex 的拦截来自它自身的策略/沙箱层」「DSH 生效的是规则补丁而不是插件」
-> 这两处容易误读的地方）见下方 [支持矩阵](#支持矩阵) 与 [Security Model](#security-model)。
-> **每个版本出了什么问题、改了什么**，见 [Releases](https://github.com/satan9394/agent-risk-guard/releases)
-> 与 [docs/release-notes/](docs/release-notes/)（中英双语）；完整历史见 [CHANGELOG.md](CHANGELOG.md)。
+> ⚠️ Agent Risk Guard **不是** OS sandbox，也不是完整的终端安全产品。它是纵深防御里的一层，边界见
+> [Limitations](#limitations)。
 
----
+## Why Agent Risk Guard?
 
-## Why RiskGuard?
+AGENTS.md、CLAUDE.md、系统 Prompt 和 Agent 自带的 Permission 都可以告诉模型"不要执行危险操作"——
+但只要**由模型决定是否遵守**，那就是**软约束**：可以被绕过、被遗忘，也可以在长上下文或强施压下失效。
 
-AGENTS.md、CLAUDE.md、系统 Prompt 和 Agent 自带的 Permission 都是安全体系的一部分，但**它们靠的是「模型遵守规则」**。模型可能被绕过、被遗忘、或面对强施压时做出错误判断——你不应该把「模型会守规矩」当作最终安全边界。
+Agent Risk Guard 加的是另一层：模型可以提出操作请求，**但模型不能决定自己的权限边界**。
 
-RiskGuard 的目标是在 Agent 调用真正危险的工具之前，增加**一层确定性的执行门禁**（由策略引擎判定，不依赖模型是否「记得」规则）。
+```text
+Prompt / Rules  →  模型决定是否遵守  →  Agent Risk Guard  →  机器再次确定性检查  →  真实执行
+```
 
-这是本项目最重要的概念：**软规则约束**（写进规则文件，靠模型遵守）与**执行前硬拦截**（hook / plugin / pre-execute 门禁，机器判定并阻断）是两种完全不同的安全等级。
+## 能拦住什么
 
-## 快速开始（Developer Preview）
+| 风险 | 示例 | 默认行为 |
+|---|---|---|
+| **永久删除** | `rm -rf`、`Remove-Item -Recurse -Force`、`del /f`、`shutil.rmtree`、`fs.rmSync` | DENY，建议改用回收站 |
+| **破坏性 Git 操作** | `git reset --hard`、`git clean -f`、`git restore`、`push --force`、`branch -D`、`stash drop/clear`、`gc --prune` | DENY |
+| **系统破坏命令** | `mkfs` / `wipefs` / `Format-Volume`、写块设备、`reg delete` | DENY |
+| **敏感资源** | `.ssh` / `.env` / `.aws` / `.kube` / `.npmrc` / 私钥 / `.pem` | 只读门控；审计与拦截消息出口自动脱敏 token / API Key / 口令 |
+| **部分混淆执行** | 全角变体、引号插词、`$()`/反引号、base64 管道、解释器 one-liner、shell wrapper 解包、junction/symlink 逃逸 | 解包后重新检查（**只能识别部分**，见 [Limitations](#limitations)） |
 
-RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。仓库内统一入口：`node bin/riskguard.mjs`（等价 `node packages/cli/src/index.ts`，用户无需面对内部源码路径）。
+完整规则清单：`packages/core/src/rules/default-policy.ts`。
+
+## Quick Start
+
+要求 **Node >= 22.18**，零依赖、零构建。
 
 ```bash
+git clone https://github.com/satan9394/agent-risk-guard.git
 cd agent-risk-guard
-# 查看 CLI 用法
-node bin/riskguard.mjs help
+
+node bin/riskguard.mjs bootstrap   # 装入 ~/.riskguard/runtime/，之后 hook 不再依赖 git clone
+node bin/riskguard.mjs install     # 交互式选择要加固的 Agent（非交互环境自动全装，不卡死）
+node bin/riskguard.mjs doctor      # 健康检查
 ```
 
-**0.（推荐）安装 portable runtime**——把运行所需最小文件集装入 `~/.riskguard/runtime/<version>/`，此后 Agent hook 指向 runtime 而非 git clone 路径；删除 / 移动源码仓库后 RiskGuard 仍工作：
-
-```bash
-node bin/riskguard.mjs bootstrap          # 首次安装 portable runtime
-node bin/riskguard.mjs bootstrap --force  # runtime 损坏时修复重装
-```
-
-> 分发/自包含模式：`node scripts/build-release.ts` 生成 `dist/agent-risk-guard-v<version>/`（含 `bin/riskguard.mjs` launcher、`runtime-manifest.json`、`SHA256SUMS.txt`）。artifact 可在 fake HOME 独立完成 detect / install / doctor / uninstall，不依赖源码仓库。
-
-**1. 先只读检测本机装了哪些 Agent**（不会改动任何配置）：
-
-```bash
-node bin/riskguard.mjs detect          # 人类可读
-node bin/riskguard.mjs detect --json   # {claude-code, codex, opencode, dsh} 布尔表
-```
-
-**2. 查看每个 Agent 的 Runtime 状态与产品能力等级**：
+看当前状态、以及**先预览再落盘**：
 
 ```bash
 node bin/riskguard.mjs status
+node bin/riskguard.mjs install --dry-run
 ```
 
-`status` 区分两个概念：**Capability**（产品对该 Agent 支持到 D0–D4，来自 `compatibility.json`）与 **Runtime**（这台机器的实际状态：`NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN`——`ACTIVE` 表示完整 runtime self-test 通过）。
+`bootstrap` 之后，Agent 的 hook/插件指向 `~/.riskguard/runtime/<version>/` 而不是 git clone——
+删除或移动源码仓库，RiskGuard 仍工作。
 
-**3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
+完整命令、选项、**退出码契约**与事务式安装器语义见 **[docs/cli.md](docs/cli.md)**。
 
-```bash
-node bin/riskguard.mjs doctor
-```
+> 也可以作为 **Agent Skill** 安装（本仓库是其 canonical 源）：
+> `npx skills add satan9394/agent-risk-guard` —— 支持 Agent Skills 的运行时可直接安装。
 
-**4. 安装 / 修复**（事务式：类型化读取 → backup → merge → manifest → runtime self-test → commit；`--dry-run` 先预览；支持 `--agent` alias）：
+## Agent 支持
 
-```bash
-node bin/riskguard.mjs install --dry-run            # 只显示将改什么，不落盘
-node bin/riskguard.mjs install                      # 交互式：先列出已检测 Agent 供编号勾选；非 TTY/管道自动全装不卡死
-node bin/riskguard.mjs install --all --dry-run      # 跳过交互，直接全装已检测到的
-node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
-```
+| Agent | 集成方式 | 拦截层 | 状态 |
+|---|---|---|---|
+| **Claude Code** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
+| **OpenCode** | `tool.execute.before` 插件 | 机器硬门禁 | ✅ 真实会话已验证 |
+| **Antigravity CLI** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
+| **Codex** | hook + 应用策略/沙箱层 | **混合**——应用形态下拦住命令的是 Codex 自身的策略层，CLI 侧 hook 另有实测 | 🟡 部分验证 |
+| **DeepSeek Harness** | profile 注入的规则补丁 | **规则（正则）层**——`@riskguard/dsh` 插件已实现且有测试，但**未接入任何 profile** | 🟡 已验证（非插件） |
+| **Cursor / Windsurf / Grok** | adapter | 无真实会话验证 | ⚪ 仅实现 |
+| **Pi 及其他** | — | — | ⚪ 未覆盖 |
 
-`detect` 覆盖 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose。`install` 无 `--agent` 时对检测到的 Agent 做交互式选择（`1,3` / `all` / 回车全装），非交互环境自动全装不卡死。安装是**非破坏性**的：merge 保留用户字段，配置损坏 / 无权限 / IO 错误立即终止且零写入，任一步失败回滚到安装前；wiring 损坏（`BROKEN`）时 install 自动识别为 **repair**。
-
-**5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
-
-```bash
-node bin/riskguard.mjs uninstall --dry-run
-node bin/riskguard.mjs uninstall
-```
-
-卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
-
-**6.（v0.2.0/v0.2.1）OWASP ACS 边界协议 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
-
-```bash
-cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
-cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
-cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
-cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
-```
-
-- `acs evaluate` = payload 兼容模式；`acs evaluate --wire` = 官方 ACS v0.1.0 schema 一致的 wire 模式（Request Envelope → Response Envelope）。
-- 非法输入不抛 stack trace：payload 模式输出 `decision: deny` + `extensions.riskguard.degraded = true`；wire 模式输出 JSON-RPC error（`-32700` / `-32600` / `-32602`）。
-- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（只读），是 Release Gate。
-
-**7. 退出码约定**（脚本 / CI 可依赖；`riskguard help` 亦列出）：
-
-| 退出码 | 含义 |
-| --- | --- |
-| `0` | 成功。含 doctor 有 WARN 但无 FAIL、install 幂等（`already installed`）、卸载一个「本来就没装」的 agent。**hook 运行时（无子命令：stdin JSON → decision JSON）恒为 0**——allow 与 deny 都是正常决策，空输入 / 坏 JSON 的 fail-closed deny 也不是错误（Claude Code / Codex 集成依赖此行为）。 |
-| `1` | 失败。doctor 有 ≥1 个 FAIL（FAIL 行尾附带可直接执行的修复提示）；install 被中止（配置损坏 / 插件同名异内容）、回滚或 runtime self-test 未通过、显式指定的 agent 未安装；uninstall 被拒或失败；bootstrap 失败。 |
-| `2` | 用法错误。未知子命令（拼写错误、空参数字符串）——此时输出 `Unknown command: …` + help 提示，**不再**静默落入 hook 运行时；install / uninstall 指定了未知或本 CLI 不支持的 agent。 |
-
-例：`node bin/riskguard.mjs doctor || echo "RiskGuard 未生效"`；CI 健康检查可直接用退出码判定，配合 `doctor --json` 拿到机器可读的 `{pass,warn,fail,skip,exitCode,checks}`。
-
-## What it protects
-
-归纳为五类（完整规则清单见 `packages/core/src/rules/default-policy.ts`，详细向量见 `docs/`）：
-
-### Permanent deletion — 永久删除
-
-阻止绕过回收站的永久删除行为：`rm -rf`、`Remove-Item -Recurse -Force`、`del /f`、`shutil.rmtree`、`fs.rmSync` 等。一律 deny 并建议改用回收站（trash）。
-
-### Destructive Git operations — 破坏性 Git 操作
-
-`git reset --hard`、`git clean -f`、`git checkout -- / restore`、`git push --force`、`git branch -D`、`git stash drop/clear`、`git worktree remove --force`、`git gc --prune` 等不可逆操作。
-
-### System destructive commands — 破坏性系统命令
-
-磁盘格式化（`Format-Volume` / `mkfs` / `wipefs`）、写块设备（`dd if=… of=/dev/…`）、注册表删除（`reg delete`）、wmic 破坏等高风险操作。
-
-### Credential & sensitive path protection — 凭据与敏感路径保护
-
-`.ssh` / `.env` / `.aws` / `.kube` / `.npmrc` / `.git-credentials` / 私钥 / `.pem` 等敏感资源只读门控；审计与拦截消息出口自动脱敏 token / API key / 口令。
-
-### Obfuscated execution — 混淆执行（部分识别）
-
-识别**部分**常见绕过方式：全角字符变体、引号插词、`$()`/反引号子展开、base64 管道、解释器 one-liner（`python -c`、`node -e`、`perl -e`）、shell wrapper 递归解包（`bash -c` / `cmd /c` / `pwsh -Command`）、junction/symlink 逃逸。此处强调「部分」——它不能识别一切混淆攻击（见 [Security Model](#security-model)）。
-
-## How it works
-
-```text
-AI Coding Agent
-      ↓
- Agent Adapter   (各 Agent 的 Hook / Plugin / pre-execute / tool.before / 命令拦截)
-      ↓
- RiskGuard Core  (统一 RiskEvent → Policy Engine，纯函数、fail-closed)
-      ↓
-   ALLOW / DENY / TRASH
-      ↓
-  Operating System
-```
-
-不同 Agent 使用不同的拦截点（hook / plugin / pre-execute / tool.before / 命令拦截），但都先转换成统一的 `RiskEvent`，再交给**同一个策略内核**判定，保证跨 Agent 行为一致、单一事实源。策略判定是纯函数，可独立于任何 Agent 运行与测试。
-
-核心不变量（在 `packages/core/src`，均有测试锁定）：
-
-| 不变量 | 语义 |
-|---|---|
-| RG-I01 | 永久删除默认 deny，建议走回收站 |
-| RG-I02 | RiskGuard 自身 / 受保护资源不可被修改（单调 deny） |
-| RG-I03 | 只要有一层 deny，结果就是 deny（guard 单调性） |
-| RG-I04 | 解析失败 / 未知 mutation → fail-closed deny，禁止放行 |
-| RG-I05 | 正则不是能力边界（Pattern Policy ≠ Capability Policy） |
-
-架构契约细节见 [docs/adapter-contract.md](docs/adapter-contract.md)。
-
-## 支持矩阵
-
-> 状态含义：**✅ Verified**＝真实 Agent 环境验证；**🟢 Implemented**＝已实现并有测试，缺少完整的真实生产复核；**🟡 Experimental**＝实验性；**⚪ Unsupported**＝尚未实现。
-> 区分「**软规则约束**」（写入 AGENTS.md / CLAUDE.md，靠模型遵守）与「**执行前硬拦截**」（hook / plugin / pre-execute 机器门禁）。
-> **真实执行边界矩阵**（Compatibility Schema v2：surfaces / fail mode / policy scope / bypass / 边界层 / per-capability）由 [docs/generated/agent-security-matrix.md](docs/generated/agent-security-matrix.md) 自动生成（`node scripts/generate-agent-security-matrix.ts`，CI 防漂移），本节保留人工可读汇总表。
-
-| Agent | 集成（Integration） | 执行前硬拦截 | 验证等级 | 状态 |
-|---|---|---|---|---|
-| **DeepSeek Harness (DSH)** | 实际生效的是 profile 注入的 **`deny-risk-commands` 规则补丁**（正则匹配）；`@riskguard/dsh` 插件（`pre-execute` 瀑布 + `guard()` 单调不变量）**已实现且有测试，但尚未接入任何 profile** | ✅ 是（在**规则补丁**这一层） | Windows D3（真实会话拦截记录 `Error: 全局铁律…`）；macOS/Linux D1 | ✅ Verified（**保护来自规则补丁，不是插件**） |
-| **Claude Code** | `PreToolUse` hook（matcher `Bash` → `dangerous-commands.ps1`）+ CLAUDE.md 规则 | ✅ 是（机器层硬门禁；bypassPermissions 下仍拦截） | Windows D3（真实会话 permission-rule 阻断）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
-| **Codex** | rules-compiler → AGENTS.md + 生产 PreToolUse hook（应用/CLI 共用 `~/.codex/` 双注册） | ✅ 是（hook 已接线；DENY/ALLOW 实测） | Windows D3（应用 `approval_policy=never`+`sandbox=unelevated` 策略层真实拦截 + **CLI 0.153.4 hook 真实会话 2026-09-07**）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
-| **OpenCode** | `tool.execute.before` TS 插件 + AGENTS.md | ✅ 是（生产插件已注册；bash allow 仍拦截） | Windows D3（真实会话 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
-| **Antigravity CLI (AGY)** | `PreToolUse` hook（matcher `run_command`）@ `~/.gemini/config/hooks.json` | ✅ 是（适配器 `agy-dangerous-commands.ps1`，fail-closed，带 BOM） | Windows D3（真实会话 2026-09-06：git 硬重置被 deny、未提交改动保留）；macOS/Linux D1 | ✅ Verified（本机 Windows） |
-| **Cursor** | `preToolUse` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
-| **Windsurf** | `pre_run_command` adapter | 🟡 Adapter 已实现 | D1 文档 + 单元测试，无真实 Agent 会话 | 🟡 Implemented / awaiting real-world verification |
-| **Grok** | `PreToolUse` adapter | 🟡 弱（Grok hook 默认为 fail-open） | D1 + 单元测试；边界依赖 Rules/Sandbox | 🟡 Experimental（软约束为主） |
-| **Pi** | — | ❌ 无实现 | — | ⚪ Unsupported |
-
-验证等级单一事实源为 `packages/installer/compatibility.json`：**D0**＝Unsupported；**D1**＝Implementation exists；**D2**＝Automated test verified；**D3**＝Real agent execution verified；**D4**＝Repeated / production verified。D3/D4 是产品能力等级，不代表某台机器当前 `ACTIVE`（机器状态看 `riskguard status` 的 Runtime）。本表各 Agent 的等级来自该文件（CI 有 `check-compatibility-docs` 防漂移）。
-
-> 关于「早期拦截」：Claude Code 与 OpenCode 在 [D3 三 Agent 删除实测](docs/d3-deletion-test-3agents.md) 里的拦截主要来自**模型层规则**与插件注入的 trash 工具；v0.1.0 起才补上**机器层硬门禁**的真实会话复核。上表每一行的证据与来源见 [docs/deployment-status.md](docs/deployment-status.md) 与 [docs/real-agent-conformance-final-report.md](docs/real-agent-conformance-final-report.md)，全部拦截经 [GAN 对抗审查](docs/GAN-AUDIT-5AGENTS.md)（17 findings 全修复）验证无已知绕过。
->
-> ⚠️ 排查接线时注意：Claude Code 那一行，本机实际注册的是 `PreToolUse`（matcher `Bash` → `dangerous-commands.ps1`），而安装器写入的条目 id 是 `riskguard-pre-tool-hook`——两者指同一个 hook，但**同名不代表同源**，请以配置文件原文为准。
-
-## 欢迎使用与贡献
-
-本项目**已开源，欢迎任何人使用、提问、提 Issue**。覆盖面还很窄——目前只在少数几个 Agent 上做过真实会话验证，而 AI 编码 Agent 这个赛道几乎每个月都有新面孔。**如果你在用的 Agent 不在上面的矩阵里，那正是我们想知道的。**
-
-两种入口（Issue 模板已就绪）：
-
-- **[申请补充 Agent 类型](https://github.com/satan9394/agent-risk-guard/issues/new?template=new_agent_request.yml)** —— 最想知道三件事：它**有没有执行前拦截点**、工具调用的 **JSON 形状**、以及一条**真实的拦截证据**。
-- **[报告某 Agent 的安全机制 / 环境情况](https://github.com/satan9394/agent-risk-guard/issues/new?template=agent_security_report.yml)** —— 如果你已经在这个 Agent 上跑了 RiskGuard，发现某条规则过严 / 过松，或者发现它自带的沙箱已经覆盖了一部分，用这个。
-
-动手之前建议先读 **[新增一个 Agent 需要什么](docs/adding-an-agent.md)**：里面列了接线所需的全部信息、代码落点、自测命令，以及我们会守的硬约束。只想提一句建议、不想写代码也完全可以——**一份该 Agent 的 hook/插件文档截图，通常就够我们判断"能不能做硬门禁"**，而"这个 Agent 只能做软约束"本身也是有用结论。
-
-**特别欢迎的三类信息**：① 某个 Agent 的 hook / 插件契约（配置路径 + 事件形状 + 拒绝返回形状）；② 该 hook 在**失败时**是 fail-open 还是 fail-closed（用空 stdin 就能测）；③ 一条真实会话里的**拦截或漏拦**记录（含版本与日期）。
-
-> ⚠️ **安全漏洞不要开公开 Issue**：绕过规则、或任何能让危险命令真正执行的方式，请走 [SECURITY.md](SECURITY.md)。
-
-## 操作系统支持
-
-| 平台 | 状态 |
-|---|---|
-| **Windows** | ✅ 已验证（回收站 trash 实测、DSH/Codex hook、D3 会话均在本机 Windows） |
-| **macOS** | 🟡 已实现，**未在真实环境实测**（trash 包 `macos.ts` 为 D1） |
-| **Linux** | 🟡 已实现，**未在真实环境实测**（CI 在 Ubuntu 跑平台无关测试，trash `linux.ts` 为 D1） |
-
-## Agent Skill（canonical）
-
-本仓库同时是 **Agent Skill 的 canonical 源**（`skills/agent-risk-guard/`，含 SKILL.md + 拦截脚本 + 配置模板，符合开放 `SKILL.md` 标准）。任何支持 Agent Skills 的运行时（Claude Code / Codex / Gemini CLI / OpenCode / Antigravity 等）都可直接安装：
-
-```bash
-# 经 Vercel skills 生态安装
-npx skills add satan9394/agent-risk-guard            # 安装全部
-npx skills add satan9394/agent-risk-guard --skill agent-risk-guard
-```
-
-安装后按 `skills/agent-risk-guard/SKILL.md` 的「快速适配」流程，即可为本机各 Agent 落地机器级拦截门禁（hooks / 插件 / pre-execute）。
+> **"Supported" 不代表同等安全等级。** 上表刻意区分"由谁拦的"：Codex 那一行真正拦住命令的是它自己的策略层，
+> DSH 那一行生效的是规则补丁而不是插件——这两处最容易误读。
+> 各 Agent 的等级（D0–D4）、逐项证据与真实执行边界见单一事实源
+> `packages/installer/compatibility.json` 与自动生成的 [Agent Security Matrix](docs/generated/agent-security-matrix.md)。
+> 想补充某个 Agent？见 [新增一个 Agent 需要什么](docs/adding-an-agent.md)。
 
 ## Security Model
 
-RiskGuard 是**纵深防御（defense-in-depth）的一环，不是绝对安全边界**。请务必理解以下边界：
+不同 Agent 用不同的拦截点，但都先归一化成同一个 `RiskEvent`，再交给**同一个策略内核**判定——
+跨 Agent 行为一致、单一事实源，且策略引擎是纯函数，可独立于任何 Agent 运行与测试。
 
-- RiskGuard **不保证**阻止所有未知攻击；regex / parser 检测存在其固有边界。
-- 它**不应替代** OS 级沙箱（Seatbelt / bubblewrap / 受限账号 / 容器）。
-- 它**不应替代**最小权限账户。
-- 它**不应替代**备份，也不应替代你的 Git / 文件系统恢复策略。
-- 发现新的绕过向量，请通过 [SECURITY.md](SECURITY.md) 的私密渠道报告，**不要**公开演示利用方式。
+核心不变式（在 `packages/core/src`，均有测试锁定）：
 
-## 文档导航
+- **RG-I01** 永久删除默认 deny，建议走回收站
+- **RG-I02** RiskGuard 自身与受保护资源不可被修改（单调 deny）
+- **RG-I03** 只要有一层 deny，结果就是 deny（guard 单调性）
+- **RG-I04** 解析失败 / 未知 mutation → **fail-closed deny**，禁止放行
+- **RG-I05** 正则不是能力边界（Pattern Policy ≠ Capability Policy）
 
-- [docs/acs-alignment.md](docs/acs-alignment.md) — OWASP ACS v0.1 对齐边界（inbound/outbound 映射、Compatibility v2、Conformance C1–C10、审计格式）
-- [docs/generated/agent-security-matrix.md](docs/generated/agent-security-matrix.md) — Agent 安全执行边界矩阵（自动生成自 compatibility.json）
-- [docs/adapter-contract.md](docs/adapter-contract.md) — 适配器契约（Vendor Payload → RiskEvent → Decision）与验证等级（D0–D4，单一事实源见 compatibility.json）
-- [docs/deployment-status.md](docs/deployment-status.md) — 本机生产接线现状与同步清单
-- [docs/d3-deletion-test-3agents.md](docs/d3-deletion-test-3agents.md) — 三 Agent 删除测试真实会话实证
-- [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) — 5 Agent 对抗审查（17 findings 全修复）
-- [docs/real-agent-conformance-final-report.md](docs/real-agent-conformance-final-report.md) — v0.3.0 最终验收报告（A/B 对照、各 Agent 等级）
-- [docs/ecosystem-benchmark.md](docs/ecosystem-benchmark.md) — 生态对标（allowlister / CC Safety Net 等）与融合决策、Roadmap
-- [docs/dsh-api-evidence-d2.md](docs/dsh-api-evidence-d2.md) — DSH `pre-execute` + `guard()` 源码级实证
-- [docs/dsh-live-wiring-guide.md](docs/dsh-live-wiring-guide.md) — DSH 插件真实接入指南
-- **开发日志**：[v0.1.0→v0.1.2](docs/devlog-2026-09-04-v0.1.2.md) · [v0.2.0](docs/devlog-2026-09-05-v0.2.0.md) · [v0.2.1](docs/devlog-2026-09-05-v0.2.1.md) · [v0.2.2](docs/devlog-2026-09-05-v0.2.2.md) · [v0.3.0](docs/devlog-2026-09-07-v0.3.0.md)
-- [docs/real-agent-conformance-status.md](docs/real-agent-conformance-status.md) — v0.3.0 Real Agent Conformance 进度与诚实结论（D3 evidence 格式 / runner / 三家 adapter / 环境探测）
-- [docs/TODO.md](docs/TODO.md) — 待办清单（含待确认的生产同步项）
+架构契约见 [docs/adapter-contract.md](docs/adapter-contract.md)。
 
-## 开发与安全验证
+## Standards & Interoperability
 
-- **独立判别器对抗审查（maker-checker）**：每个切片都由**未参与实现**的判别器复审，且要求「回退该修复必须让某个测试变红」，防止闸门变成自证式。v0.3.0 对 5 个 Agent 的生产拦截做全量对抗审查，产出 17 findings（P0×10 / P1×6 / P2×1）**全部修复并复验**——见 [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) 与 [docs/gan-audit-fix-map.md](docs/gan-audit-fix-map.md)。这是一种**开发方法论**；RiskGuard 运行时**不依赖任何模型**。
-- 测试：`tests/` 覆盖 policy / adapter / acs / acs-schema-conformance / compatibility / conformance / e2e / adversarial（对抗语料 + 规则自测），全量 **380/380** 通过；CI 在 Ubuntu 跑平台无关组，本机 `test-all.ps1` 另含 D3 hook 管线与 WSL sh 套件。
+提供**实验性**的 **OWASP ACS v0.1.0** 对齐层：把 ACS `ToolCallRequest` 无损转换为内部 `RiskEvent`，
+并返回符合官方 JSON Schema 的 Result（`riskguard acs evaluate`，wire 模式 `--wire`）。
 
-## 生产接线巡检（日常治理）
+这是**互操作性层，不是本项目的核心安全边界**——它不改变上面的策略引擎与不变式。
+详见 [docs/acs-alignment.md](docs/acs-alignment.md)。
 
-安装后建议定期核对「接线是否还在位、脚本是否与单一规则源一致」——Claude Code 的 `PreToolUse` 就曾**被外部还原丢失**，而当时 hook 文件在位、哈希正确、套件全绿，防护却在静默失效。本仓库提供只读巡检脚本：
+## Limitations
 
-```powershell
-# 只读巡检（缺失/漂移时退出码非 0，输出逐项 [OK]/[!!]）
-pwsh scripts/riskguard-wiring-check.ps1
+Agent Risk Guard 是**纵深防御中的一层**，不是完整的主机安全方案。它目前：
 
-# 巡检 + 自愈（从仓库单源恢复 ps1 / opencode / dsh patch；claude-code settings.json 合并式补回 PreToolUse；恢复前自动备份到 ~/.risk-guard-backup/）
-pwsh scripts/riskguard-wiring-check.ps1 -Fix
-```
+- **不是** OS sandbox，也**不是** EDR / 杀毒
+- **不能**识别所有命令混淆方式（只覆盖已建模的那部分向量）
+- **不能**阻止绕过 Agent adapter、直接调用操作系统的行为
+- **不应**作为唯一的安全边界
+- macOS / Linux 已实现，但**缺少真实环境验证**
+- 仍处 **Developer Preview**，不宣称 1.0 Stable
 
-检查范围：三处 ps1 生产接线与仓库单源的哈希一致性、opencode 插件、dsh patch，以及 settings.json / hooks.json / config.toml 的接线在位。
+把这个边界写清楚，是因为安全工具如果宣称的保护其实没生效，**比没有保护更危险**。
 
-## 社区与协议
+## 贡献
 
-- **License**：[MIT](LICENSE) — Copyright (c) 2026 satan9394
-- **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- **贡献指南**：[CONTRIBUTING.md](CONTRIBUTING.md)
-- **安全报告**：[SECURITY.md](SECURITY.md)
-- **版本历史**：[CHANGELOG.md](CHANGELOG.md)
-- **发行说明（每版「出了什么问题 + 改变了什么」，中英双语）**：[docs/release-notes/](docs/release-notes/)
+欢迎使用、提问、提 Issue。**你在用的 Agent 不在上表里，正是我们想知道的**——只需要一份该 Agent 的
+hook/插件文档（配置路径 + 事件形状 + 拒绝返回形状），通常就够判断"能不能做硬门禁"。
 
-> 历史 Git tag `v1.0.0` 保留不删：它是早期发布标记，**不代表当前稳定版**。尚无 1.0 Stable 声明的原因见上方 [操作系统支持](#操作系统支持) 与 [支持矩阵](#支持矩阵)。
+- [申请补充 Agent 类型](https://github.com/satan9394/agent-risk-guard/issues/new?template=new_agent_request.yml)
+- [报告某 Agent 的安全机制 / 环境情况](https://github.com/satan9394/agent-risk-guard/issues/new?template=agent_security_report.yml)
+- 想直接改代码：见 [docs/adding-an-agent.md](docs/adding-an-agent.md)
+- ⚠️ **安全漏洞不要开公开 Issue**：走 [SECURITY.md](SECURITY.md)
+
+## Documentation
+
+| 文档 | 内容 |
+|---|---|
+| [docs/cli.md](docs/cli.md) | **CLI 手册**：全部子命令、选项、退出码契约、事务式安装器语义、接线巡检 |
+| [docs/adapter-contract.md](docs/adapter-contract.md) | 适配器契约：Vendor Payload → RiskEvent → Decision |
+| [docs/acs-alignment.md](docs/acs-alignment.md) | OWASP ACS v0.1 对齐边界与 wire 模式 |
+| [docs/adding-an-agent.md](docs/adding-an-agent.md) | 新增一个 Agent 需要提供什么 |
+| [docs/generated/agent-security-matrix.md](docs/generated/agent-security-matrix.md) | 自动生成的逐 Agent 真实执行边界矩阵 |
+| [docs/GAN-AUDIT-5AGENTS.md](docs/GAN-AUDIT-5AGENTS.md) | 独立判别器对抗审查（17 findings 全修复） |
+| [docs/release-notes/](docs/release-notes/) | **每个版本"出了什么问题 + 改了什么"**（中英双语） |
+| [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) | 变更历史、贡献指南、安全报告 |
+
+> 开发日志： [v0.1.0→v0.1.2](docs/devlog-2026-09-04-v0.1.2.md) · [v0.2.0](docs/devlog-2026-09-05-v0.2.0.md) ·
+> [v0.2.1](docs/devlog-2026-09-05-v0.2.1.md) · [v0.2.2](docs/devlog-2026-09-05-v0.2.2.md) · [v0.3.0](docs/devlog-2026-09-07-v0.3.0.md)
+
+> 历史 Git tag `v1.0.0` 保留不删：它是早期发布标记，**不代表当前稳定版**。
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 satan9394
