@@ -12,9 +12,16 @@ Deterministically intercept file deletion, shell commands, and destructive Git o
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **Status: `v0.3.1 Developer Preview`.** The deterministic policy engine, transactional CLI installer, DSH plugin and per-agent adapters are implemented and covered by automated tests.
-> Production wiring is verified on the author's Windows machine (Claude Code / OpenCode / Codex / DSH / AGY); macOS / Linux are not yet verified in a real environment (see [Support Matrix](#support-matrix) and [Security Model](#security-model)).
-> v0.2.0 added the **experimental OWASP ACS v0.1 gateway** (`riskguard acs evaluate`), **Compatibility Schema v2** (real execution boundaries), a **capability taxonomy** and the **Agent Security Conformance Framework** (C1–C10). v0.2.1 added **Wire Schema Conformance**: the official OWASP ACS v0.1.0 JSON Schema (pinned snapshot) became the final compatibility criterion, plus `acs evaluate --wire` (official JSON-RPC Request/Response Envelope). v0.2.2 froze the ACS protocol layer with an **ACS version gate** (the official wire gateway rejects unsupported versions with `-32001` instead of mis-treating them as 0.1.0) and a **release workflow** (GitHub Releases now carry verifiable `tar.gz` + `SHA256SUMS.txt` assets). **v0.3.0 Real Agent Conformance** shifts from building infrastructure to real-session verification — **all 5 agents now have real-session hard-block evidence (D3)**: OpenCode / Claude Code / DSH / AGY are verified through real RiskGuard hook/plugin sessions; Codex has dual evidence (app `approval_policy=never` + `sandbox=unelevated` policy/sandbox layer, plus a **Codex CLI 0.153.4 hook real-session test on 2026-09-07**). v0.3.0 also includes a **GAN adversarial audit** (17 findings — P0×10/P1×6/P2×1 — all fixed) and **installer UX** (full-registry `detect` including AGY, interactive `install` selection).
+> **Status: `v0.3.1 Developer Preview`** (pre-release). The deterministic policy engine, the transactional CLI
+> installer and the per-agent adapters are implemented and covered by automated tests. **Verified in real agent
+> sessions** — Claude Code, OpenCode and Antigravity CLI — where dangerous commands were refused before execution
+> and uncommitted changes survived. **macOS / Linux are implemented but not verified in a real environment.**
+>
+> For how far each agent is actually covered — including the two easy-to-misread points, that Codex is blocked by
+> its **own** policy/sandbox layer and that DSH runs on the rule patch rather than the plugin — see the
+> [Support Matrix](#support-matrix) and [Security Model](#security-model). For **what problem each version solved
+> and what changed**, see [Releases](https://github.com/satan9394/agent-risk-guard/releases) and
+> [docs/release-notes/](docs/release-notes/); full history in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
