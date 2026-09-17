@@ -1,0 +1,37 @@
+# Dependabot —— 版本更新（version updates）
+#
+# 说明：Dependabot **告警**（alerts）与**安全更新**（security updates）是仓库设置，不需要本文件；
+# 本文件管的是**常规版本更新**——定期开 PR 把依赖升到最新。
+#
+# 为什么要这两个生态：
+#   · github-actions：CI 里 actions/checkout@v4 与 actions/setup-node@v4 目前跑在已被弃用的 Node 20 上
+#     （GitHub 已在每次运行的 annotation 里告警），升到 v5 需要一次显式更新。
+#   · npm：根 package.json 的 devDependencies（ajv / ajv-formats，仅 ACS schema conformance 用）。
+#
+# 注意：本仓库是 monorepo 但**没有 workspaces**，各 packages/* 之间靠相对 TS import 互相引用，
+# 不是通过 npm 安装的依赖，因此只对根目录做 npm 更新即可。
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
