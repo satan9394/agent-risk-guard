@@ -33,6 +33,11 @@ jobs:
       - name: Check D0-D4 compatibility docs have not drifted
         run: node scripts/check-compatibility-docs.ts
 
+      # 决策账本防漂移（2026-09-17）：每个已发布版本都必须在 docs/decisions.md 的 A 表里有一行。
+      # 手工维护的表没有机器校验就一定会腐烂 —— 这正是本项目反复吃的「文档说 A、实际是 B」。
+      - name: Verify the decisions log covers every released version
+        run: node scripts/check-decisions-log.ts
+
       - name: Verify ACS v0.1.0 vendor schema snapshot integrity (§五十四/§五十六)
         run: node scripts/verify-acs-schema-snapshot.ts
 

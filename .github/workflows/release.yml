@@ -82,6 +82,10 @@ jobs:
           echo "OK: $NOTES"
           head -1 "$NOTES"
 
+      # 决策账本同样必须覆盖本版本：谁提的、何时裁决、依据是什么、落在哪个版本。
+      - name: Require the decisions log to list this version
+        run: node scripts/check-decisions-log.ts
+
       - name: Publish GitHub Release (Pre-release, §十二)
         env:
           GH_TOKEN: ${{ github.token }}
