@@ -67,13 +67,20 @@ export function pathsEqual(a: PathAnalysis, b: PathAnalysis): boolean {
  * 判定 path 是否位于 protected root 之下（含自身）。
  * 基于 canonical；对 Windows 做 lower 比较。
  */
+/** 去掉结尾的路径分隔符。等价于 `replace(/[\\/]+$/, '')`，但不使用会二次回溯的正则（CodeQL js/polynomial-redos）。 */
+export function stripTrailingSeps(p: string): string {
+  let end = p.length;
+  while (end > 0 && (p[end - 1] === '\\' || p[end - 1] === '/')) end -= 1;
+  return p.slice(0, end);
+}
+
 export function isWithin(analysis: PathAnalysis, protectedRoots: string[]): boolean {
   const cmp = analysis.lower ?? analysis.canonical;
   for (const root of protectedRoots) {
     const r = root.startsWith('~') ? root : root;
     const rLower = analysis.lower ? r.toLowerCase() : r;
-    const rNorm = nodePath.normalize(rLower).replace(/[\\/]+$/, '');
-    const cNorm = cmp.replace(/[\\/]+$/, '');
+    const rNorm = stripTrailingSeps(nodePath.normalize(rLower));
+    const cNorm = stripTrailingSeps(cmp);
     if (cNorm === rNorm || cNorm.startsWith(rNorm + (analysis.lower ? '\\' : nodePath.sep))) {
       return true;
     }
