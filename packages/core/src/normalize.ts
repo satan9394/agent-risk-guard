@@ -302,9 +302,16 @@ export function targetFromPath(raw: string, analysis: PathAnalysis, workspaceRoo
   };
 }
 
+/** 去掉结尾的路径分隔符。等价于 `replace(/[\\/]+$/, '')`，但不使用会二次回溯的正则（CodeQL js/polynomial-redos）。 */
+export function stripTrailingSeps(p: string): string {
+  let end = p.length;
+  while (end > 0 && (p[end - 1] === '\\' || p[end - 1] === '/')) end -= 1;
+  return p.slice(0, end);
+}
+
 function isInside(canonical: string, root: string): boolean {
   const c = canonical.toLowerCase();
-  const r = root.toLowerCase().replace(/[\\/]+$/, '');
+  const r = stripTrailingSeps(root.toLowerCase());
   return c === r || c.startsWith(r + '\\') || c.startsWith(r + '/');
 }
 

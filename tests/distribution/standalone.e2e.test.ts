@@ -48,7 +48,8 @@ test('artifact standalone: launcher 全生命周期（fake HOME，不依赖 repo
   const home = makeHome();
   try {
     const ver = run(LAUNCHER, ['version'], home);
-    assert.match(ver.stdout, new RegExp(PRODUCT_VERSION.replace(/\./g, '\\.')));
+    // 转义**全部**正则元字符，而不是只转义 '.'（CodeQL js/incomplete-sanitization）
+    assert.match(ver.stdout, new RegExp(PRODUCT_VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
     const det = run(LAUNCHER, ['detect', '--json'], home);
     assert.equal(det.status, 0, det.stdout + det.stderr);
@@ -97,7 +98,7 @@ test('bootstrap: runtime 装入 fake HOME，hook 指向 runtime，repo/artifact 
     // hook 指向 runtime 路径（含 .riskguard/runtime）
     const cc = readFileSync(join(home, '.claude', 'settings.json'), 'utf8');
     const hookCmd = JSON.parse(cc).hooks.PreToolUse[0].hooks[0].command as string;
-    assert.ok(hookCmd.includes(join('.riskguard', 'runtime').replace(/\\/g, '\\')), `hook must point at runtime: ${hookCmd}`);
+    assert.ok(hookCmd.includes(join('.riskguard', 'runtime')), `hook must point at runtime: ${hookCmd}`);
     assert.ok(!hookCmd.includes('agent-risk-guard\\packages'), `hook must not point at git clone: ${hookCmd}`);
 
     // 模拟源码不可达：直接 spawn runtime 内 hook（无害→allow，危险→deny）
