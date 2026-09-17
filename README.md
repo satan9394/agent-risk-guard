@@ -12,6 +12,26 @@
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
+一次真实的拦截输出：
+
+```text
+Agent attempts:  remove-item C:\proj\important -Recurse -Force
+
+RiskGuard CLI 输出:
+{
+  "decision": "deny",
+  "ruleId": "RG-FS-001",
+  "reason": "永久删除禁止，请使用回收站",
+  "safeAlternative": { "operation": "trash", "description": "使用统一 trash 能力（Windows Recycle Bin / macOS Trash / freedesktop Trash）" }
+}
+```
+
+也就是：
+
+```text
+Agent 尝试永久删除  →  RiskGuard →  DENY  →  命令没有真正执行（建议走回收站）
+```
+
 > **状态：`v0.3.1 Developer Preview`**（Pre-release）。核心策略引擎、事务式 CLI 安装器与各 Agent 适配器已实现，
 > 并有自动化测试覆盖；**在真实 Agent 会话中验证过拦截**的是 Claude Code、OpenCode、Antigravity CLI
 > ——危险命令在执行前被拒绝、未提交的改动存活。**macOS / Linux 已实现，但尚未在真实环境实测。**
@@ -27,19 +47,92 @@
 
 AGENTS.md、CLAUDE.md、系统 Prompt 和 Agent 自带的 Permission 都是安全体系的一部分，但**它们靠的是「模型遵守规则」**。模型可能被绕过、被遗忘、或面对强施压时做出错误判断——你不应该把「模型会守规矩」当作最终安全边界。
 
-RiskGuard 的目标是在 Agent 调用真正危险的工具之前，增加**一层确定性的执行门禁**（由策略引擎判定，不依赖模型是否「记得」规则）：
-
-```text
-Agent 尝试执行  rm -rf important-project/
-        ↓
-     RiskGuard
-        ↓
-      DENY
-        ↓
-    命令没有真正执行
-```
+RiskGuard 的目标是在 Agent 调用真正危险的工具之前，增加**一层确定性的执行门禁**（由策略引擎判定，不依赖模型是否「记得」规则）。
 
 这是本项目最重要的概念：**软规则约束**（写进规则文件，靠模型遵守）与**执行前硬拦截**（hook / plugin / pre-execute 门禁，机器判定并阻断）是两种完全不同的安全等级。
+
+## 快速开始（Developer Preview）
+
+RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。仓库内统一入口：`node bin/riskguard.mjs`（等价 `node packages/cli/src/index.ts`，用户无需面对内部源码路径）。
+
+```bash
+cd agent-risk-guard
+# 查看 CLI 用法
+node bin/riskguard.mjs help
+```
+
+**0.（推荐）安装 portable runtime**——把运行所需最小文件集装入 `~/.riskguard/runtime/<version>/`，此后 Agent hook 指向 runtime 而非 git clone 路径；删除 / 移动源码仓库后 RiskGuard 仍工作：
+
+```bash
+node bin/riskguard.mjs bootstrap          # 首次安装 portable runtime
+node bin/riskguard.mjs bootstrap --force  # runtime 损坏时修复重装
+```
+
+> 分发/自包含模式：`node scripts/build-release.ts` 生成 `dist/agent-risk-guard-v<version>/`（含 `bin/riskguard.mjs` launcher、`runtime-manifest.json`、`SHA256SUMS.txt`）。artifact 可在 fake HOME 独立完成 detect / install / doctor / uninstall，不依赖源码仓库。
+
+**1. 先只读检测本机装了哪些 Agent**（不会改动任何配置）：
+
+```bash
+node bin/riskguard.mjs detect          # 人类可读
+node bin/riskguard.mjs detect --json   # {claude-code, codex, opencode, dsh} 布尔表
+```
+
+**2. 查看每个 Agent 的 Runtime 状态与产品能力等级**：
+
+```bash
+node bin/riskguard.mjs status
+```
+
+`status` 区分两个概念：**Capability**（产品对该 Agent 支持到 D0–D4，来自 `compatibility.json`）与 **Runtime**（这台机器的实际状态：`NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN`——`ACTIVE` 表示完整 runtime self-test 通过）。
+
+**3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
+
+```bash
+node bin/riskguard.mjs doctor
+```
+
+**4. 安装 / 修复**（事务式：类型化读取 → backup → merge → manifest → runtime self-test → commit；`--dry-run` 先预览；支持 `--agent` alias）：
+
+```bash
+node bin/riskguard.mjs install --dry-run            # 只显示将改什么，不落盘
+node bin/riskguard.mjs install                      # 交互式：先列出已检测 Agent 供编号勾选；非 TTY/管道自动全装不卡死
+node bin/riskguard.mjs install --all --dry-run      # 跳过交互，直接全装已检测到的
+node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
+```
+
+`detect` 覆盖 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose。`install` 无 `--agent` 时对检测到的 Agent 做交互式选择（`1,3` / `all` / 回车全装），非交互环境自动全装不卡死。安装是**非破坏性**的：merge 保留用户字段，配置损坏 / 无权限 / IO 错误立即终止且零写入，任一步失败回滚到安装前；wiring 损坏（`BROKEN`）时 install 自动识别为 **repair**。
+
+**5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
+
+```bash
+node bin/riskguard.mjs uninstall --dry-run
+node bin/riskguard.mjs uninstall
+```
+
+卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
+
+**6.（v0.2.0/v0.2.1）OWASP ACS 边界协议 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
+
+```bash
+cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
+cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
+cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
+cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
+```
+
+- `acs evaluate` = payload 兼容模式；`acs evaluate --wire` = 官方 ACS v0.1.0 schema 一致的 wire 模式（Request Envelope → Response Envelope）。
+- 非法输入不抛 stack trace：payload 模式输出 `decision: deny` + `extensions.riskguard.degraded = true`；wire 模式输出 JSON-RPC error（`-32700` / `-32600` / `-32602`）。
+- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（只读），是 Release Gate。
+
+**7. 退出码约定**（脚本 / CI 可依赖；`riskguard help` 亦列出）：
+
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 成功。含 doctor 有 WARN 但无 FAIL、install 幂等（`already installed`）、卸载一个「本来就没装」的 agent。**hook 运行时（无子命令：stdin JSON → decision JSON）恒为 0**——allow 与 deny 都是正常决策，空输入 / 坏 JSON 的 fail-closed deny 也不是错误（Claude Code / Codex 集成依赖此行为）。 |
+| `1` | 失败。doctor 有 ≥1 个 FAIL（FAIL 行尾附带可直接执行的修复提示）；install 被中止（配置损坏 / 插件同名异内容）、回滚或 runtime self-test 未通过、显式指定的 agent 未安装；uninstall 被拒或失败；bootstrap 失败。 |
+| `2` | 用法错误。未知子命令（拼写错误、空参数字符串）——此时输出 `Unknown command: …` + help 提示，**不再**静默落入 hook 运行时；install / uninstall 指定了未知或本 CLI 不支持的 agent。 |
+
+例：`node bin/riskguard.mjs doctor || echo "RiskGuard 未生效"`；CI 健康检查可直接用退出码判定，配合 `doctor --json` 拿到机器可读的 `{pass,warn,fail,skip,exitCode,checks}`。
 
 ## What it protects
 
@@ -151,111 +244,6 @@ npx skills add satan9394/agent-risk-guard --skill agent-risk-guard
 ```
 
 安装后按 `skills/agent-risk-guard/SKILL.md` 的「快速适配」流程，即可为本机各 Agent 落地机器级拦截门禁（hooks / 插件 / pre-execute）。
-
-## 快速开始（Developer Preview）
-
-RiskGuard 提供一个**零依赖、零构建**的用户级 CLI（`riskguard`），支持安装 / 状态 / 诊断 / 卸载。要求 Node >= 22.18。仓库内统一入口：`node bin/riskguard.mjs`（等价 `node packages/cli/src/index.ts`，用户无需面对内部源码路径）。
-
-```bash
-cd agent-risk-guard
-# 查看 CLI 用法
-node bin/riskguard.mjs help
-```
-
-**0.（推荐）安装 portable runtime**——把运行所需最小文件集装入 `~/.riskguard/runtime/<version>/`，此后 Agent hook 指向 runtime 而非 git clone 路径；删除 / 移动源码仓库后 RiskGuard 仍工作：
-
-```bash
-node bin/riskguard.mjs bootstrap          # 首次安装 portable runtime
-node bin/riskguard.mjs bootstrap --force  # runtime 损坏时修复重装
-```
-
-> 分发/自包含模式：`node scripts/build-release.ts` 生成 `dist/agent-risk-guard-v<version>/`（含 `bin/riskguard.mjs` launcher、`runtime-manifest.json`、`SHA256SUMS.txt`）。artifact 可在 fake HOME 独立完成 detect / install / doctor / uninstall，不依赖源码仓库。
-
-**1. 先只读检测本机装了哪些 Agent**（不会改动任何配置）：
-
-```bash
-node bin/riskguard.mjs detect          # 人类可读
-node bin/riskguard.mjs detect --json   # {claude-code, codex, opencode, dsh} 布尔表
-```
-
-**2. 查看每个 Agent 的 Runtime 状态与产品能力等级**：
-
-```bash
-node bin/riskguard.mjs status
-```
-
-`status` 区分两个概念：**Capability**（产品对该 Agent 支持到 D0–D4，来自 `compatibility.json`）与 **Runtime**（这台机器的实际状态：`NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN`——`ACTIVE` 表示完整 runtime self-test 通过）。
-
-**3. 健康检查**（PASS / WARN / FAIL / SKIP；未安装的 Agent 计 SKIP、不算 FAIL）：
-
-```bash
-node bin/riskguard.mjs doctor
-```
-
-**4. 安装 / 修复**（事务式：类型化读取 → backup → merge → manifest → runtime self-test → commit；`--dry-run` 先预览；支持 `--agent` alias）：
-
-```bash
-node bin/riskguard.mjs install --dry-run            # 只显示将改什么，不落盘
-node bin/riskguard.mjs install                      # 交互式：先列出已检测 Agent 供编号勾选；非 TTY/管道自动全装不卡死
-node bin/riskguard.mjs install --all --dry-run      # 跳过交互，直接全装已检测到的
-node bin/riskguard.mjs install --agent claude       # 只装一个（cc/claude/claude-code 等价；oc=opencode）
-```
-
-`detect` 覆盖 Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose。`install` 无 `--agent` 时对检测到的 Agent 做交互式选择（`1,3` / `all` / 回车全装），非交互环境自动全装不卡死。安装是**非破坏性**的：merge 保留用户字段，配置损坏 / 无权限 / IO 错误立即终止且零写入，任一步失败回滚到安装前；wiring 损坏（`BROKEN`）时 install 自动识别为 **repair**。
-
-**5. 卸载**（精确逆操作：只移除 RiskGuard 注入的条目，保留用户 install 之后新增的配置）：
-
-```bash
-node bin/riskguard.mjs uninstall --dry-run
-node bin/riskguard.mjs uninstall
-```
-
-卸载依据 manifest 精确移除；被用户修改过的 RiskGuard 文件不会自动删除；manifest 缺失时提示「nothing to do」，不会误删。
-
-**6.（v0.2.0/v0.2.1）OWASP ACS 边界协议 Gateway**——把 ACS ToolCallRequest 无损送入 RiskGuard 策略引擎，输出合法 ACS Result（fail-closed；详见 [docs/acs-alignment.md](docs/acs-alignment.md)）：
-
-```bash
-cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
-cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
-cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
-cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
-```
-
-- `acs evaluate` = payload 兼容模式；`acs evaluate --wire` = 官方 ACS v0.1.0 schema 一致的 wire 模式（Request Envelope → Response Envelope）。
-- 非法输入不抛 stack trace：payload 模式输出 `decision: deny` + `extensions.riskguard.degraded = true`；wire 模式输出 JSON-RPC error（`-32700` / `-32600` / `-32602`）。
-- 官方 OWASP ACS v0.1.0 JSON Schema 已 pinned 于 `tests/vendor/owasp-acs-v0.1.0/`（只读），是 Release Gate。
-
-**7. 退出码约定**（脚本 / CI 可依赖；`riskguard help` 亦列出）：
-
-| 退出码 | 含义 |
-| --- | --- |
-| `0` | 成功。含 doctor 有 WARN 但无 FAIL、install 幂等（`already installed`）、卸载一个「本来就没装」的 agent。**hook 运行时（无子命令：stdin JSON → decision JSON）恒为 0**——allow 与 deny 都是正常决策，空输入 / 坏 JSON 的 fail-closed deny 也不是错误（Claude Code / Codex 集成依赖此行为）。 |
-| `1` | 失败。doctor 有 ≥1 个 FAIL（FAIL 行尾附带可直接执行的修复提示）；install 被中止（配置损坏 / 插件同名异内容）、回滚或 runtime self-test 未通过、显式指定的 agent 未安装；uninstall 被拒或失败；bootstrap 失败。 |
-| `2` | 用法错误。未知子命令（拼写错误、空参数字符串）——此时输出 `Unknown command: …` + help 提示，**不再**静默落入 hook 运行时；install / uninstall 指定了未知或本 CLI 不支持的 agent。 |
-
-例：`node bin/riskguard.mjs doctor || echo "RiskGuard 未生效"`；CI 健康检查可直接用退出码判定，配合 `doctor --json` 拿到机器可读的 `{pass,warn,fail,skip,exitCode,checks}`。
-
-### 效果演示
-
-下面是 CLI 对一次「删除重要目录」请求的**真实输出**（未改动）：
-
-```text
-Agent attempts:  remove-item C:\proj\important -Recurse -Force
-
-RiskGuard CLI 输出:
-{
-  "decision": "deny",
-  "ruleId": "RG-FS-001",
-  "reason": "永久删除禁止，请使用回收站",
-  "safeAlternative": { "operation": "trash", "description": "使用统一 trash 能力（Windows Recycle Bin / macOS Trash / freedesktop Trash）" }
-}
-```
-
-也就是：
-
-```text
-Agent 尝试永久删除  →  RiskGuard →  DENY  →  命令没有真正执行（建议走回收站）
-```
 
 ## Security Model
 

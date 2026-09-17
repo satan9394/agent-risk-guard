@@ -12,6 +12,26 @@ Deterministically intercept file deletion, shell commands, and destructive Git o
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
+A real, unedited interception output:
+
+```text
+Agent attempts:  remove-item C:\proj\important -Recurse -Force
+
+RiskGuard CLI output:
+{
+  "decision": "deny",
+  "ruleId": "RG-FS-001",
+  "reason": "永久删除禁止，请使用回收站",
+  "safeAlternative": { "operation": "trash", "description": "使用统一 trash 能力（Windows Recycle Bin / macOS Trash / freedesktop Trash）" }
+}
+```
+
+In other words:
+
+```text
+Agent tries permanent delete  →  RiskGuard →  DENY  →  the command never runs (recycle bin suggested)
+```
+
 > **Status: `v0.3.1 Developer Preview`** (pre-release). The deterministic policy engine, the transactional CLI
 > installer and the per-agent adapters are implemented and covered by automated tests. **Verified in real agent
 > sessions** — Claude Code, OpenCode and Antigravity CLI — where dangerous commands were refused before execution
@@ -29,19 +49,92 @@ Deterministically intercept file deletion, shell commands, and destructive Git o
 
 AGENTS.md, CLAUDE.md, system prompts and an agent's built-in permissions are all part of a security posture — but **they rely on the model following rules**. Models can be tricked, forget, or misjudge under pressure. You should not treat "the model will behave" as your final security boundary.
 
-RiskGuard adds **a deterministic pre-execution gate** before an agent calls a genuinely dangerous tool (decided by a policy engine, not by whether the model "remembers" the rules):
-
-```text
-Agent tries to run  rm -rf important-project/
-        ↓
-     RiskGuard
-        ↓
-      DENY
-        ↓
-     the command never runs
-```
+RiskGuard adds **a deterministic pre-execution gate** before an agent calls a genuinely dangerous tool (decided by a policy engine, not by whether the model "remembers" the rules).
 
 This is the core concept of the project: **soft rule constraints** (written into rule files, enforced by the model obeying them) and **pre-execution hard blocking** (hook / plugin / pre-execute gates, decided and enforced by the machine) are two very different levels of security.
+
+## Quick start (Developer Preview)
+
+RiskGuard ships a **zero-dependency, zero-build** user-level CLI (`riskguard`) covering install / status / doctor / uninstall. Requires Node >= 22.18. Unified in-repo entry: `node bin/riskguard.mjs` (equivalent to `node packages/cli/src/index.ts`, so you never face internal source paths).
+
+```bash
+cd agent-risk-guard
+# Show CLI usage
+node bin/riskguard.mjs help
+```
+
+**0. (Recommended) Install the portable runtime** — copies the minimal runtime file set into `~/.riskguard/runtime/<version>/`; agent hooks then point at the runtime instead of the git clone. RiskGuard keeps working after the source repo is deleted or moved:
+
+```bash
+node bin/riskguard.mjs bootstrap          # first-time runtime install
+node bin/riskguard.mjs bootstrap --force  # repair reinstall if runtime is corrupt
+```
+
+> Distribution/self-contained mode: `node scripts/build-release.ts` produces `dist/agent-risk-guard-v<version>/` (with a `bin/riskguard.mjs` launcher, `runtime-manifest.json`, `SHA256SUMS.txt`). The artifact can run detect / install / doctor / uninstall in a fake HOME without the source repo.
+
+**1. First, detect installed agents read-only** (touches nothing):
+
+```bash
+node bin/riskguard.mjs detect          # human-readable (full registry incl. AGY)
+node bin/riskguard.mjs detect --json   # full boolean map
+```
+
+**2. Inspect each agent's Runtime state and product capability level:**
+
+```bash
+node bin/riskguard.mjs status
+```
+
+`status` distinguishes two concepts: **Capability** (the product's D0–D4 support for that agent, from `compatibility.json`) and **Runtime** (what is actually happening on this machine: `NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN` — `ACTIVE` means the full runtime self-test passed).
+
+**3. Health check** (PASS / WARN / FAIL / SKIP; uninstalled agents count as SKIP, not FAIL):
+
+```bash
+node bin/riskguard.mjs doctor
+```
+
+**4. Install / repair** (transactional: typed read → backup → merge → manifest → runtime self-test → commit; `--dry-run` previews; `--agent` alias supported):
+
+```bash
+node bin/riskguard.mjs install --dry-run            # show what would change, write nothing
+node bin/riskguard.mjs install                      # interactive: list detected agents, pick by number; non-TTY/pipe auto-installs all
+node bin/riskguard.mjs install --all --dry-run      # skip interaction, install all detected
+node bin/riskguard.mjs install --agent claude       # install one only (cc/claude/claude-code equivalent; oc=opencode)
+```
+
+`detect` scans Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose. `install` without `--agent` lists detected agents for interactive selection (`1,3` / `all` / Enter), and non-interactive environments auto-install all without hanging. Install is **non-destructive**: merges preserve user fields, corrupt config / missing permission / IO errors abort with zero writes, and any failure rolls back to the pre-install state; when wiring is broken (`BROKEN`) install treats it as a **repair**.
+
+**5. Uninstall** (precise inverse: removes only RiskGuard-injected entries, keeps user changes made after install):
+
+```bash
+node bin/riskguard.mjs uninstall --dry-run
+node bin/riskguard.mjs uninstall
+```
+
+Uninstall removes exactly what the manifest tracks; RiskGuard files modified by the user are not auto-deleted; with no manifest it reports "nothing to do" and never deletes by mistake.
+
+**6. (v0.2.0/v0.2.1) OWASP ACS boundary-protocol Gateway** — feeds an ACS ToolCallRequest losslessly into the RiskGuard policy engine and emits a valid ACS Result (fail-closed; see [docs/acs-alignment.md](docs/acs-alignment.md)):
+
+```bash
+cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
+cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
+cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
+cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
+```
+
+- `acs evaluate` = **payload compatibility mode** (RiskGuard convenience interface); `acs evaluate --wire` = **official ACS v0.1.0 schema-conformant wire mode** (Request Envelope → Response Envelope).
+- Invalid input never throws a stack trace: payload mode prints `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` with `extensions.riskguard.degraded = true` (fail-closed); wire mode returns JSON-RPC errors (-32700/-32600/-32602).
+- The official OWASP ACS v0.1.0 JSON Schema is pinned in `tests/vendor/owasp-acs-v0.1.0/` (read-only; upstream commit recorded in the README) and is the Release Gate since v0.2.1.
+
+**7. Exit codes** (contract for scripts / CI; also listed by `riskguard help`):
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success. Includes doctor with WARN but no FAIL, idempotent install (`already installed`), and uninstalling an agent that was never installed. **The hook runtime (no command: stdin JSON → decision JSON) ALWAYS exits 0** — allow and deny are both normal decisions, and a fail-closed deny for empty/invalid input is not an error (Claude Code / Codex integration depends on this). |
+| `1` | Failed. doctor has ≥1 FAIL (the FAIL line carries an executable fix hint); install was aborted (corrupt config / foreign plugin file), rolled back or failed its runtime self-test, or an explicitly requested agent was not installed; uninstall was refused or failed; bootstrap failed. |
+| `2` | Usage error. Unknown command (typo, empty argument) — prints `Unknown command: …` plus a help hint instead of silently falling through to the hook runtime; install / uninstall was given an unknown or unsupported agent. |
+
+Example: `node bin/riskguard.mjs doctor || echo "RiskGuard is not active"`; CI health checks can use the exit code directly and pair it with `doctor --json` for the machine-readable `{pass,warn,fail,skip,exitCode,checks}`.
 
 ## What it protects
 
@@ -153,111 +246,6 @@ npx skills add satan9394/agent-risk-guard --skill agent-risk-guard
 ```
 
 After install, follow the "Quick setup" flow in `skills/agent-risk-guard/SKILL.md` to land machine-level gates (hooks / plugins / pre-execute) for each agent on the machine.
-
-## Quick start (Developer Preview)
-
-RiskGuard ships a **zero-dependency, zero-build** user-level CLI (`riskguard`) covering install / status / doctor / uninstall. Requires Node >= 22.18. Unified in-repo entry: `node bin/riskguard.mjs` (equivalent to `node packages/cli/src/index.ts`, so you never face internal source paths).
-
-```bash
-cd agent-risk-guard
-# Show CLI usage
-node bin/riskguard.mjs help
-```
-
-**0. (Recommended) Install the portable runtime** — copies the minimal runtime file set into `~/.riskguard/runtime/<version>/`; agent hooks then point at the runtime instead of the git clone. RiskGuard keeps working after the source repo is deleted or moved:
-
-```bash
-node bin/riskguard.mjs bootstrap          # first-time runtime install
-node bin/riskguard.mjs bootstrap --force  # repair reinstall if runtime is corrupt
-```
-
-> Distribution/self-contained mode: `node scripts/build-release.ts` produces `dist/agent-risk-guard-v<version>/` (with a `bin/riskguard.mjs` launcher, `runtime-manifest.json`, `SHA256SUMS.txt`). The artifact can run detect / install / doctor / uninstall in a fake HOME without the source repo.
-
-**1. First, detect installed agents read-only** (touches nothing):
-
-```bash
-node bin/riskguard.mjs detect          # human-readable (full registry incl. AGY)
-node bin/riskguard.mjs detect --json   # full boolean map
-```
-
-**2. Inspect each agent's Runtime state and product capability level:**
-
-```bash
-node bin/riskguard.mjs status
-```
-
-`status` distinguishes two concepts: **Capability** (the product's D0–D4 support for that agent, from `compatibility.json`) and **Runtime** (what is actually happening on this machine: `NOT_DETECTED` / `DETECTED` / `INSTALLED` / `ACTIVE` / `BROKEN` — `ACTIVE` means the full runtime self-test passed).
-
-**3. Health check** (PASS / WARN / FAIL / SKIP; uninstalled agents count as SKIP, not FAIL):
-
-```bash
-node bin/riskguard.mjs doctor
-```
-
-**4. Install / repair** (transactional: typed read → backup → merge → manifest → runtime self-test → commit; `--dry-run` previews; `--agent` alias supported):
-
-```bash
-node bin/riskguard.mjs install --dry-run            # show what would change, write nothing
-node bin/riskguard.mjs install                      # interactive: list detected agents, pick by number; non-TTY/pipe auto-installs all
-node bin/riskguard.mjs install --all --dry-run      # skip interaction, install all detected
-node bin/riskguard.mjs install --agent claude       # install one only (cc/claude/claude-code equivalent; oc=opencode)
-```
-
-`detect` scans Claude Code / Codex / OpenCode / DSH / Hermes / AGY / Cursor / Windsurf / Grok / Copilot CLI / Cline / Aider / Goose. `install` without `--agent` lists detected agents for interactive selection (`1,3` / `all` / Enter), and non-interactive environments auto-install all without hanging. Install is **non-destructive**: merges preserve user fields, corrupt config / missing permission / IO errors abort with zero writes, and any failure rolls back to the pre-install state; when wiring is broken (`BROKEN`) install treats it as a **repair**.
-
-**5. Uninstall** (precise inverse: removes only RiskGuard-injected entries, keeps user changes made after install):
-
-```bash
-node bin/riskguard.mjs uninstall --dry-run
-node bin/riskguard.mjs uninstall
-```
-
-Uninstall removes exactly what the manifest tracks; RiskGuard files modified by the user are not auto-deleted; with no manifest it reports "nothing to do" and never deletes by mistake.
-
-**6. (v0.2.0/v0.2.1) OWASP ACS boundary-protocol Gateway** — feeds an ACS ToolCallRequest losslessly into the RiskGuard policy engine and emits a valid ACS Result (fail-closed; see [docs/acs-alignment.md](docs/acs-alignment.md)):
-
-```bash
-cat tests/fixtures/acs-v0.1/git-reset-hard.json | node bin/riskguard.mjs acs evaluate
-cat tests/fixtures/acs-v0.1/shell-safe.json     | node bin/riskguard.mjs acs evaluate --audit
-cat request.json | node bin/riskguard.mjs acs evaluate --profile strict
-cat envelope.json | node bin/riskguard.mjs acs evaluate --wire   # official ACS v0.1.0 JSON-RPC wire mode
-```
-
-- `acs evaluate` = **payload compatibility mode** (RiskGuard convenience interface); `acs evaluate --wire` = **official ACS v0.1.0 schema-conformant wire mode** (Request Envelope → Response Envelope).
-- Invalid input never throws a stack trace: payload mode prints `{ "decision": "deny", "reasoning": "Invalid ACS ToolCallRequest: …" }` with `extensions.riskguard.degraded = true` (fail-closed); wire mode returns JSON-RPC errors (-32700/-32600/-32602).
-- The official OWASP ACS v0.1.0 JSON Schema is pinned in `tests/vendor/owasp-acs-v0.1.0/` (read-only; upstream commit recorded in the README) and is the Release Gate since v0.2.1.
-
-**7. Exit codes** (contract for scripts / CI; also listed by `riskguard help`):
-
-| Exit code | Meaning |
-| --- | --- |
-| `0` | Success. Includes doctor with WARN but no FAIL, idempotent install (`already installed`), and uninstalling an agent that was never installed. **The hook runtime (no command: stdin JSON → decision JSON) ALWAYS exits 0** — allow and deny are both normal decisions, and a fail-closed deny for empty/invalid input is not an error (Claude Code / Codex integration depends on this). |
-| `1` | Failed. doctor has ≥1 FAIL (the FAIL line carries an executable fix hint); install was aborted (corrupt config / foreign plugin file), rolled back or failed its runtime self-test, or an explicitly requested agent was not installed; uninstall was refused or failed; bootstrap failed. |
-| `2` | Usage error. Unknown command (typo, empty argument) — prints `Unknown command: …` plus a help hint instead of silently falling through to the hook runtime; install / uninstall was given an unknown or unsupported agent. |
-
-Example: `node bin/riskguard.mjs doctor || echo "RiskGuard is not active"`; CI health checks can use the exit code directly and pair it with `doctor --json` for the machine-readable `{pass,warn,fail,skip,exitCode,checks}`.
-
-### Example output
-
-A real (unedited) CLI response to a "delete an important directory" request:
-
-```text
-Agent attempts:  remove-item C:\proj\important -Recurse -Force
-
-RiskGuard CLI output:
-{
-  "decision": "deny",
-  "ruleId": "RG-FS-001",
-  "reason": "永久删除禁止，请使用回收站",
-  "safeAlternative": { "operation": "trash", "description": "使用统一 trash 能力（Windows Recycle Bin / macOS Trash / freedesktop Trash）" }
-}
-```
-
-In other words:
-
-```text
-Agent tries permanent delete  →  RiskGuard →  DENY  →  the command never runs (recycle bin suggested)
-```
 
 ## Security Model
 
