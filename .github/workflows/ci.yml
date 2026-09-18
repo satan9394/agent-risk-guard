@@ -154,3 +154,18 @@ jobs:
           }
           if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join ', ')"; exit 1 }
           Write-Host "ps1 hook suites (pwsh 7): 5/5 green"
+
+  # 决策账本：代码变更必须同时更新 docs/decisions.md。
+  # check-decisions-log.ts 只管 A 表（已发布版本），管不到未发布的切片 —— PR #4 就是这么漏掉的。
+  # 本作业补上另一半，只在 PR 上跑。
+  decisions-row:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # 需要与 base 分支做 diff
+      - name: Require a decisions.md row for code changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/check-decisions-row.mjs

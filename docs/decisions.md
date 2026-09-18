@@ -74,6 +74,7 @@ and why, is as valuable as knowing what shipped.
 | 2026-09-14 | @satan9394 | 修复 parity 闸门指向**仓库外**路径（主干 CI 长期红的根因） | ✅ ACCEPT | `1c3f690` | v0.3.1 |
 | 2026-09-17 | @satan9394 | README 重构为首页 + 新增 `docs/cli.md`；补 `docs/decisions.md` | ✅ ACCEPT | `3298161` | 未发布 |
 | 2026-09-17 | @satan9394 | Code scanning 12 条 `js/polynomial-redos` 告警：**实测后决定不改** | ACCEPT（不改动，以实测为依据） | [`scripts/redos-probe.mjs`](../scripts/redos-probe.mjs) —— 14 个病态用例在 50 KB 下全部不超过 1.67 ms、近似线性 | 未发布 |
+| 2026-09-17 | @satan9394 | 修 CodeQL 中**可证明等价**的 5 条告警：结尾分隔符正则改线性扫描、测试里的空操作替换与不完整转义（**PR #4**） | ACCEPT | 全量 380/380 通过；CodeQL 复核后自动关闭 5 条 · `e026ef1` | 未发布 |
 | 2026-09-17 | @satan9394 | 仓库治理：启用私有漏洞报告 / Dependabot alerts + security updates / Code scanning（CodeQL）；新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、5 个 CI 检查必过） | ✅ ACCEPT | `be83671` · 仓库设置（非代码） | 未发布 |
 
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
