@@ -21,3 +21,20 @@ Thumbs.db
 # 本机敏感/临时（绝不入库）
 *.key
 .editorconfig.local
+
+# --- security hardening (added 2026-09-18) ---
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa
+id_ed25519
+.netrc
+.npmrc.local
+.pypirc
+secrets.json
