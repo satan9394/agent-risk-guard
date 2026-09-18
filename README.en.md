@@ -1,5 +1,7 @@
 # Agent Risk Guard
 
+**English** ｜ [中文](README.md)
+
 **Deterministic runtime guardrails for AI coding agents.**
 
 Agent Risk Guard checks shell, filesystem and Git operations **before** an AI agent actually runs them. It does
