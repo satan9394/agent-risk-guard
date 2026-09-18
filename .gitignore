@@ -38,3 +38,13 @@ id_ed25519
 .npmrc.local
 .pypirc
 secrets.json
+
+# --- DSH 任务台账过程产物（2026-09-18 加入）---
+# 这些是评估/变异测试/基线快照/探针输出等一次性过程文件，
+# 不属于仓库内容；每次迭代都会重新生成，纳入版本控制只会污染 git status。
+# 注意：tasks/orchestrator/ 下的 DECISIONS.md、EVALUATION_RESULT_*.md 等
+# 正式结论文件不以下划线开头，不受影响，仍正常跟踪。
+tasks/orchestrator/_*
+tasks/eval-g*/
+tasks/**/*.tmp
+.eval-tmp/
