@@ -54,6 +54,7 @@ and why, is as valuable as knowing what shipped.
 | `v0.2.2` | 2026-09-05 | ACCEPT | [release notes](release-notes/v0.2.2.md) · tag `v0.2.2` |
 | `v0.3.0` | 2026-09-07 | ACCEPT | [release notes](release-notes/v0.3.0.md) · tag `v0.3.0` |
 | `v0.3.1` | 2026-09-14 | ACCEPT | [release notes](release-notes/v0.3.1.md) · tag `v0.3.1` |
+| `v0.3.2` | 2026-09-19 | ACCEPT | [release notes](release-notes/v0.3.2.md) · tag `v0.3.2` |
 
 ## B. 切片级裁决 / Per-slice verdicts
 
@@ -72,15 +73,15 @@ and why, is as valuable as knowing what shipped.
 | 2026-09-14 | @satan9394 | CI 补全：ps1 五套 × 双引擎 + `sh-failclosed-test.sh`；`test-all.ps1` 对齐 | ✅ ACCEPT | `332bb73` | v0.3.1 |
 | 2026-09-14 | @satan9394 | 双语发行说明 + 两个 Issue 模板 + 新增 Agent 指南；更正两处公开面口径 | ✅ ACCEPT | `0122784` · `b216946` | v0.3.1 |
 | 2026-09-14 | @satan9394 | 修复 parity 闸门指向**仓库外**路径（主干 CI 长期红的根因） | ✅ ACCEPT | `1c3f690` | v0.3.1 |
-| 2026-09-17 | @satan9394 | README 重构为首页 + 新增 `docs/cli.md`；补 `docs/decisions.md` | ✅ ACCEPT | `3298161` | 未发布 |
-| 2026-09-17 | @satan9394 | Code scanning 12 条 `js/polynomial-redos` 告警：**实测后决定不改** | ACCEPT（不改动，以实测为依据） | [`scripts/redos-probe.mjs`](../scripts/redos-probe.mjs) —— 14 个病态用例在 50 KB 下全部不超过 1.67 ms、近似线性 | 未发布 |
-| 2026-09-17 | @satan9394 | 修 CodeQL 中**可证明等价**的 5 条告警：结尾分隔符正则改线性扫描、测试里的空操作替换与不完整转义（**PR #4**） | ACCEPT | 全量 380/380 通过；CodeQL 复核后自动关闭 5 条 · `e026ef1` | 未发布 |
-| 2026-09-17 | @satan9394 | 仓库治理：启用私有漏洞报告 / Dependabot alerts + security updates / Code scanning（CodeQL）；新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、5 个 CI 检查必过） | ✅ ACCEPT | `be83671` · 仓库设置（非代码） | 未发布 |
-| 2026-09-19 | @satan9394 | **R7** `git branch` 删除只拦短选项 `-d`/`-D`，长选项 `--delete`（含 `--delete --force`，与 `-D` 语义完全等价）在**所有** enforcement 层被放行，且 `isReadOnlyCommand` 判其为只读 → 走 read-only 快路径直接 allow（与 P0-6/P1-3 同一根因） | ❌ REJECT（首版引入 **38 条放宽**，其中 **24 条**为真实 git 删除分支的合并短选项 `-df`/`-Df`/`-dd`…；根因：短选项分支加了尾部 `\b`） → **FIX（R7b）✅** | [R7](../tasks/orchestrator/EVALUATION_RESULT_R7.md) · `7c09890` → `ba36247`（R7b）；R7b 后 9 层 × 9 条必拦形态复核 = **0 漏拦、0 误伤**；规则相关 71/71、`sh-audit-bypass` 195/195、`sh-hook-test` 70/70。**更正**：首版证据栏所称「`--move`/`--copy`/`--force` 一并补入只读白名单」实测规范形态下**未生效**（`\s*` 吞掉 `branch` 与选项间空格），已移除该声明，详见 CHANGELOG | 未发布 |
+| 2026-09-17 | @satan9394 | README 重构为首页 + 新增 `docs/cli.md`；补 `docs/decisions.md` | ✅ ACCEPT | `3298161` | v0.3.2 |
+| 2026-09-17 | @satan9394 | Code scanning 12 条 `js/polynomial-redos` 告警：**实测后决定不改** | ACCEPT（不改动，以实测为依据） | [`scripts/redos-probe.mjs`](../scripts/redos-probe.mjs) —— 14 个病态用例在 50 KB 下全部不超过 1.67 ms、近似线性 | v0.3.2 |
+| 2026-09-17 | @satan9394 | 修 CodeQL 中**可证明等价**的 5 条告警：结尾分隔符正则改线性扫描、测试里的空操作替换与不完整转义（**PR #4**） | ACCEPT | 全量 380/380 通过；CodeQL 复核后自动关闭 5 条 · `e026ef1` | v0.3.2 |
+| 2026-09-17 | @satan9394 | 仓库治理：启用私有漏洞报告 / Dependabot alerts + security updates / Code scanning（CodeQL）；新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、5 个 CI 检查必过） | ✅ ACCEPT | `be83671` · 仓库设置（非代码） | v0.3.2 |
+| 2026-09-19 | @satan9394 | **R7** `git branch` 删除只拦短选项 `-d`/`-D`，长选项 `--delete`（含 `--delete --force`，与 `-D` 语义完全等价）在**所有** enforcement 层被放行，且 `isReadOnlyCommand` 判其为只读 → 走 read-only 快路径直接 allow（与 P0-6/P1-3 同一根因） | ❌ REJECT（首版引入 **38 条放宽**，其中 **24 条**为真实 git 删除分支的合并短选项 `-df`/`-Df`/`-dd`…；根因：短选项分支加了尾部 `\b`） → **FIX（R7b）✅** | [R7](../tasks/orchestrator/EVALUATION_RESULT_R7.md) · `7c09890` → `ba36247`（R7b）；R7b 后 9 层 × 9 条必拦形态复核 = **0 漏拦、0 误伤**；规则相关 71/71、`sh-audit-bypass` 195/195、`sh-hook-test` 70/70。**更正**：首版证据栏所称「`--move`/`--copy`/`--force` 一并补入只读白名单」实测规范形态下**未生效**（`\s*` 吞掉 `branch` 与选项间空格），已移除该声明，详见 CHANGELOG | v0.3.2 |
 
-| 2026-09-19 | @satan9394 | **R7b 工具链**：`~/.claude/skills/custom/agent-risk-guard-audit` 是手工快照、落后单源多个版本（缺 G3-FIX8、缺 R7 的组合短选项），却仍是 skill 部署取源（"比单源弱"的旁路副本）；且 `sync-prod.ps1` 每次运行都会**重复追加** 5 条 R2 规则到 DSH patch（幂等性为零）、并把插件写到过时的 `destructive-operation-guard.ts`（现网加载 `agent-risk-guard.ts` → 重复插件文件） | ✅ ACCEPT | PR #14 · `6df9754`；wiring-check 新增「skill 副本」逐文件 SHA256 比对段（skill 由 19 处漂移 → 0），sync-prod.ps1 重写为 wiring-check 的薄封装；wiring-check exit 0、doctor 4 PASS / 0 WARN / 0 FAIL | 未发布 |
+| 2026-09-19 | @satan9394 | **R7b 工具链**：`~/.claude/skills/custom/agent-risk-guard-audit` 是手工快照、落后单源多个版本（缺 G3-FIX8、缺 R7 的组合短选项），却仍是 skill 部署取源（"比单源弱"的旁路副本）；且 `sync-prod.ps1` 每次运行都会**重复追加** 5 条 R2 规则到 DSH patch（幂等性为零）、并把插件写到过时的 `destructive-operation-guard.ts`（现网加载 `agent-risk-guard.ts` → 重复插件文件） | ✅ ACCEPT | PR #14 · `6df9754`；wiring-check 新增「skill 副本」逐文件 SHA256 比对段（skill 由 19 处漂移 → 0），sync-prod.ps1 重写为 wiring-check 的薄封装；wiring-check exit 0、doctor 4 PASS / 0 WARN / 0 FAIL | v0.3.2 |
 
-| 2026-09-19 | @satan9394 | skill 镜像的比对判据改为**内容等价**（忽略行尾）：仓库工作区的 ps1 EOL 是 `.gitattributes eol=crlf` 的 git 产物，checkout 后即由 LF 变 CRLF，要求镜像跟随没有意义 —— 上一行（PR #14）的字节级比对因此产生 1 处 EOL 伪漂移。生产 hook 段仍保持字节级严格比对（BOM/编码必须一致） | ✅ ACCEPT | PR #15；`riskguard-wiring-check.ps1` 新增 `Get-NormHash`（去 CR 后算 SHA256），仅用于 skill 段；复跑 exit 0（skill 39 文件一致） | 未发布 |
+| 2026-09-19 | @satan9394 | skill 镜像的比对判据改为**内容等价**（忽略行尾）：仓库工作区的 ps1 EOL 是 `.gitattributes eol=crlf` 的 git 产物，checkout 后即由 LF 变 CRLF，要求镜像跟随没有意义 —— 上一行（PR #14）的字节级比对因此产生 1 处 EOL 伪漂移。生产 hook 段仍保持字节级严格比对（BOM/编码必须一致） | ✅ ACCEPT | PR #15；`riskguard-wiring-check.ps1` 新增 `Get-NormHash`（去 CR 后算 SHA256），仅用于 skill 段；复跑 exit 0（skill 39 文件一致） | v0.3.2 |
 
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
 > Changes not yet released sit at the bottom until the next release fills in the version column.

@@ -37,7 +37,7 @@ Agent attempts:  remove-item C:\proj\important -Recurse -Force
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **Status: `v0.3.1 Developer Preview`** (pre-release).
+> **Status: `v0.3.2 Developer Preview`** (pre-release).
 > **Pre-execution blocking is verified in real agent sessions** for Claude Code / OpenCode / Antigravity CLI.
 > macOS / Linux are implemented but not yet tested in a real environment.
 >

@@ -36,7 +36,7 @@ Agent attempts:  remove-item C:\proj\important -Recurse -Force
 [![Node >= 22.18](https://img.shields.io/badge/Node-%3E%3D%2022.18-green.svg)](#)
 [![CI](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/satan9394/agent-risk-guard/actions/workflows/ci.yml)
 
-> **状态：`v0.3.1 Developer Preview`**（Pre-release）。
+> **状态：`v0.3.2 Developer Preview`**（Pre-release）。
 > **已在 Claude Code / OpenCode / Antigravity CLI 的真实 Agent 会话中验证执行前拦截**；macOS / Linux 已实现，
 > 但尚未在真实环境实测。
 >
