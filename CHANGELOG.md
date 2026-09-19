@@ -4,17 +4,20 @@
 
 ## 版本语义说明
 
-当前统一产品版本为 **`v0.3.1 Developer Preview`**（`package.json` = `0.3.1`；单一版本源 `packages/core/src/version.ts`）。
+当前统一产品版本为 **`v0.3.2 Developer Preview`**（`package.json` = `0.3.2`；单一版本源 `packages/core/src/version.ts`）。
 
-- 已发布为 GitHub Pre-release 的版本：**`v0.1.0` 起至 `v0.3.0`**（`v0.1.0` / `v0.1.1` / `v0.1.2` 于 2026-09-04；`v0.2.0` / `v0.2.1` / `v0.2.2` 于 2026-09-05；`v0.3.0` 于 2026-09-07）。历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记，**不是**当前产品稳定版声明。
-- **每个版本的"出了什么问题 + 改变了什么"另有中英双语发行说明**：见 [`docs/release-notes/`](docs/release-notes/)——GitHub Release 的正文即取自该目录，且**缺对应说明文件时发版会失败**。`v0.3.1` 的说明已就绪，**尚未打 tag**。
+- 已发布为 GitHub Pre-release 的版本：**`v0.1.0` 起至 `v0.3.2`**（`v0.1.0` / `v0.1.1` / `v0.1.2` 于 2026-09-04；`v0.2.0` / `v0.2.1` / `v0.2.2` 于 2026-09-05；`v0.3.0` 于 2026-09-07；`v0.3.1` 于 2026-09-14；`v0.3.2` 于 2026-09-19）。历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记，**不是**当前产品稳定版声明。
+- **每个版本的"出了什么问题 + 改变了什么"另有中英双语发行说明**：见 [`docs/release-notes/`](docs/release-notes/)——GitHub Release 的正文即取自该目录，且**缺对应说明文件时发版会失败**。
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-19（`git branch` 删除的两条绕过：长选项 + 合并短选项）
+
 ### Fixed
 
+- **CodeQL 中可证明等价的 5 条告警**：结尾分隔符正则改为线性扫描、测试里的空操作替换与不完整转义（**PR #4**）。
 - **R7：`git branch` 删除只拦短选项，长选项整条可绕过**。规则是 `\bgit\s+branch\s+-[dD]\b`，
   只认 `-d`/`-D`，不认语义完全等价的长选项 —— `git branch --delete --force <name>` 与
   `git branch -D <name>` 行为一致，却**在所有 enforcement 层一律放行**（opencode 插件、installer deny 规则、
@@ -38,6 +41,24 @@
 
 - `README.md` / `README.en.md` 规则表中的 `branch -D` 更新为 `branch -d/-D/--delete`；
   `rules-compiler.ts` 的规则说明串同步。
+- **生产面与派生物同步（此前是"比单源弱"的旁路副本）**：DSH `~/.dsh/profiles/{web,headless}` 与
+  `agent-risk-guard-audit` skill 镜像此前落后单源多个版本（缺 G3-FIX8、缺 R7），已全部回灌单源。
+- **`riskguard-wiring-check.ps1` 加固**：DSH 校验从"比规则条数"升级为**逐条正则文本比对** + `-Fix`
+  （旧实现只比条数，规则被等量替换时静默通过——这正是 R7 的收紧长期没落到 DSH 生产面的原因）；
+  新增 `[skill 副本]` 段，逐文件比对 `~/.claude/skills/custom/agent-risk-guard-audit` 与
+  `skills/agent-risk-guard/`（镜像按内容等价比对，忽略行尾）。
+- **`sync-prod.ps1` 重写为薄封装**，委派给 `riskguard-wiring-check.ps1`。原实现每次运行都把同样
+  5 条 R2 规则**重复追加**进 DSH patch（幂等性为零），且把插件写到过时的
+   `destructive-operation-guard.ts`（现网加载 `agent-risk-guard.ts` → 重复插件文件）。
+- **仓库治理**：启用私有漏洞报告、Dependabot alerts + security updates、Code scanning（CodeQL）；
+  新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、CI 检查必过）。
+- **README 重构为首页**，并新增 [`docs/cli.md`](docs/cli.md)。
+
+### Notes
+
+- **Code scanning 12 条 `js/polynomial-redos` 告警：实测后决定不改**。14 个病态用例在 50 KB 输入下
+  全部不超过 1.67 ms、近似线性（依据脚本 [`scripts/redos-probe.mjs`](scripts/redos-probe.mjs)），
+  把"为什么不改"的证据落在仓内，而不是"看起来可疑就改"。
 
 ### Tests
 
@@ -54,7 +75,7 @@
 
 > 定位：**v0.3.1 —— 让"保护已生效"这句话可自证**。中英双语发行说明见
 > [`docs/release-notes/v0.3.1.md`](docs/release-notes/v0.3.1.md)（含"出了什么问题"与"改变了什么"）；
-> 本节只记仓库侧要点。**v0.3.1 尚未打 tag** —— 打 tag 后由 `release.yml` 取用该说明文件发版。
+> 本节只记仓库侧要点。已打 tag `v0.3.1` 并由 `release.yml` 取用该说明文件发版。
 > 依据：`git log v0.3.0..HEAD`（59 个提交 / 143 文件）。
 
 ### Fixed

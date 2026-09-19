@@ -42,7 +42,8 @@ gh release create v0.4.0 --notes-file docs/release-notes/v0.4.0.md --prerelease
 
 | 版本 | 主题 | 这一版解决的问题（一句话） |
 |---|---|---|
-| [v0.3.1](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.3.1.md)（**未打 tag**） | 让"保护已生效"可自证 | 脚本在位、哈希正确、套件全绿，**入口却没注册**；且修这些问题的动作本身五次引入了新的放松 |
+| [v0.3.2](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.3.2.md) | `git branch` 删除的两条绕过 | 规则只认 `-d`/`-D`：长选项 `--delete` 整条绕过；第一版修复又给短选项加了 `\b`，把合并短选项 `-df`/`-Df` 也放行了（实测 38 条放宽、24 条可被真实 git 利用） |
+| [v0.3.1](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.3.1.md) | 让"保护已生效"可自证 | 脚本在位、哈希正确、套件全绿，**入口却没注册**；且修这些问题的动作本身五次引入了新的放松 |
 | [v0.3.0](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.3.0.md) | Real Agent Conformance | 此前"能拦住"只是我们自己的单元测试说的；没有一条**真实 Agent 会话**里的拦截证据 |
 | [v0.2.2](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.2.2.md) | ACS Protocol Finalization | 不支持的 ACS 版本被**当成 0.1.0 继续处理**；Release 只发源码、没有可校验的制品 |
 | [v0.2.1](https://github.com/satan9394/agent-risk-guard/blob/main/docs/release-notes/v0.2.1.md) | ACS Schema Conformance Patch | ACS 输入输出只过了**我们自己的**简化校验，却看起来"已对齐官方标准" |
