@@ -76,6 +76,7 @@ and why, is as valuable as knowing what shipped.
 | 2026-09-17 | @satan9394 | Code scanning 12 条 `js/polynomial-redos` 告警：**实测后决定不改** | ACCEPT（不改动，以实测为依据） | [`scripts/redos-probe.mjs`](../scripts/redos-probe.mjs) —— 14 个病态用例在 50 KB 下全部不超过 1.67 ms、近似线性 | 未发布 |
 | 2026-09-17 | @satan9394 | 修 CodeQL 中**可证明等价**的 5 条告警：结尾分隔符正则改线性扫描、测试里的空操作替换与不完整转义（**PR #4**） | ACCEPT | 全量 380/380 通过；CodeQL 复核后自动关闭 5 条 · `e026ef1` | 未发布 |
 | 2026-09-17 | @satan9394 | 仓库治理：启用私有漏洞报告 / Dependabot alerts + security updates / Code scanning（CodeQL）；新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、5 个 CI 检查必过） | ✅ ACCEPT | `be83671` · 仓库设置（非代码） | 未发布 |
+| 2026-09-19 | @satan9394 | **R7** `git branch` 删除只拦短选项 `-d`/`-D`，长选项 `--delete`（含 `--delete --force`，与 `-D` 语义完全等价）在**所有** enforcement 层被放行，且 `isReadOnlyCommand` 判其为只读 → 走 read-only 快路径直接 allow（与 P0-6/P1-3 同一根因） | ✅ ACCEPT | PR #11 · `7c09890`；规则相关 71/71、`sh-audit-bypass` 195/195、`sh-hook-test` 70/70；`--move`/`--copy`/`--force` 一并补入只读白名单 | 未发布 |
 
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
 > Changes not yet released sit at the bottom until the next release fills in the version column.
