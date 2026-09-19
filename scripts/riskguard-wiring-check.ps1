@@ -11,7 +11,8 @@
 # 检查点（单一规则源纪律，全部期望字节一致）：
 #   ps1      : .claude/hooks + .codex/hooks + .gemini/config/hooks ← 仓库 assets/hooks/dangerous-commands.ps1
 #   opencode : .config/opencode/plugins ← 仓库 assets/opencode/agent-risk-guard.ts
-#   dsh      : profiles/web/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
+#   dsh      : profiles/*/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
+#              （组合文件不整比 hash，改为**逐条正则文本比对**；缺任一条即失败，-Fix 按单源替换）
 #   接线     : cc settings.json PreToolUse 在位 / codex hooks.json+config.toml / agy hooks.json / dsh patch 注入
 #
 # 退出码：0 = 全部 OK；1 = 发现缺失或漂移（-Fix 后仍残留）；2 = 本机无法定位仓库单源
@@ -96,9 +97,22 @@ $ocJson = Join-Path $userHome '.config\opencode\opencode.json'
 $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard')
 Write-Check 'opencode.json 插件注册' $ocReg $ocJson
 
-# ---- 3. dsh patch 生产 vs 单源 ----
+# ---- 3. dsh patch 生产 vs 单源（逐条正则比对）----
 Write-Host "`n[dsh pre-execute 门禁]"
 $hashDsh = (Get-FileHash $srcDsh -Algorithm SHA256).Hash
+
+# 抽取文件里的规则行：Raw = 含缩进原文，Text = 去空白后的规范文本
+function Get-RuleTexts([string]$path) {
+  $out = [System.Collections.Generic.List[object]]::new()
+  foreach ($l in [System.IO.File]::ReadAllLines($path, [System.Text.Encoding]::UTF8)) {
+    if ($l -match "re:\s*'") { $out.Add([pscustomobject]@{ Raw = $l; Text = $l.Trim() }) }
+  }
+  return ,$out
+}
+
+$srcRules = Get-RuleTexts $srcDsh
+$srcSet = @($srcRules | ForEach-Object { $_.Text })
+
 $dshProfiles = Get-ChildItem (Join-Path $userHome '.dsh\profiles') -Directory -ErrorAction SilentlyContinue
 foreach ($prof in $dshProfiles) {
   $patch = Join-Path $prof.FullName 'cordis.patch.yml'
@@ -108,19 +122,53 @@ foreach ($prof in $dshProfiles) {
     Write-Check ("dsh {0} 缺 deny-risk-commands 注入" -f $prof.Name) $false $patch
     continue
   }
-  $hashOk = ((Get-FileHash $patch -Algorithm SHA256).Hash -eq $hashDsh)
-  if ($hashOk) {
+  if ((Get-FileHash $patch -Algorithm SHA256).Hash -eq $hashDsh) {
     Write-Check ("dsh {0} patch hash 一致" -f $prof.Name) $true $patch
-  } else {
-    # profile 的 cordis.patch.yml 是用户组合文件（可能含 MCP 等其它 insert 段），
-    # 整文件 hash 与单源不一致属预期；只要求 deny-risk-commands 注入在位 + 规则数与单源一致。
-    $ruleCount = ([regex]::Matches($raw, "re: '")).Count
-    $srcCount = ([regex]::Matches((Get-Content $srcDsh -Raw), "re: '")).Count
-    $rulesOk = ($ruleCount -ge $srcCount)
-    Write-Check ("dsh {0} patch 规则数一致（{1}，组合文件忽略整 hash）" -f $prof.Name, $(if ($rulesOk) { 'OK' } else { '少规则' })) $rulesOk $patch
-    if (-not $rulesOk) {
-      Write-Host "  注意: dsh $($prof.Name) 规则数少于单源（$ruleCount < $srcCount），需人工核对补齐" -ForegroundColor Yellow
+    continue
+  }
+
+  # profile 的 cordis.patch.yml 是用户组合文件（可能含 MCP 等其它 insert 段），
+  # 整文件 hash 不一致属预期 —— 所以**逐条比对规则正则文本**。
+  # 2026-09-19 教训：旧实现只比「规则条数」，规则被等量替换（1 条旧换 1 条新）时静默漏报，
+  # 导致 R7 的 `--delete` 收紧长期没落到 DSH 生产面（见 tasks/orchestrator/EVALUATION_RESULT_R7.md §5）。
+  $liveRules = Get-RuleTexts $patch
+  $liveSet = @($liveRules | ForEach-Object { $_.Text })
+  $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
+  $extra   = @($liveSet | Where-Object { $srcSet -notcontains $_ })
+
+  # 先自愈（-Fix），再据最终状态判定
+  if ($Fix -and $missing.Count -gt 0) {
+    # 索引对齐替换：单源第 k 条 ↔ 生产第 k 条；仅当生产第 k 条确属「多出来的」旧规则时才替换，
+    # 以免破坏用户自定义内容。只替换/不删除。
+    Backup-File $patch
+    $rawText = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
+    $changed = 0
+    for ($k = 0; $k -lt $srcRules.Count; $k++) {
+      $srcLine = $srcRules[$k].Text
+      if ($liveSet -contains $srcLine) { continue }
+      if ($k -lt $liveRules.Count -and ($extra -contains $liveRules[$k].Text)) {
+        $indent = [regex]::Match($liveRules[$k].Raw, '^\s*').Value
+        $rawText = $rawText.Replace($liveRules[$k].Raw, $indent + $srcLine)
+        $changed++
+      }
     }
+    if ($changed -gt 0) {
+      [System.IO.File]::WriteAllText($patch, $rawText, [System.Text.UTF8Encoding]::new($false))
+      Write-Host ("  [Fix] 已按单源替换 {0} 条规则（备份到 ~/.risk-guard-backup/）" -f $changed) -ForegroundColor Cyan
+      $liveSet = @(Get-RuleTexts $patch | ForEach-Object { $_.Text })
+      $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
+    } else {
+      Write-Host "  [Fix] 未能定位可替换的旧规则（需人工处理）" -ForegroundColor Yellow
+    }
+  }
+
+  if ($missing.Count -eq 0) {
+    $note = if ($extra.Count -gt 0) { "，另有 {0} 条自定义规则" -f $extra.Count } else { "" }
+    Write-Check ("dsh {0} 规则逐条一致（{1} 条{2}）" -f $prof.Name, $srcSet.Count, $note) $true $patch
+  } else {
+    Write-Check ("dsh {0} 规则缺失 {1} 条（与单源逐条比对）" -f $prof.Name, $missing.Count) $false $patch
+    foreach ($m in $missing) { Write-Host ("     缺失: {0}" -f $m) -ForegroundColor Yellow }
+    if (-not $Fix) { Write-Host "  注意: 加 -Fix 可从单源替换这些规则（备份到 ~/.risk-guard-backup/）" -ForegroundColor Yellow }
   }
 }
 if (-not $dshProfiles) {

@@ -282,7 +282,7 @@ function detectGit(s: string): Block | null {
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git push --force/-f overwrites remote history." }
   // R7：短选项 -d/-D 与等价长选项 --delete/--delete --force 同等对待。
   // `git branch --delete --force` 与 `git branch -D` 语义完全一致，此前整条可绕过。
-  if (/\bgit\s+branch\s+(?:-[dD]\b|--delete\b)/.test(lo))
+  if (/\bgit\s+branch\s+(?:-[A-Za-z]*[dD]|--delete\b)/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git branch -d/-D/--delete force-deletes a branch." }
   if (/\bgit\s+stash\s+drop\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git stash drop permanently discards stashes." }
