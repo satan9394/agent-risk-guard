@@ -184,6 +184,19 @@ if (-not $dshProfiles) {
 Write-Host "`n[skill 副本]"
 $srcSkill = Join-Path $repo 'skills\agent-risk-guard'
 $liveSkill = Join-Path $userHome '.claude\skills\custom\agent-risk-guard-audit'
+# skill 是**镜像**：按内容比对、忽略行尾差异。
+# 理由：仓库工作区的 EOL 是 git 产物（`.gitattributes` 的 `eol=crlf` 会在 checkout 时重写），
+# 要求镜像跟随它没有意义 —— 生产 hook 那几段才需要字节级严格比对。
+function Get-NormHash([string]$path) {
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  $out = [System.Collections.Generic.List[byte]]::new()
+  for ($i = 0; $i -lt $bytes.Length; $i++) {
+    if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
+    $out.Add($bytes[$i])
+  }
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  return [BitConverter]::ToString($sha.ComputeHash($out.ToArray())).Replace('-', '')
+}
 if (-not (Test-Path $liveSkill)) {
   Write-Check 'skill 安装目录' $false $liveSkill
 } else {
@@ -194,7 +207,7 @@ if (-not (Test-Path $liveSkill)) {
     $rel = $f.FullName.Substring($srcSkill.Length).TrimStart('\')
     $dest = Join-Path $liveSkill $rel
     if (-not (Test-Path $dest)) { $skillMissing.Add($rel); continue }
-    if ((Get-FileHash $f.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $dest -Algorithm SHA256).Hash) { $skillDrifted.Add($rel) }
+    if ((Get-NormHash $f.FullName) -ne (Get-NormHash $dest)) { $skillDrifted.Add($rel) }
   }
   $skillStale = $skillMissing.Count + $skillDrifted.Count
   Write-Check ("skill 副本与单源一致（{0} 个文件{1}）" -f $srcSkillFiles.Count, $(if ($skillStale -gt 0) { "，$skillStale 处漂移" } else { "" })) ($skillStale -eq 0) $liveSkill
