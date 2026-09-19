@@ -35,9 +35,15 @@ const CASES: RuleCase[] = [
     negative: ['git push origin main', 'git push --force-with-lease origin main', 'git pull --force'],
   },
   {
-    ruleFragment: 'git\\s+branch\\s+-[dD]',
-    positive: ['git branch -D feature/x', 'git branch -d feature/x'],
-    negative: ['git branch -a', 'git branch -m old new', 'git branch'],
+    // R7：长选项 --delete 与短选项 -d/-D 完全等价（--delete --force ≡ -D），必须同等拦截
+    ruleFragment: 'git\\s+branch\\s+(?:-[dD]',
+    positive: [
+      'git branch -D feature/x',
+      'git branch -d feature/x',
+      'git branch --delete feature/x',
+      'git branch --delete --force feature/x',
+    ],
+    negative: ['git branch -a', 'git branch -m old new', 'git branch', 'git branch --list', 'git branch --all', 'git branch -v'],
   },
   {
     ruleFragment: 'git\\s+checkout\\s+--',
@@ -147,6 +153,9 @@ function isBlocked(r: ReturnType<typeof classifyShellCommand>): boolean {
 }
 
 test('R3: classifyShellCommand 识别解释器 one-liner / wrapper 递归 / cmd 包裹', () => {
+  // R7：长选项 --delete 在 classify 层必须与 -d/-D 同判（此前漏拦整条）
+  assert.ok(isBlocked(classifyShellCommand('git branch --delete feature')), 'R7 branch --delete');
+  assert.ok(isBlocked(classifyShellCommand('git branch --delete --force feature')), 'R7 branch --delete --force');
   assert.ok(isBlocked(classifyShellCommand("python3 -c 'os.system(\"rm -rf /tmp\")'")), 'python3 os.system');
   assert.ok(isBlocked(classifyShellCommand("node -e 'fs.rmSync(\"/tmp/x\")'")), 'node fs.rmSync');
   assert.ok(isBlocked(classifyShellCommand("node -e 'require(\"fs\").unlinkSync(\"/tmp/x\")'")), 'node require unlinkSync');

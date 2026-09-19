@@ -280,8 +280,10 @@ function detectGit(s: string): Block | null {
   // R16 补齐（审计 B-12）：9 种缺失 git 破坏
   if (/\bgit\s+push\b[^;&|]*--force/.test(lo) || /\bgit\s+push\b[^;&|]*\s-f\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git push --force/-f overwrites remote history." }
-  if (/\bgit\s+branch\s+-[dD]\b/.test(lo))
-    return { policy: P.GIT_WORKTREE_DISCARD, reason: "git branch -d/-D force-deletes a branch." }
+  // R7：短选项 -d/-D 与等价长选项 --delete/--delete --force 同等对待。
+  // `git branch --delete --force` 与 `git branch -D` 语义完全一致，此前整条可绕过。
+  if (/\bgit\s+branch\s+(?:-[dD]\b|--delete\b)/.test(lo))
+    return { policy: P.GIT_WORKTREE_DISCARD, reason: "git branch -d/-D/--delete force-deletes a branch." }
   if (/\bgit\s+stash\s+drop\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git stash drop permanently discards stashes." }
   // switch -C 用原始 s 判断（lo 已小写化；s 保留大小写，-C 大写才匹配，安全的 -c 不误拦）

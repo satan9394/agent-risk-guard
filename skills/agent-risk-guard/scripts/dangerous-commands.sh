@@ -580,8 +580,9 @@ fi
 if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+push[^;]*--force([[:space:]]|$)|git[[:space:]]+push[^;]*-f([[:space:]]|$)'; then
     deny_command "git push --force/-f overwrites remote history."
 fi
-if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+branch[[:space:]]+-[dD]'; then
-    deny_command "git branch -d/-D deletes branch."
+# R7：短选项 -d/-D 与等价长选项 --delete 同等对待
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+branch[[:space:]]+(-[dD]|--delete)'; then
+    deny_command "git branch -d/-D/--delete deletes branch."
 fi
 if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+stash[[:space:]]+drop'; then
     deny_command "git stash drop deletes stash."

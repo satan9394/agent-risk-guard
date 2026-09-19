@@ -59,7 +59,7 @@ Prompt / Rules  →  模型决定是否遵守  →  Agent Risk Guard  →  机�
 | 风险 | 示例 | 默认行为 |
 |---|---|---|
 | **永久删除** | `rm -rf`、`Remove-Item -Recurse -Force`、`del /f`、`shutil.rmtree`、`fs.rmSync` | DENY，建议改用回收站 |
-| **破坏性 Git 操作** | `git reset --hard`、`git clean -f`、`git restore`、`push --force`、`branch -D`、`stash drop/clear`、`gc --prune` | DENY |
+| **破坏性 Git 操作** | `git reset --hard`、`git clean -f`、`git restore`、`push --force`、`branch -d/-D/--delete`、`stash drop/clear`、`gc --prune` | DENY |
 | **系统破坏命令** | `mkfs` / `wipefs` / `Format-Volume`、写块设备、`reg delete` | DENY |
 | **敏感资源** | `.ssh` / `.env` / `.aws` / `.kube` / `.npmrc` / 私钥 / `.pem` | 只读门控；审计与拦截消息出口自动脱敏 token / API Key / 口令 |
 | **部分混淆执行** | 全角变体、引号插词、`$()`/反引号、base64 管道、解释器 one-liner、shell wrapper 解包、junction/symlink 逃逸 | 解包后重新检查（**只能识别部分**，见 [Limitations](#limitations)） |

@@ -299,8 +299,8 @@ if ($cmd -match '\bgit\s+worktree\s+remove\s+--force') {
 if ($cmd -match '\bgit\s+push\s+.*--force(?:\s|$|\.)|\bgit\s+push\s+.*(?<![-\w])-f(?:\s|$|\.)') {
     Deny-Command 'git push 强制推送（-f/--force，非 --force-with-lease）覆盖远程历史，禁止'
 }
-if ($cmd -match '\bgit\s+branch\s+-[dD]\b') {
-    Deny-Command 'git 删除分支（branch -d/-D），禁止'
+if ($cmd -match '\bgit\s+branch\s+(?:-[dD]\b|--delete\b)') {
+    Deny-Command 'git 删除分支（branch -d/-D/--delete），禁止'
 }
 if ($cmd -match '\bgit\s+stash\s+drop\b') {
     Deny-Command 'git stash drop 永久删除 stash，禁止'

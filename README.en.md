@@ -62,7 +62,7 @@ Prompt / Rules  →  model decides whether to comply  →  Agent Risk Guard  →
 | Risk | Examples | Default behaviour |
 |---|---|---|
 | **Permanent deletion** | `rm -rf`, `Remove-Item -Recurse -Force`, `del /f`, `shutil.rmtree`, `fs.rmSync` | DENY, suggest the recycle bin |
-| **Destructive Git** | `git reset --hard`, `git clean -f`, `git restore`, `push --force`, `branch -D`, `stash drop/clear`, `gc --prune` | DENY |
+| **Destructive Git** | `git reset --hard`, `git clean -f`, `git restore`, `push --force`, `branch -d/-D/--delete`, `stash drop/clear`, `gc --prune` | DENY |
 | **System destructive** | `mkfs` / `wipefs` / `Format-Volume`, block-device writes, `reg delete` | DENY |
 | **Sensitive resources** | `.ssh` / `.env` / `.aws` / `.kube` / `.npmrc` / private keys / `.pem` | read-only gating; tokens / API keys / passwords are redacted on the audit and block-message exits |
 | **Some obfuscated execution** | full-width variants, quote insertion, `$()`/backticks, base64 pipes, interpreter one-liners, shell-wrapper unwrapping, junction/symlink escapes | unwrapped and re-checked (**partial only** — see [Limitations](#limitations)) |
