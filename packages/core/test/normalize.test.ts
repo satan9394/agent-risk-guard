@@ -141,6 +141,9 @@ test('GAN P0-6 回归: git force push / branch -D 不得是只读', () => {
   assert.equal(isReadOnlyCommand('git push -f origin main'), false, 'push -f 不是只读');
   assert.equal(isReadOnlyCommand('git branch -D feature'), false, 'branch -D 不是只读');
   assert.equal(isReadOnlyCommand('git branch -d feature'), false, 'branch -d 不是只读');
+  // R7：长选项 --delete 与 -d/-D 等价，同样不得被判为只读（否则走 read-only 快路径放行）
+  assert.equal(isReadOnlyCommand('git branch --delete feature'), false, 'branch --delete 不是只读');
+  assert.equal(isReadOnlyCommand('git branch --delete --force feature'), false, 'branch --delete --force 不是只读');
   // 正常形式仍只读
   assert.equal(isReadOnlyCommand('git push origin main'), true, '普通 push 只读');
   assert.equal(isReadOnlyCommand('git branch -a'), true, 'branch -a 只读');

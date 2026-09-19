@@ -11,6 +11,31 @@
 - 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
+## [Unreleased]
+
+### Fixed
+
+- **R7：`git branch` 删除只拦短选项，长选项整条可绕过**。规则是 `\bgit\s+branch\s+-[dD]\b`，
+  只认 `-d`/`-D`，不认语义完全等价的长选项 —— `git branch --delete --force <name>` 与
+  `git branch -D <name>` 行为一致，却**在所有 enforcement 层一律放行**（opencode 插件、installer deny 规则、
+  ps1 hook ×3、sh hook、DSH patch ×2），且 `isReadOnlyCommand` 会把它判为**只读**，
+  走 read-only 快路径直接 allow（与 P0-6/P1-3 修的是同一个根因）。
+  现统一为 `(?:-[dD]\b|--delete\b)`，短选项与长选项同等拦截。
+- 顺带把 `isReadOnlyCommand` 的白名单补全为 `-[dDmMcC]\b|--delete|--move|--copy|--force`
+  （此前 `git branch --move` / `--copy` / `--force` 同样漏判）。
+
+### Changed
+
+- `README.md` / `README.en.md` 规则表中的 `branch -D` 更新为 `branch -d/-D/--delete`；
+  `rules-compiler.ts` 的规则说明串同步。
+
+### Tests
+
+- 新增断言锁定该语义：`rule-self-test`（positive 加 `--delete` / `--delete --force`，
+  negative 加 `--list` / `--all` / `-v`）、`normalize.test.ts`（isReadOnly）、
+  `adversarial-corpus`、`opencode-guard-reregress`（B-12b2/B-12b3）、
+  `sh-audit-bypass.sh`、`sh-hook-test.sh`。
+
 ## [0.3.1] - 2026-09-14（v0.3.1 让"保护已生效"可自证，已发布）
 
 > 定位：**v0.3.1 —— 让"保护已生效"这句话可自证**。中英双语发行说明见

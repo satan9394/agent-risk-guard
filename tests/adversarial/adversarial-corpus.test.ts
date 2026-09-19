@@ -107,6 +107,9 @@ const cases: Case[] = [
   // P0-6 git 破坏
   { name: 'P0-6 git push --force', command: 'git push --force origin main', expect: 'deny' },
   { name: 'P0-6 git branch -D', command: 'git branch -D feature', expect: 'deny' },
+  // R7：长选项 --delete 与 -d/-D 等价，必须同判
+  { name: 'R7 git branch --delete', command: 'git branch --delete feature', expect: 'deny' },
+  { name: 'R7 git branch --delete --force', command: 'git branch --delete --force feature', expect: 'deny' },
   { name: 'P0-6 git restore .', command: 'git restore .', expect: 'deny' },
   // P0-7 Python/Node 动态执行
   { name: 'P0-7 subprocess.run rm', command: 'python -c "import subprocess; subprocess.run([\'rm\',\'-rf\',\'/tmp/x\'])"', expect: 'deny' },

@@ -45,6 +45,9 @@ run_case 'git restore .' deny
 run_case 'git push --force origin main' deny
 run_case 'git push -f origin main' deny
 run_case 'git branch -D main' deny
+run_case 'git branch --delete main' deny
+run_case 'git branch --delete --force main' deny
+run_case 'git branch --list' allow
 run_case 'git stash drop --all' deny
 run_case 'git switch -C main' deny
 run_case 'git switch -c feature' allow

@@ -38,7 +38,7 @@ const HEADER = `# RiskGuard 安全规则（自动生成 —— 请勿手改）
    base64 -d|bash、IEX/Invoke-Expression + WebClient 下载执行、certutil 下载/解码执行、
    subprocess/child_process 动态执行。
 4. **git 破坏性操作禁止**：git clean -f、git reset --hard、git checkout --/restore、
-   git push --force/-f、git branch -d/-D、git stash drop、git switch -C、
+   git push --force/-f、git branch -d/-D/--delete、git stash drop、git switch -C、
    git gc --prune、git reflog expire、git worktree remove --force。
 5. **docker/wmic 破坏禁止**：docker system prune、docker volume rm/prune、
    wmic delete/shadowcopy。
