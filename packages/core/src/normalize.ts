@@ -71,7 +71,7 @@ export function isReadOnlyCommand(cmd: string): boolean {
   return (
     /^(git\s+(status|diff|log|show|remote|fetch|pull)\b|ls\b|cat\b|head\b|tail\b|pwd\b|echo\b|grep\b|date\b|whoami\b|mkdir\b|touch\b|find\s+.+)(\s|$)/.test(c) ||
     /^git\s+push\s+(?!.*(--force|-f\b))/.test(c) ||
-    /^git\s+branch\s*(?!.*\s(?:-[dDmMcC]\b|--delete\b|--move\b|--copy\b|--force\b))/.test(c) ||
+    /^git\s+branch\s*(?!.*\s-[A-Za-z]*[dDmMcC])(?!.*\s(?:--delete|--move|--copy|--force)\b)/.test(c) ||
     /^git\s+branch\s+-[aA]\b/.test(c) ||
     /^(npm|npx|pnpm|yarn|bun|uv|deno|cargo)\s+(test|run|build|lint|format|check|install|add|ci|exec|pub)\b/.test(c) ||
     /^npx\s+\S+/.test(c) ||
@@ -170,7 +170,9 @@ export function classifyShellCommand(cmd: string, depth = 0): ShellClassified | 
   if (/\bgit\s+push\s+.*(--force|-f\b)/.test(c)) {
     return { domain: 'git', action: 'git_reset', confidence: 0.85 };
   }
-  if (/\bgit\s+branch\s+(?:-[dD]\b|--delete\b)/.test(c)) {
+  // R7b：短标志允许组合（git 会把 -df 解析成 -d -f，实测等价 -D 并真的删除分支）。
+  // 用 [A-Za-z]*[dD] 覆盖 -df/-Df/-dd/-dfd；长选项单独一条。
+  if (/\bgit\s+branch\s+(?:-[A-Za-z]*[dD]|--delete\b)/.test(c)) {
     return { domain: 'git', action: 'git_checkout_discard', confidence: 0.85 };
   }
   // R2 新向量：git gc --prune / git reflog expire（不可恢复历史清除）

@@ -20,9 +20,19 @@
   `git branch -D <name>` 行为一致，却**在所有 enforcement 层一律放行**（opencode 插件、installer deny 规则、
   ps1 hook ×3、sh hook、DSH patch ×2），且 `isReadOnlyCommand` 会把它判为**只读**，
   走 read-only 快路径直接 allow（与 P0-6/P1-3 修的是同一个根因）。
-  现统一为 `(?:-[dD]\b|--delete\b)`，短选项与长选项同等拦截。
-- 顺带把 `isReadOnlyCommand` 的白名单补全为 `-[dDmMcC]\b|--delete|--move|--copy|--force`
-  （此前 `git branch --move` / `--copy` / `--force` 同样漏判）。
+  现统一为 `(?:-[A-Za-z]*[dD]|--delete\b)`，短选项与长选项同等拦截。
+- **R7b：修复 R7 自身引入的放宽（独立验收 REJECT）**。R7 首版给短选项分支加了尾部 `\b`（`-[dD]\b`），
+  使 git 的**合并短选项**（`-df` ≡ `-d -f` ≡ `-D`，真机实测确实删除分支）在
+  `classifyShellCommand` 与 `isReadOnlyCommand` 两处都不再命中 → 由 `RG-GIT-001` DENY 变为
+  `RG-UNKNOWN-001` allow（生产端到端实测 **38 条放宽，其中 24 条可被真实 git 利用**）。
+  现改为 `-[A-Za-z]*[dD]`，覆盖 `-df`/`-Df`/`-dd`/`-dfd` 等全部组合；
+  9 层 enforcement × 9 条「必拦」形态复核 = **0 漏拦、0 误伤**。
+  验收与证据见 [`tasks/orchestrator/EVALUATION_RESULT_R7.md`](tasks/orchestrator/EVALUATION_RESULT_R7.md)。
+- **更正 R7 的一处声明与实际不符**（独立验收指出）：原称「顺带把 `isReadOnlyCommand` 的白名单补全为
+  `-[dDmMcC]\b|--delete|--move|--copy|--force`（此前 `git branch --move` / `--copy` / `--force` 同样漏判）」，
+  实测**规范形态下并未生效** —— `^git\s+branch\s*` 的 `\s*` 已吞掉 `branch` 与首个选项之间的空格，
+  负向先行断言只在「选项前另有 token」时才命中，故 `git branch --move a b` / `--copy` / `--force` 新旧均为只读。
+  该补全**方向安全**（这三个选项本非删除），但描述已改正，不再声称「此前漏判」。
 
 ### Changed
 
@@ -35,6 +45,10 @@
   negative 加 `--list` / `--all` / `-v`）、`normalize.test.ts`（isReadOnly）、
   `adversarial-corpus`、`opencode-guard-reregress`（B-12b2/B-12b3）、
   `sh-audit-bypass.sh`、`sh-hook-test.sh`。
+- R7b 补**合并短选项**正例（`-df`/`-Df`/`-dd`，真机确认删除分支），
+  并锁定「不含删除标志」的形式（`-m a b`）不得被误伤：
+  `rule-self-test` positive、`normalize.test.ts`（`isReadOnlyCommand` + `classifyShellCommand` 双向断言）。
+  变异体证明：把正则该回 R7 初版形态后，`-df`/`-Df`/`-dd`/`-Dd`/`-dfd` 5 条组合全部漏拦 → 断言有效。
 
 ## [0.3.1] - 2026-09-14（v0.3.1 让"保护已生效"可自证，已发布）
 

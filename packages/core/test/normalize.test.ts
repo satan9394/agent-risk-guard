@@ -144,9 +144,21 @@ test('GAN P0-6 回归: git force push / branch -D 不得是只读', () => {
   // R7：长选项 --delete 与 -d/-D 等价，同样不得被判为只读（否则走 read-only 快路径放行）
   assert.equal(isReadOnlyCommand('git branch --delete feature'), false, 'branch --delete 不是只读');
   assert.equal(isReadOnlyCommand('git branch --delete --force feature'), false, 'branch --delete --force 不是只读');
+  // R7b 回归锁：git 会把短标志组合解析（-df ≡ -d -f ≡ -D），真机实测这些组合确实删除分支。
+  // 修复前该断言会失败——尾部 \b 只认单独的 -d/-D，组合形式被判为只读并走快路径放行。
+  for (const combo of ['-df', '-Df', '-dd', '-Dd', '-dfd']) {
+    assert.equal(isReadOnlyCommand(`git branch ${combo} feature`), false, `branch ${combo} 不是只读`);
+    assert.notEqual(classifyShellCommand(`git branch ${combo} feature`), null, `branch ${combo} 必须被分类`);
+  }
+  // 真机上会被 git 拒绝、不构成删除的组合【可以】被拦——保守侧不算错。
+  // 这里只锁定「确实不含删除标志」的形式必须放行，避免无谓误伤。
+  for (const safe of ['-m old new', '-c old new']) {
+    assert.equal(isReadOnlyCommand(`git branch ${safe}`), true, `branch ${safe} 应保持只读`);
+  }
   // 正常形式仍只读
   assert.equal(isReadOnlyCommand('git push origin main'), true, '普通 push 只读');
   assert.equal(isReadOnlyCommand('git branch -a'), true, 'branch -a 只读');
+  assert.equal(isReadOnlyCommand('git branch --list'), true, 'branch --list 只读');
   assert.equal(isReadOnlyCommand('git status'), true);
 });
 

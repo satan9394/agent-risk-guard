@@ -36,10 +36,14 @@ const CASES: RuleCase[] = [
   },
   {
     // R7：长选项 --delete 与短选项 -d/-D 完全等价（--delete --force ≡ -D），必须同等拦截
-    ruleFragment: 'git\\s+branch\\s+(?:-[dD]',
+    // R7b：短标志可组合（-df/-Df/-dd ≡ -D，真机实测确实删除分支），正则用 [A-Za-z]*[dD] 覆盖
+    ruleFragment: 'git\\s+branch\\s+(?:-[A-Za-z]*[dD]',
     positive: [
       'git branch -D feature/x',
       'git branch -d feature/x',
+      'git branch -df feature/x',
+      'git branch -Df feature/x',
+      'git branch -dd feature/x',
       'git branch --delete feature/x',
       'git branch --delete --force feature/x',
     ],

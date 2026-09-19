@@ -42,7 +42,7 @@ export function defaultDenyRules(): GuardRules {
     '\\bdocker\\s+(run|exec)\\b', '\\bgit\\s+gc\\b.*--prune', '\\bgit\\s+reflog\\s+expire\\b',
     // R3 生态融合（对标 CC Safety Net 完整 git 破坏清单，补齐 rules-compiler 已声明但 deny 缺失项）
     '\\bgit\\s+push\\b[^|;&\\n]*\\s(?:--force(?!-)|-[f]\\b)',
-    '\\bgit\\s+branch\\s+(?:-[dD]\\b|--delete\\b)',
+    '\\bgit\\s+branch\\s+(?:-[A-Za-z]*[dD]|--delete\\b)',
     '\\bgit\\s+checkout\\s+--',
     '\\bgit\\s+restore\\b',
     '\\bgit\\s+stash\\s+(drop|clear)\\b',
