@@ -78,5 +78,7 @@ and why, is as valuable as knowing what shipped.
 | 2026-09-17 | @satan9394 | 仓库治理：启用私有漏洞报告 / Dependabot alerts + security updates / Code scanning（CodeQL）；新增 `.github/dependabot.yml`；`main` 分支保护（禁 force push、禁删除、5 个 CI 检查必过） | ✅ ACCEPT | `be83671` · 仓库设置（非代码） | 未发布 |
 | 2026-09-19 | @satan9394 | **R7** `git branch` 删除只拦短选项 `-d`/`-D`，长选项 `--delete`（含 `--delete --force`，与 `-D` 语义完全等价）在**所有** enforcement 层被放行，且 `isReadOnlyCommand` 判其为只读 → 走 read-only 快路径直接 allow（与 P0-6/P1-3 同一根因） | ❌ REJECT（首版引入 **38 条放宽**，其中 **24 条**为真实 git 删除分支的合并短选项 `-df`/`-Df`/`-dd`…；根因：短选项分支加了尾部 `\b`） → **FIX（R7b）✅** | [R7](../tasks/orchestrator/EVALUATION_RESULT_R7.md) · `7c09890` → `ba36247`（R7b）；R7b 后 9 层 × 9 条必拦形态复核 = **0 漏拦、0 误伤**；规则相关 71/71、`sh-audit-bypass` 195/195、`sh-hook-test` 70/70。**更正**：首版证据栏所称「`--move`/`--copy`/`--force` 一并补入只读白名单」实测规范形态下**未生效**（`\s*` 吞掉 `branch` 与选项间空格），已移除该声明，详见 CHANGELOG | 未发布 |
 
+| 2026-09-19 | @satan9394 | **R7b 工具链**：`~/.claude/skills/custom/agent-risk-guard-audit` 是手工快照、落后单源多个版本（缺 G3-FIX8、缺 R7 的组合短选项），却仍是 skill 部署取源（"比单源弱"的旁路副本）；且 `sync-prod.ps1` 每次运行都会**重复追加** 5 条 R2 规则到 DSH patch（幂等性为零）、并把插件写到过时的 `destructive-operation-guard.ts`（现网加载 `agent-risk-guard.ts` → 重复插件文件） | ✅ ACCEPT | PR #14 · `6df9754`；wiring-check 新增「skill 副本」逐文件 SHA256 比对段（skill 由 19 处漂移 → 0），sync-prod.ps1 重写为 wiring-check 的薄封装；wiring-check exit 0、doctor 4 PASS / 0 WARN / 0 FAIL | 未发布 |
+
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
 > Changes not yet released sit at the bottom until the next release fills in the version column.

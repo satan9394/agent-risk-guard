@@ -42,8 +42,9 @@
 
 ## 待同步清单（用户确认后执行）
 
-> 一键工具：`agent-risk-guard-audit/sync-prod.ps1`（默认 `-WhatIf` 预览；确认后去参执行；
-> 内含备份到 `~/.risk-guard-backup/<agent>/<ts>/`，遵循回收站铁律）。
+> 一键工具：`scripts/riskguard-wiring-check.ps1`（默认只读巡检；加 `-Fix` 从单源自愈部署；
+> 覆盖 ps1×3 / opencode 插件 / DSH 逐条规则 / skill 副本，备份进 `~/.risk-guard-backup/`，遵循回收站铁律）。
+> skill 内的 `sync-prod.ps1` 已改为该脚本的薄封装（旧的追加式逻辑会重复注入 DSH 规则、并写入过时的插件文件名）。
 
 - [ ] **DSH patch（最高优先，热加载即生效）**：`~/.dsh/profiles/web/cordis.patch.yml` ← 工作区 `assets/dsh/deny-risk-commands.patch.yml`——生产 30 条缺 **5 条 R2**（2026-08-24 逐条 diff 实证）：
   ```
