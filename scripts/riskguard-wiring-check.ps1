@@ -13,6 +13,8 @@
 #   opencode : .config/opencode/plugins ← 仓库 assets/opencode/agent-risk-guard.ts
 #   dsh      : profiles/*/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
 #              （组合文件不整比 hash，改为**逐条正则文本比对**；缺任一条即失败，-Fix 按单源替换）
+#   skill    : .claude/skills/custom/agent-risk-guard-audit ← 仓库 skills/agent-risk-guard/
+#              （逐文件 SHA256 比对；曾长期落后单源，是"比单源弱"的旁路副本）
 #   接线     : cc settings.json PreToolUse 在位 / codex hooks.json+config.toml / agy hooks.json / dsh patch 注入
 #
 # 退出码：0 = 全部 OK；1 = 发现缺失或漂移（-Fix 后仍残留）；2 = 本机无法定位仓库单源
@@ -175,7 +177,44 @@ if (-not $dshProfiles) {
   Write-Check 'dsh profiles 目录' $false (Join-Path $userHome '.dsh\profiles')
 }
 
-# ---- 4. 接线在位（settings.json / hooks.json / config.toml）----
+# ---- 4. skill 副本（~/.claude/skills/custom/agent-risk-guard-audit）vs 仓库单源 ----
+# 2026-09-19：该 skill 长期是「手工快照」，落后单源多个版本（缺 G3-FIX8、缺 R7 的
+# `--delete`/组合短选项），却仍是 skill 部署流程的取源 —— 属「比单源弱」的旁路副本。
+# 这里按文件逐一比对，-Fix 则从单源回灌。
+Write-Host "`n[skill 副本]"
+$srcSkill = Join-Path $repo 'skills\agent-risk-guard'
+$liveSkill = Join-Path $userHome '.claude\skills\custom\agent-risk-guard-audit'
+if (-not (Test-Path $liveSkill)) {
+  Write-Check 'skill 安装目录' $false $liveSkill
+} else {
+  $skillMissing = [System.Collections.Generic.List[string]]::new()
+  $skillDrifted = [System.Collections.Generic.List[string]]::new()
+  $srcSkillFiles = Get-ChildItem $srcSkill -Recurse -File
+  foreach ($f in $srcSkillFiles) {
+    $rel = $f.FullName.Substring($srcSkill.Length).TrimStart('\')
+    $dest = Join-Path $liveSkill $rel
+    if (-not (Test-Path $dest)) { $skillMissing.Add($rel); continue }
+    if ((Get-FileHash $f.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $dest -Algorithm SHA256).Hash) { $skillDrifted.Add($rel) }
+  }
+  $skillStale = $skillMissing.Count + $skillDrifted.Count
+  Write-Check ("skill 副本与单源一致（{0} 个文件{1}）" -f $srcSkillFiles.Count, $(if ($skillStale -gt 0) { "，$skillStale 处漂移" } else { "" })) ($skillStale -eq 0) $liveSkill
+  if ($skillStale -gt 0) {
+    foreach ($r in ($skillMissing + $skillDrifted)) { Write-Host ("     漂移: {0}" -f $r) -ForegroundColor Yellow }
+    if ($Fix) {
+      foreach ($r in ($skillMissing + $skillDrifted)) {
+        $dest = Join-Path $liveSkill $r
+        New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+        if (Test-Path $dest) { Backup-File $dest }
+        Copy-Item (Join-Path $srcSkill $r) $dest -Force
+      }
+      Write-Host ("  [Fix] 已从单源回灌 {0} 个文件（备份到 ~/.risk-guard-backup/）" -f $skillStale) -ForegroundColor Cyan
+    } else {
+      Write-Host "  注意: 加 -Fix 可从单源回灌（备份到 ~/.risk-guard-backup/）" -ForegroundColor Yellow
+    }
+  }
+}
+
+# ---- 5. 接线在位（settings.json / hooks.json / config.toml）----
 Write-Host "`n[接线在位]"
 $ccSettings = Join-Path $userHome '.claude\settings.json'
 $ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw } else { '' }
