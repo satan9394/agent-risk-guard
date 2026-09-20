@@ -83,5 +83,7 @@ and why, is as valuable as knowing what shipped.
 
 | 2026-09-19 | @satan9394 | skill 镜像的比对判据改为**内容等价**（忽略行尾）：仓库工作区的 ps1 EOL 是 `.gitattributes eol=crlf` 的 git 产物，checkout 后即由 LF 变 CRLF，要求镜像跟随没有意义 —— 上一行（PR #14）的字节级比对因此产生 1 处 EOL 伪漂移。生产 hook 段仍保持字节级严格比对（BOM/编码必须一致） | ✅ ACCEPT | PR #15；`riskguard-wiring-check.ps1` 新增 `Get-NormHash`（去 CR 后算 SHA256），仅用于 skill 段；复跑 exit 0（skill 39 文件一致） | v0.3.2 |
 
+| 2026-09-19 | @satan9394 | **W1** `scripts/riskguard-wiring-check.ps1` **缺 UTF-8 BOM**：Windows PowerShell 5.1 按 ANSI/GBK 解析中文 → 全角括号截断字符串 → 解析报错、什么都修不了。它正是计划任务 `RiskGuard_WiringCheck` 的修复入口（兜 cc-switch 抹掉 `~/.claude/settings.json` 的 `hooks.PreToolUse`），无 BOM 时兜底静默失效（实测 `LastTaskResult=1`） | ✅ ACCEPT | PR #17；补 BOM 后 `powershell.exe`(5.1) 下 exit 0，`pwsh`(7) 不受影响；配套计划任务 RiskGuard_WiringCheck（每 30 分钟）端到端实测：模拟抹除 → **自动恢复 `hooks.PreToolUse`** | 未发布 |
+
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
 > Changes not yet released sit at the bottom until the next release fills in the version column.

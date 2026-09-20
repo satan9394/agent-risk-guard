@@ -1,4 +1,4 @@
-# riskguard-wiring-check.ps1 — RiskGuard 生产接线巡检 + 自愈
+﻿# riskguard-wiring-check.ps1 — RiskGuard 生产接线巡检 + 自愈
 #
 # 背景（real-agent-conformance-final-report 遗留第 1 条）：claude-code settings.json 的
 # PreToolUse 曾多次被外部还原丢失（hooks 只剩 Setup、bypassPermissions），防护静默失效（fail-open）。
