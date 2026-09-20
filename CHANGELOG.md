@@ -13,6 +13,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`scripts/riskguard-wiring-check.ps1` 缺 UTF-8 BOM**：Windows PowerShell 5.1 会把无 BOM 的文件
+  按 ANSI/GBK 解析，脚本里的中文全角括号把字符串截断 → **解析报错、一条都修不了**。
+  该脚本是计划任务 `RiskGuard_WiringCheck` 的修复入口（用于兜 cc-switch 抹掉
+  `~/.claude/settings.json` 的 `hooks.PreToolUse`），无 BOM 时这个兜底会静默失效（实测 `LastTaskResult=1`）。
+  已补 BOM（其余字节逐字保留）；补后 5.1 下 exit 0。
+  注：`skills/agent-risk-guard/tests/` 下少数 ps1 同样无 BOM，但那是 CI 里**已登记并有意容忍**的（D9），未改动。
+
 ## [0.3.2] - 2026-09-19（`git branch` 删除的两条绕过：长选项 + 合并短选项）
 
 ### Fixed
