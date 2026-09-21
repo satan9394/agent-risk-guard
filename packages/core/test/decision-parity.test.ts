@@ -63,6 +63,14 @@
  *                做整串否定 → 一处 `rm --help` 就把同一条命令里另一处真删除一并放行）。
  *                M1–M9 是「一处 help 掩盖另一处真删除」（ps1 旧=allow / sh=deny 的分歧面），
  *                M10–M15 是**纯 help 调用必须仍 allow** 的反向守卫（防「干脆取消豁免」式的过拦修法）。
+ *   N 段 N1–N21：**R7c 新增**——`git branch` **删除标志的位置与短簇判据**。R7/R7b 写成
+ *                `branch\s+(?:-[A-Za-z]*[dD]|--delete\b)`，把标志锚在 `branch` 紧跟处，
+ *                且 sh 侧 `-[dD]` 只看首字符，于是三处漏拦：`git branch -fd x`（仅 sh allow）、
+ *                `git branch --force --delete x`（五端全 allow）、`git update-ref -d …`（四端 allow，
+ *                仅 DSH 拦）。修法：标志可落在 `branch` 之后任意 token 位、短簇判「含 d 或 D」，
+ *                并把 `update-ref`/`filter-branch` 补到四端对齐 DSH。N8/N14 钉住「`-d` 无 force
+ *                仍拦」这一**有意维持**的产品立场；N15–N21 是反向守卫（`-a`/`--list`/`-m`/
+ *                引用名里的 `-d` 不得被点着）。
  *
  * ⚠️ 本闸门只钉「两端逐字同判 + 等于应然」。**不得**为了让它变绿而放宽 deny 语义（红线 §5.6/D12）：
  *    若某条真的两端分歧且短期无法收敛，正确做法是**保留分歧并如实登记**，而不是把它钉成 allow。
@@ -469,6 +477,39 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'M13 纯 rm -V', payload: J('rm -V'), expect: 'allow', note: '反向守卫（大小写不敏感）' },
   { id: 'M14 sudo rm --help', payload: J('sudo rm --help'), expect: 'allow', note: '反向守卫：豁免前瞻必须与 CMD_PRE **同前缀**，否则 `sudo rm --help` 由 allow 变误拦' },
   { id: 'M15 绝对路径 rm --help', payload: J('/usr/bin/rm --help'), expect: 'allow', note: '反向守卫（同上，绝对路径前缀）' },
+  // ── N 段（R7c 新增，N1–N21）：**`git branch` 删除标志的位置与短簇判据** ──────────────────────
+  //   缺陷（R7c，2026-09-21）：R7/R7b 的写法 `branch\s+(?:-[A-Za-z]*[dD]|--delete\b)` 把删除标志
+  //   **锚在 `branch` 之后紧跟的位置**，并且 sh 侧的旧式 `-[dD]` 只看**首字符**。实测三处漏拦：
+  //     ① `git branch -fd x`（force 在前）→ **sh allow**（其余四端 deny）
+  //     ② `git branch --force --delete x`（长选项重排序）→ **core/opencode/ps1/sh/DSH 全部 allow**
+  //     ③ `git update-ref -d refs/heads/x` → 四端 allow（**只有 DSH 自 R4 起拦**）
+  //   ①② 都与 `-D` 等价（真的丢弃未合并提交）；③ 与 `git branch -d` 等价。
+  //   修法：标志可落在 `branch` 之后的**任意 token 位置**（不得跨 `; & |` 换句），短簇判据改为
+  //   「含 d 或 D」；并把 `update-ref` / `filter-branch` 补到四端以对齐 DSH。
+  //   ⚠️ 有意维持不变的一点：`-d` / `--delete`（**无** force）**仍然 deny**（N8/N14 钉住）——
+  //   产品立场是「分支引用删除一律拦」，与 DSH 拦 `update-ref` 自洽；本次只更正了文案里
+  //   “force-deletes a branch” 的事实错误。N15–N21 是反向守卫（防「吃掉任意 token」式过拦）。
+  { id: 'N1  branch -fd（force 在前）', payload: J('git branch -fd x'), expect: 'deny', note: '★R7c：sh 旧式 `-[dD]` 只看首字符 → 曾 allow；五端应全 deny' },
+  { id: 'N2  branch -fD（force 在前，大写）', payload: J('git branch -fD x'), expect: 'deny', note: '★同上（`-f` + `-D` = 强制删除）' },
+  { id: 'N3  branch --force --delete（长选项重排序）', payload: J('git branch --force --delete x'), expect: 'deny', note: '★R7c：五端曾全 allow（旧写法要求标志紧跟 `branch`）；与 `-D` 等价' },
+  { id: 'N4  branch --delete --force（既有顺序，守卫）', payload: J('git branch --delete --force x'), expect: 'deny', note: 'PR #11 的成果，修法不得回退这条' },
+  { id: 'N5  branch -df', payload: J('git branch -df x'), expect: 'deny', note: 'R7b 既有形态（d 在前，旧式已覆盖）—— 作为零回退守卫' },
+  { id: 'N6  branch -Df', payload: J('git branch -Df x'), expect: 'deny', note: '★同上（`-D` 在前）' },
+  { id: 'N7  branch -D', payload: J('git branch -D x'), expect: 'deny', note: '强制删除分支的基准形态' },
+  { id: 'N8  branch -d（维持拦截）', payload: J('git branch -d x'), expect: 'deny', note: '★有意如此：`-d` 语义安全但产品立场是分支引用删除一律拦（与 DSH 拦 update-ref 自洽）；若将来放松必须同时改本条与 docs/TODO.md' },
+  { id: 'N9  branch --force -d（混合形态）', payload: J('git branch --force -d x'), expect: 'deny', note: '★`-d` + force = 强制删除' },
+  { id: 'N10 update-ref -d（对齐 DSH）', payload: J('git update-ref -d refs/heads/x'), expect: 'deny', note: '★R7c：DSH 自 R4 起拦，四端曾全 allow' },
+  { id: 'N11 update-ref -D', payload: J('git update-ref -D refs/heads/x'), expect: 'deny', note: '★同上' },
+  { id: 'N12 filter-branch（历史重写）', payload: J('git filter-branch --all'), expect: 'deny', note: '★同上（DSH 同规则的另一半）' },
+  { id: 'N13 sudo 前缀 + branch -D', payload: J('sudo git branch -D x'), expect: 'deny', note: 'CMD_PRE 前缀面：删除基座带包装词时不得漏拦' },
+  { id: 'N14 长选项重排序 + 远端分支名', payload: J('git branch --force --delete origin/x'), expect: 'deny', note: '★与 N3 同面，换远端分支名（D7 邻居）' },
+  { id: 'N15 裸 git branch（反向守卫）', payload: J('git branch'), expect: 'allow', note: '纯列举必须仍 allow' },
+  { id: 'N16 branch -a（反向守卫）', payload: J('git branch -a'), expect: 'allow', note: '★`-a` 不含 d/D：短簇判据不得滑向「任意短选项」' },
+  { id: 'N17 branch --list（反向守卫）', payload: J('git branch --list'), expect: 'allow', note: '★`--list` 里第一个字符是 `-`，长选项分支不得被 `--delete` 之外的形态点着' },
+  { id: 'N18 branch newbr（反向守卫）', payload: J('git branch newbr'), expect: 'allow', note: '创建分支（无 -d/-D）' },
+  { id: 'N19 branch -m old new（反向守卫）', payload: J('git branch -m old new'), expect: 'allow', note: '★重命名：`-m` 不含 d/D。⚠️ 与本段无关的既存事实：`isReadOnlyCommand` 不把 `-m/-M` 当只读，只要求「不被 classify 判成破坏」——本条只钉判定结果' },
+  { id: 'N20 branch --contains feat-d（反向守卫）', payload: J('git branch --contains feat-d'), expect: 'allow', note: '★关键误伤守卫：引用名里的 `-d` **前面没有空白**，不属于 flag token → 必须 allow（防修法「吃掉任意 token」）' },
+  { id: 'N21 branch -a --format（反向守卫）', payload: J("git branch -a --format='%(refname)'"), expect: 'allow', note: '★同上（长选项带 `=` 值，且值里含括号与百分号）' },
 ];
 
 /**

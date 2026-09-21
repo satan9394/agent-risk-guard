@@ -23,6 +23,27 @@
 - [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
 - [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
 
+## 已知过拦（登记延后，不开新轮）
+
+> 项目停止规则：**只有安全方向（放松 / fail-open / 丢拦截）才开新轮，过拦与边角一律登记延后。**
+> 本节记「拦截判定本身成立、但拦掉了本可放行的形态」。放松属 D12 意义上的敏感方向，
+> 需要独立 Evaluator 专门一轮，故不夹带在其它 PR 里。
+
+- [ ] **`git branch -d` / `--delete`（不带 force）被拦**（2026-09-21 R7c 登记）：
+  git 的 `-d` 是**安全删除** —— 分支未合并进 HEAD/upstream 时 git 会直接拒绝，不会丢提交；
+  真正不可逆的是 `-D` / `--delete --force`。当前五端（core / opencode / ps1 / sh / DSH）
+  一律拦 `-d`，理由是**产品立场**「分支引用删除一律拦」——与 DSH 自 R4 起拦 `git update-ref`
+  自洽，且被拦后的逃生路径（`git update-ref -d`）现已在五端同样拦死（R7c 补齐）。
+  **若将来要放松**：须同步改 5 处规则 + `decision-parity` 的 N8/N14 两条语料 + 本条，
+  并走独立验收；不得只改一端（R7 首版就是这样引入 38 条放松被 REJECT 的）。
+- [ ] **`git branch -m/-M/-c/-C`（重命名/复制分支）不被判为破坏**：`-M` 会覆盖同名分支，
+  理论上可丢引用；当前五端放行，与 `isReadOnlyCommand` 不把它们当只读的事实并不矛盾
+  （既不只读、也不判破坏 → 走默认路径）。未实测是否值得收紧，登记。
+- [ ] **`skills/agent-risk-guard/scripts/opencode/destructive-operation-guard.ts` 是旧代次副本**
+  （27.5KB / v0.1 时代）而现网加载的是 `assets/opencode/agent-risk-guard.ts`（32.4KB）；
+  `SKILL.md` 与 `references/opencode-wiring.md` 仍把它写成部署取源，照做会装回旧插件。
+  R7c 只同步了其中的 `git branch` 规则，**未做整代对齐**（属独立欠账）。
+
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 
 - bash AST 角色解析（allowlister 式：管道过滤命令按角色判定）

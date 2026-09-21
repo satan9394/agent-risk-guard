@@ -310,10 +310,17 @@ function detectGit(s: string): Block | null {
   // R16 补齐（审计 B-12）：9 种缺失 git 破坏
   if (/\bgit\s+push\b[^;&|]*--force/.test(lo) || /\bgit\s+push\b[^;&|]*\s-f\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git push --force/-f overwrites remote history." }
-  // R7：短选项 -d/-D 与等价长选项 --delete/--delete --force 同等对待。
-  // `git branch --delete --force` 与 `git branch -D` 语义完全一致，此前整条可绕过。
-  if (/\bgit\s+branch\s+(?:-[A-Za-z]*[dD]|--delete\b)/.test(lo))
-    return { policy: P.GIT_WORKTREE_DISCARD, reason: "git branch -d/-D/--delete force-deletes a branch." }
+  // R7c：删除标志**不必紧跟 `branch`**（旧写法把标志锚在 `branch` 紧跟处，于是
+  // `git branch -fd x` 与 `git branch --force --delete x` 全端漏拦，两者都等价于 `-D`）。
+  // 标志可落在 `branch` 之后任意 token 起点（不得跨 `; & |`），短簇判「含 d 或 D」。
+  // ⚠️ 前导 `[ \t]` 必须定长、跳过部分的两个字符类必须不相交 —— 详见 normalize.ts 同处注释
+  //   （变长前导 + 可吃空白的循环会让 5 万空格输入从 0.6ms 劣化到 4.4s，CodeQL 会报 polynomial-redos）。
+  // 注：`-d`/`--delete`（无 force）**维持拦截**，只去掉文案里 “force-deletes” 的事实错误。
+  if (/\bgit\s+branch[ \t](?:[^;&|\n \t]*[ \t])*(?:--delete|-[A-Za-z]*[dD])/.test(lo))
+    return { policy: P.GIT_WORKTREE_DISCARD, reason: "git branch deletes a branch ref (irreversible): -d/-D/--delete and equivalents." }
+  // R7c：与 DSH patch 对齐（DSH 自 R4 起拦 update-ref / filter-branch，四端曾全漏）
+  if (/\bgit\s+(?:update-ref|filter-branch)\b/.test(lo))
+    return { policy: P.GIT_WORKTREE_DISCARD, reason: "git update-ref/filter-branch rewrites branch refs or history." }
   if (/\bgit\s+stash\s+drop\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git stash drop permanently discards stashes." }
   // switch -C 用原始 s 判断（lo 已小写化；s 保留大小写，-C 大写才匹配，安全的 -c 不误拦）

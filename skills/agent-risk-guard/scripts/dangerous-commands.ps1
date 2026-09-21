@@ -588,8 +588,27 @@ if ($cmd -match '(?i)\bgit\s+worktree\s+remove\s+--force') {
 if ($cmd -match '(?i)\bgit\s+push\s+.*--force(?:\s|$|\.)|\bgit\s+push\s+.*(?<![-\w])-f(?:\s|$|\.)') {
     Deny-Command 'git push 强制推送（-f/--force，非 --force-with-lease）覆盖远程历史，禁止'
 }
-if ($cmd -match '(?i)\bgit\s+branch\s+(?:-[A-Za-z]*[dD]|--delete\b)') {
-    Deny-Command 'git 删除分支（branch -d/-D/--delete），禁止'
+# R7c（2026-09-21）：删除标志**不必是 `branch` 之后第一个 token**。旧写法
+# `branch\s+(?:-[A-Za-z]*[dD]|--delete\b)` 把标志锚在 `branch` 紧跟的位置，于是
+#   · `git branch -fd x`（force 在前）→ sh 端漏拦（sh 旧式 `-[dD]` 只看首字符）
+#   · `git branch --force --delete x`（长选项重排序）→ **四端全漏**
+# 两者都与 `-D` 等价，真的丢弃未合并提交。新写法：标志可落在 `branch` 之后的任意 token 位
+# （仍不得跨 `; & |` 换句），短簇判据是「含 d 或 D」而非首字符。
+# 注：`-d` / `--delete`（无 force）**维持拦截** —— 产品立场是「分支引用删除一律拦」，
+# 与 DSH 拦 `git update-ref` 自洽；本次只把文案里 “force-deletes” 的事实错误去掉。
+# ⚠️ 正则形态是**性能与语义双重约束**下选定的，改动前先读懂（CodeQL `js/polynomial-redos`
+#   最初就是这样报出来的）：前导分隔符必须**定长** `[ \t]`（不能写 `\s+`），跳过部分的两个
+#   字符类必须**互不相交**（token 类排除空白、分隔符只吃空白）。否则 `'git branch' + 5 万空格
+#   + '-d'` 会从 0.6ms 劣化到 4403ms。`[ \t]` 而非 `\s` 还保证「标志必须处于 token 起点」，
+#   使 `--merged` / `feat-d` 这类词内 `-d` 不被误伤。
+if ($cmd -match '(?i)\bgit\s+branch[ \t](?:[^;&|\n \t]*[ \t])*(?:--delete|-[A-Za-z]*[dD])') {
+    Deny-Command 'git 删除分支（branch -d/-D/--delete 及其等价组合），分支引用删除不可逆，禁止'
+}
+# R7c（2026-09-21）：与 DSH patch 对齐。DSH 自 R4 起就拦 `git update-ref` / `filter-branch`，
+# 而 core / ps1 / sh / opencode 四端**全漏** —— `git update-ref -d refs/heads/x` 与
+# `git branch -d x` 等价，`filter-branch` 重写历史，都不可逆。
+if ($cmd -match '(?i)\bgit\s+(?:update-ref|filter-branch)\b') {
+    Deny-Command 'git update-ref / filter-branch 改写分支引用或重写历史，禁止'
 }
 if ($cmd -match '(?i)\bgit\s+stash\s+drop\b') {
     Deny-Command 'git stash drop 永久删除 stash，禁止'

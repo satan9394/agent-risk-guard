@@ -42,7 +42,10 @@ export function defaultDenyRules(): GuardRules {
     '\\bdocker\\s+(run|exec)\\b', '\\bgit\\s+gc\\b.*--prune', '\\bgit\\s+reflog\\s+expire\\b',
     // R3 生态融合（对标 CC Safety Net 完整 git 破坏清单，补齐 rules-compiler 已声明但 deny 缺失项）
     '\\bgit\\s+push\\b[^|;&\\n]*\\s(?:--force(?!-)|-[f]\\b)',
-    '\\bgit\\s+branch\\s+(?:-[A-Za-z]*[dD]|--delete\\b)',
+    // R7c（2026-09-21）：删除标志不必紧跟 `branch`（旧写法漏 `--force --delete` 重排序），
+    // 且短簇判「含 d 或 D」而非首字符（sh 旧式 `-[dD]` 漏 `-fd`）。与 assets/dsh patch 逐条同步。
+    // ⚠️ 前导分隔符定长、跳过部分两个字符类不相交 —— 防 polynomial-redos，详见 normalize.ts 同处注释。
+    '\\bgit\\s+branch[ \\t](?:[^;&|\\n \\t]*[ \\t])*(?:--delete|-[A-Za-z]*[dD])',
     '\\bgit\\s+checkout\\s+--',
     '\\bgit\\s+restore\\b',
     '\\bgit\\s+stash\\s+(drop|clear)\\b',
