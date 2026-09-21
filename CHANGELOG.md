@@ -13,8 +13,53 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`skills/agent-risk-guard/tests/agy-hook-test.ps1`**：agy 适配器的独立回归套件（**24/24**）。
+  其它 5 套都走 `-Cmd <文本>` 直调规则引擎，而 agy 是「stdin protojson → stdout JSON、退出码恒 0」
+  的另一种接口，照抄会得到「全部 allow」的假绿灯。本套件同时钉：① 规则判定（含 R7c 的三种
+  branch 形态）；② 协议面（exit 恒 0、stdout 必须合法 JSON、deny 带 `RiskGuard:` 前缀、
+  allow 不得带 reason、畸形输入 fail-closed）；③ 输出编码（stdout 字节必须是合法 UTF-8 且
+  不含替换字符）。已进 CI 与本地 `test-all.ps1`，双引擎各跑一遍（计数一致）。
+- **`packages/installer/test/runtime-probe-agy.test.ts`**：12 条用例覆盖 agy 的 wiring / config /
+  target / 新鲜度 / self-test 五条判据，含 FAIL 与 WARN 路径、guard 名无关性、matcher 不覆盖
+  `run_command` 时的警告证据、单源缺失不误报，以及「fail-closed 的 deny 不算 PASS」这条判据本身。
+- **`docs/TODO.md`** 新增「agy 相关欠账」节：登记 `agy-plan-readonly.ps1` 入仓（判为**有用但需
+  独立切片**，附入仓需做的四件事）、真实会话 D3 复验（1.2.7 待验，`compatibility.json` 仍只声明
+  实测过的 1.1.27）与两处有意保留的生成值差异。
+
 ### Fixed
 
+- **agy（Antigravity CLI）在 `doctor` 里完全隐形**：`HOOK_SINGLE_SOURCE_MAP` 早有
+  `agy-dangerous-commands.ps1` 条目，但 `probeAgentRuntime` **没有 agy 分支**、`cmdDoctor` 的
+  `order` 里也没有 agy —— 而 cmdDoctor 对「不在 order 里的 registry agent」只在**未安装**时打
+  SKIP。结果是**已安装的 agy 在 doctor 输出里一行都不出现**（既非 PASS 也非 FAIL），那条单源
+  新鲜度校验永远不会被走到。修法：新增 agy probe 分支（读 `~/.gemini/config/hooks.json` 的
+  PreToolUse → hooks[].command，**不认 guard 名**只认「是否指向 agy 适配器」）+ agy 版
+  self-test + state 判定，并把 agy 加进 `order`（未纳入 probe 的 registry 循环改为与 order
+  共用同一列表，杜绝「加了 order 忘了这里」）。`doctor` 本机从 4 PASS 变 **5 PASS / 0 WARN / 0 FAIL**。
+- **agy self-test 会被「fail-closed 假通过」骗过**：适配器在规则引擎缺失时**故意回一条 deny**，
+  所以「看到 deny 就算过」等于把"护栏没工作"读成"护栏工作了"。新 self-test 除断言
+  `decision=deny` 外，还排除 `fail-closed` / `rules engine missing` 措辞；且 agy 的协议是
+  **stdout JSON + 退出码恒 0**，不能照抄 claude/codex 的退出码判法，payload 形状也不同
+  （`{toolCall:{args:{CommandLine}}}`）—— 用 CC 形状喂它会被当作"无命令"而**放行**。
+- **agy 适配器的规则引擎硬编码在 `~/.codex/hooks/`**：于是「装了 agy、没装 codex」的机器上
+  引擎必然缺失 → 适配器对**任何**命令都回 fail-closed deny（把 agy 整个锁死），且测试无法密闭。
+  改为按优先级探测：`RISKGUARD_AGY_ENGINE` → **同目录** `dangerous-commands.ps1`（自足）→
+  `~/.codex/hooks/dangerous-commands.ps1`（保留兼容）。
+- **`agy-dangerous-commands.ps1` 是唯一没有哈希纪律的生产脚本**：`riskguard-wiring-check.ps1`
+  的 ps1 段硬编码了三个 `dangerous-commands.ps1` 落点，**漏了 agy 适配器** —— 实测单源改成
+  4,525B 后，线上仍是旧的 3,400B 而巡检照样 exit 0。修法：该段改为「每个目标配自己的单源」
+  的列表并补入 agy 适配器（注意不能共用同一个源，否则会把适配器覆盖成规则引擎）。
+- **`skills/agent-risk-guard/tests/` 下 4 个 ps1 套件缺 UTF-8 BOM（D9 闭环）**：
+  `hook-bypass-regression` / `hook-fp-regression` / `hook-rules-test` 无 BOM，Windows PowerShell 5.1
+  按 ANSI/GBK 读中文把字符串截断 → **同一套件 PS 5.1 报 18/18、pwsh 报 20/20**（CI 因此长期只敢
+  断言退出码）。全部补 BOM（各 +3 字节，其余逐字节不变）后两引擎计数**完全一致**，CI 的
+  `ps1-hook` 作业随之从「只断言退出码」升级为「**退出码 + 双引擎条数必须相同**」。
+- **`agyHooksConfig()` 生成的 timeout 比实测值更紧**：生成器写 10s，而本机实测在用并跑通过 D3
+  会话的是 15s。适配器要再 spawn 一次规则引擎（内部可能再调 python3/grep），10s 偏紧 →
+  默认值对齐为 15s，并在注释里写明剩下两处「生成值 ≠ 本机值」的差异（引擎 `powershell.exe` vs
+  `pwsh`、guard 名不同）为何无功能影响。
 - **`git branch` 删除分支的三处漏拦（R7c）**：R7/R7b 的规则写成
   `branch\s+(?:-[A-Za-z]*[dD]|--delete\b)`，把删除标志**锚在 `branch` 之后紧跟的位置**，
   并且 sh 侧的旧式 `-[dD]` 只看**首字符**。逐端实测（core / opencode / ps1 / sh + DSH patch）发现：

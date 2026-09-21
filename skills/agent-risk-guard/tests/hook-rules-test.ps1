@@ -1,4 +1,4 @@
-# hook-rules-test.ps1 — 真实脚本 + RedirectStandardInput 逐条验证
+﻿# hook-rules-test.ps1 — 真实脚本 + RedirectStandardInput 逐条验证
 # 用法：powershell -ExecutionPolicy Bypass -File hook-rules-test.ps1
 # 输出：每命令 PASS/FAIL
 $ErrorActionPreference = 'Stop'

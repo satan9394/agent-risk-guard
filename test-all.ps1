@@ -58,10 +58,12 @@ Run-Test "conformance framework (C1-C10)" @("$ROOT\tests\conformance\conformance
 # （改动前这里指向仓库外的 `..\agent-risk-guard-audit\tests\`；那个树不在 git 里，CI checkout 拿不到，
 #   且它会随开发漂移 —— 2026-09-13 实测仓库内那份 `hook-redact-test.ps1` 就落后了两代。
 #   套件本身是自定位的：ps1 用 `Join-Path $PSScriptRoot '..\scripts\...'`，sh 默认同路径并支持传参。）
-# ps1 两套引擎各跑一遍：D9 记录 `hook-bypass-regression.ps1` 无 BOM → PS 5.1 报 18/18、pwsh 报 20/20，
-#   两者都 exit 0，**计数不同不是回归**；引擎缺失时跳过并说明。
+# ps1 两套引擎各跑一遍：引擎缺失时跳过并说明。
+#   D9（2026-09-21 已闭环）：此前 `hook-bypass-regression.ps1` 无 BOM → PS 5.1 报 18/18、pwsh 报 20/20
+#   （都 exit 0，计数不同不是回归）。tests/ 下的 ps1 已全部补 UTF-8 BOM，两引擎计数现在一致，
+#   CI 也已相应从「只断言退出码」升级为「退出码 + 条数一致」。
 $hookTests = Join-Path $ROOT 'skills\agent-risk-guard\tests'
-$ps1Suites = @('hook-rules-test', 'hook-bypass-regression', 'hook-fp-regression', 'hook-audit-reregress', 'hook-redact-test')
+$ps1Suites = @('hook-rules-test', 'hook-bypass-regression', 'hook-fp-regression', 'hook-audit-reregress', 'hook-redact-test', 'agy-hook-test')
 $shSuites = @('sh-hook-test.sh', 'sh-audit-edge.sh', 'sh-audit-bypass.sh', 'sh-failclosed-test.sh')
 
 foreach ($eng in @('powershell', 'pwsh')) {

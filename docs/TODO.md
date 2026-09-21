@@ -44,6 +44,33 @@
   `SKILL.md` 与 `references/opencode-wiring.md` 仍把它写成部署取源，照做会装回旧插件。
   R7c 只同步了其中的 `git branch` 规则，**未做整代对齐**（属独立欠账）。
 
+## agy（Antigravity CLI）相关欠账
+
+> 2026-09-21 C 批已闭环：agy 纳入 `doctor`（此前「已安装却在 doctor 里一行都没有」）、
+> 新增 `agy-hook-test.ps1`（6 套 × 双引擎进 CI）、适配器规则引擎改为按优先级探测
+> （不再硬编码 `~/.codex/hooks/`）、`agy-dangerous-commands.ps1` 纳入接线巡检（此前是
+> 唯一没有哈希纪律的生产脚本）、生成器 timeout 对齐实测值 15s。**以下为仍未做的部分。**
+
+- [ ] **`agy-plan-readonly.ps1` 入仓（判为「有用，但需独立切片」）**：该 hook 现在只活在
+  `~/.gemini/config/hooks/agy-plan-readonly.ps1`（19,247B）＋ 个人脚本归档
+  `E:\Code_file\Claude_code\2026\09\20\`（含 93/93 测试台），**不在仓库、不在巡检、不在 CI**。
+  它是唯一压在热路径上（`matcher: "*"`，每次 agy 工具调用都过）却完全未版本化的脚本 ——
+  静默坏掉无人发现。**为什么不并进 R7c/agy 那批**：它属**另一条政策轴**（「plan 模式下按能力
+  只读」），而本产品章程是不可逆破坏拦截；混进 `deny-risk-commands` 单源链会模糊产品边界，
+  且它自带三条未实测项（Shift+Tab 粘滞多轮、`$()` 无通用递归、`always-proceed` 下真删未验）。
+  **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 93/93 测试台
+  收进 `skills/agent-risk-guard/tests/` 并进 CI；③ `compatibility.json` 增补对应能力面
+  （plan 模式下 `filesystem.write` = deny）；④ 三条未实测项逐一实测或登记。建议独立开一轮。
+- [ ] **真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）**：`compatibility.json` 的
+  agy `componentInventory.version` 仍写 1.1.27（只声明实测过的版本），notes 已注明本机已升 1.2.7。
+  复验内容：`run_command` 触发 deny（`git reset --hard`、永久删除类）、中文文案可读不乱码、
+  allow 路径无误拦，以及**两个 hook 共存**（`dangerous-commands-guard` 与 `plan-readonly-guard`
+  同为 PreToolUse）时谁说了算。⚠️ 需人工在真实 agy TUI 里做。
+- [ ] **生成值 vs 本机手工值的两处差异（有意保留）**：引擎 `powershell.exe`（生成器，兼容无 pwsh
+  的机器）vs `pwsh`（本机，规避 5.1 编码类问题）；guard 名 `riskguard-dangerous-commands` vs
+  `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；
+  若将来要统一，先确认新机器的 pwsh 可用性再动。
+
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 
 - bash AST 角色解析（allowlister 式：管道过滤命令按角色判定）

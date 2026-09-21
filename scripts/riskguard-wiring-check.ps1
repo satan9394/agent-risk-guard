@@ -60,31 +60,37 @@ Write-Host "仓库单源: $repo"
 if (-not (Test-Path $repo)) { Write-Host "单源仓库不存在: $repo" -ForegroundColor Red; exit 2 }
 
 # ---- 0. 仓库单源自身存在性 ----
-$srcPs1  = Join-Path $repo 'assets\hooks\dangerous-commands.ps1'
-$srcOc   = Join-Path $repo 'assets\opencode\agent-risk-guard.ts'
-$srcDsh  = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
+$srcPs1    = Join-Path $repo 'assets\hooks\dangerous-commands.ps1'
+$srcPs1Agy = Join-Path $repo 'assets\hooks\agy-dangerous-commands.ps1'
+$srcOc     = Join-Path $repo 'assets\opencode\agent-risk-guard.ts'
+$srcDsh    = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
+Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
 Write-Check '单源 dsh patch 存在' (Test-Path $srcDsh) $srcDsh
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh)) { exit 2 }
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
   return ((Get-FileHash $path -Algorithm SHA256).Hash -eq $expected)
 }
 
-# ---- 1. ps1 三处生产 vs 单源 ----
-Write-Host "`n[ps1 危险命令 hook]"
-$hashPs1 = (Get-FileHash $srcPs1 -Algorithm SHA256).Hash
-$ps1Dests = @(
-  (Join-Path $userHome '.claude\hooks\dangerous-commands.ps1'),
-  (Join-Path $userHome '.codex\hooks\dangerous-commands.ps1'),
-  (Join-Path $userHome '.gemini\config\hooks\dangerous-commands.ps1')
+# ---- 1. ps1 生产 hook vs 各自的单源 ----
+# 2026-09-21：此前这里硬编码 `dangerous-commands.ps1` 的三个落点，**漏了 agy 适配器** ——
+# 于是 `~/.gemini/config/hooks/agy-dangerous-commands.ps1` 是唯一没有哈希纪律的生产脚本：
+# 单源改了它不会报，`-Fix` 也不会回灌（实测漂移 3,400B vs 4,525B 而巡检仍 exit 0）。
+# 注意：每个目标必须配**自己的单源** —— 用同一个源回灌会把 agy 适配器覆盖成规则引擎。
+Write-Host "`n[ps1 危险命令 hook 与 agy 适配器]"
+$ps1Targets = @(
+  @{ dest = (Join-Path $userHome '.claude\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'claude hooks' },
+  @{ dest = (Join-Path $userHome '.codex\hooks\dangerous-commands.ps1');              src = $srcPs1;    label = 'codex hooks' },
+  @{ dest = (Join-Path $userHome '.gemini\config\hooks\dangerous-commands.ps1');       src = $srcPs1;    label = 'gemini hooks' },
+  @{ dest = (Join-Path $userHome '.gemini\config\hooks\agy-dangerous-commands.ps1');   src = $srcPs1Agy; label = 'agy adapter' }
 )
-foreach ($d in $ps1Dests) {
-  $ok = Test-Hash $hashPs1 $d
-  Write-Check ("ps1: " + (Split-Path (Split-Path $d -Parent) -Leaf)) $ok $d
-  if (-not $ok) { Restore-Single-Source $d $srcPs1 (Split-Path (Split-Path $d -Parent) -Leaf) }
+foreach ($t in $ps1Targets) {
+  $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
+  Write-Check ("ps1: " + $t.label) $ok $t.dest
+  if (-not $ok) { Restore-Single-Source $t.dest $t.src $t.label }
 }
 
 # ---- 2. opencode 生产插件 vs 单源 ----
