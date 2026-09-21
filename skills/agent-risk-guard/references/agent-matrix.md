@@ -54,7 +54,7 @@
 
 ## 注意事项
 
-- **Antigravity CLI (agy)**：hook 走 `~/.gemini/config/hooks.json` 的 PreToolUse `run_command` 事件（工具名为 shell.execute / CommandLine），用 `scripts/agy-dangerous-commands.ps1` 适配器翻译到 codex 规则源。**last verified：agy 1.1.27（Windows）**——2026-09-06 真实会话实测 `git reset --hard` 被 deny、未提交修改保留；适配器 fail-closed（规则引擎缺失/输出不可解析一律 deny，绝不静默放行）。
+- **Antigravity CLI (agy)**：hook 走 `~/.gemini/config/hooks.json` 的 PreToolUse `run_command` 事件（工具名为 shell.execute / CommandLine），用 `scripts/agy-dangerous-commands.ps1` 适配器翻译到规则引擎（引擎按优先级探测：`RISKGUARD_AGY_ENGINE` → 适配器**同目录** `dangerous-commands.ps1` → `~/.codex/hooks/`）。**last verified：agy 1.2.7（Windows）**——2026-09-21 真实会话实测 `git reset --hard` 被 deny（deny 文案含 `⛔` 且**中文完整可读**）、同会话 `Read`/`git status` 放行、未提交修改保留；此前 1.1.27（2026-09-06）同样通过。适配器 fail-closed（规则引擎缺失/输出不可解析一律 deny，绝不静默放行）。⚠️ 测法提示：用「把文件永久删掉」类提示词会被模型在**规则层**直接拒绝（零工具调用），那是 soft 遵循、**不构成硬拦截证据**；须用模型不认为该拒绝的命令（如 git reset）方能触发钩子。
 - 配置管理器（cc-switch 等）会回写 Claude Code 的 settings.json，改 hooks 后需复查。
 - Codex hooks 在原生 Windows 有 bug（#24453），配置后必须真实会话实测。
 - macOS 沙箱用 Seatbelt、Linux 用 bubblewrap、Windows（Codex）用受限令牌/ACL。

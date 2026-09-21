@@ -613,7 +613,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "全局 hooks ~/.gemini/config/hooks.json（PreToolUse matcher run_command → agy-dangerous-commands.ps1 适配器 → 规则引擎 → deny JSON；hook command 必须绝对路径，相对路径子目录启动 127 绕过守卫；stdout 顶层 {decision,reason}，exit 0 恒）。2026-09-06 本机真实会话 D3：agy 1.1.27 会话尝试 git reset --hard HEAD → hook deny（\"tool call denied by pre-tool hook: RiskGuard: ...\"），未提交修改保留。⚠️ D3 证据对应 **1.1.27**；本机 2026-09-21 已装 **1.2.7**，真实会话复验尚未做（`componentInventory.version` 保持实测过的 1.1.27，不做未验证的版本声明）。2026-09-21 起该 Agent 已纳入 `doctor`（此前**已安装却在 doctor 输出里一行都没有**）与 ps1 套件 `agy-hook-test.ps1`（6 套 × 双引擎，含协议面与输出编码断言）。",
+      "notes": "全局 hooks ~/.gemini/config/hooks.json（PreToolUse matcher run_command → agy-dangerous-commands.ps1 适配器 → 规则引擎 → deny JSON；hook command 必须绝对路径，相对路径子目录启动 127 绕过守卫；stdout 顶层 {decision,reason}，exit 0 恒）。真实会话 D3 两次：① 2026-09-06 agy **1.1.27** 尝试 git reset --hard HEAD → hook deny，未提交修改保留；② 2026-09-21 agy **1.2.7** 复验（本机生产接线）——会话内 `run_command` 执行 `git reset --hard HEAD` 返回 `Encountered error in tool execution: tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止`；同会话 `Read` 与 `git status` 均放行（无误拦），工作区未提交改动存活。② 额外确认两点：**中文与 `⛔` 完整可读**（2026-09-20 的 UTF-8 输出修复端到端成立）；deny 来自**规则引擎**而非 fail-closed 分支，说明适配器的引擎解析在生产上确实命中（2026-09-21 改为按优先级探测：RISKGUARD_AGY_ENGINE → 同目录 → codex）。⚠️ 测试方法提示：用「把文件永久删掉」这类提示词会被 agy 在**规则层直接拒绝**（一次工具调用都不发，`%TEMP%\\riskguard-hook-calls.log` 里零记录），那是 `soft` 遵循而非 `hard` 拦截，**不构成 D3 证据**；须用模型不认为该拒绝的命令（如 git reset）方能触发钩子。2026-09-21 起该 Agent 已纳入 `doctor`（此前**已安装却在 doctor 输出里一行都没有**）与 ps1 套件 `agy-hook-test.ps1`（6 套 × 双引擎，含协议面与输出编码断言）。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -659,7 +659,7 @@
       },
       "componentInventory": {
         "agent": "agy",
-        "version": "1.1.27",
+        "version": "1.2.7",
         "adapter": "packages/adapters/agy",
         "hook": "PreToolUse hook (hooks.json)",
         "runtime": "node + powershell hook",

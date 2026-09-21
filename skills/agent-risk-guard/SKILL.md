@@ -190,7 +190,7 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 | --- | --- | --- | --- |
 | Claude Code | `hookSpecificOutput.permissionDecision` | ✅ 已实测 | hook 规则集 66 条命令模式规则（脚本 401 行，共 72 处 deny 分支含 6 条 fail-closed 防守卫），89 条 ps1 验证用例全通过；⚠️ 本机 settings.json 未注册 PreToolUse（需接线） |
 | Codex | `hookSpecificOutput.permissionDecision` | ✅ 已实测 | 同上；`hook-calls.log` 有真实 deny 记录（2026-08-23 rm -rf） |
-| Antigravity CLI (agy) | PreToolUse run_command → agy 适配器 `{decision:allow\|deny}` | ✅ 已实测（Windows，agy 1.1.27） | `scripts/agy-dangerous-commands.ps1`（BOM+fail-closed）翻译 hook 协议并复用 codex 规则源；2026-09-06 真实会话：`git reset --hard` 被拦、未提交修改保留，agy 缺席时 fail-closed deny |
+| Antigravity CLI (agy) | PreToolUse run_command → agy 适配器 `{decision:allow\|deny}` | ✅ 已实测（Windows，agy **1.2.7**；此前 1.1.27） | `scripts/agy-dangerous-commands.ps1`（BOM+fail-closed）翻译 hook 协议并复用同目录规则引擎；真实会话两次：2026-09-06（1.1.27）与 **2026-09-21（1.2.7）** `git reset --hard` 均被拦、未提交修改保留、deny 文案中文可读；规则引擎缺失时 fail-closed deny |
 | OpenCode | 插件自有格式（`tool.execute.before`） | ✅ 已实测（完整） | 520 行插件（R16 四轮修复后），真实会话验证：模型拒绝 rm/Remove-Item、调用 trash 工具进 Windows 回收站确认收到；⚠️ 需 `opencode.json` plugin 声明才加载（见 `references/opencode-wiring.md`） |
 | DeepSeek Harness | pre-execute 门禁规则 | ✅ 已实测 | patch 47 条热加载生效（R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper）；`@riskguard/dsh` 插件（pre-execute+单调 guard）经 dsh-tools 源码实证 |
 | Cursor | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | hooks 文档显示兼容 CC 格式，需真实会话确认 |

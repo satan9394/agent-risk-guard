@@ -15,6 +15,16 @@
 
 ### Added
 
+- **agy 的真实会话 D3 复验完成（2026-09-21，agy 1.2.7）**：`compatibility.json` 的 agy
+  `componentInventory.version` 由 1.1.27 升至 **1.2.7**，notes 补记本次会话与两条方法论结论。
+  证据：会话内 `run_command` 执行 `git reset --hard HEAD` 返回
+  `Encountered error in tool execution: tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止`；
+  同会话 `Read` 与 `git status` 均放行（无误拦）、工作区未提交改动存活；钩子日志有对应
+  `decision=deny` 行。**附带确认**：中文与 `⛔` 完整可读（UTF-8 输出修复端到端成立）；
+  deny 来自**规则引擎**而非 fail-closed 分支（证明适配器的引擎解析在生产上确实命中）。
+  ⚠️ **方法论**：用「把文件永久删掉」这类提示词会被 agy 在**规则层直接拒绝**（一次工具调用都不发，
+  钩子日志零记录）——那是 `soft` 遵循而非 `hard` 拦截，**不构成 D3 证据**；须用模型不认为该拒绝的
+  命令（如 git reset）才能触发钩子。第一次尝试正是这样被判为无效并重跑的。
 - **`skills/agent-risk-guard/tests/agy-hook-test.ps1`**：agy 适配器的独立回归套件（**24/24**）。
   其它 5 套都走 `-Cmd <文本>` 直调规则引擎，而 agy 是「stdin protojson → stdout JSON、退出码恒 0」
   的另一种接口，照抄会得到「全部 allow」的假绿灯。本套件同时钉：① 规则判定（含 R7c 的三种
