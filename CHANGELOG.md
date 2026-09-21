@@ -21,6 +21,41 @@
   `~/.claude/settings.json` 的 `hooks.PreToolUse`），无 BOM 时这个兜底会静默失效（实测 `LastTaskResult=1`）。
   已补 BOM（其余字节逐字保留）；补后 5.1 下 exit 0。
   注：`skills/agent-risk-guard/tests/` 下少数 ps1 同样无 BOM，但那是 CI 里**已登记并有意容忍**的（D9），未改动。
+- **拒绝理由在 Windows 上到达 Agent 时是乱码（cc / codex / agy 三家都受影响）**：
+  `Write-Output` 默认按**控制台代码页**写 stdout（本机 `chcp=936`，即 GBK），而三家消费方
+  一律按 **UTF-8** 解析 hook 的 JSON —— 中文 `permissionDecisionReason` / `systemMessage`
+  到了模型眼前变成 `? HOOK ������…`。**拦截判定完全正常，只有文案不可读**，
+  所以这个缺陷此前一直没被发现（判 deny 仍然 deny）。
+  根因不是"跨进程捕获解码"，而是**输出侧编码**：字节级实测，同一份规则、同一个断言命令，
+  修复前 `powershell.exe` 434B / `pwsh` 424B **均非法 UTF-8**（严格 UTF-8 解码器抛错）。
+  现于 `param([string]$Cmd, [string]$RedactFile)` 之后、**任何 `Write-Output` 之前**统一设置
+  `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)`
+  —— 用 `$false` 即**不带 BOM**，否则会破坏消费方的 JSON 解析。
+  修复后两条路径均为合法 UTF-8、含真中文、无替换字符，且判定不变：
+  `hook-bypass-regression` 20/20、`hook-rules-test` 37/37、`hook-redact-test`、
+  `hook-fp-regression`、`hook-audit-reregress` 全部 exit 0。
+  改动**只落在单源** `assets/hooks/dangerous-commands.ps1`，再字节复制到 5 处副本
+  （`~/.claude/hooks`、`~/.codex/hooks`、`~/.gemini/config/hooks`、
+  `skills/agent-risk-guard/scripts/`，以及安装到 `~/.claude/skills/custom/agent-risk-guard-audit`
+  的那份），6 份 SHA256 一致，`riskguard-wiring-check.ps1` **exit 0**。
+  注：agy 侧还有一个独立适配器（把捕获结果转成 `{decision:allow|deny}` 协议），
+  它自己那份也加了同一行使文件自足；那是部署产物、不属本仓库单源管辖。
+- **agy 适配器的三处副本跨了三个代次，已对齐到单源**：`agy-dangerous-commands.ps1` 的仓库单源是
+  `assets/hooks/agy-dangerous-commands.ps1`（`packages/installer/src/runtime-probe.ts` 的
+  `HOOK_SINGLE_SOURCE_MAP` 按它做**已装副本的 SHA256 新鲜度**校验）。此前
+  `assets/hooks/` 是 v0.2（2,813B），而 `skills/agent-risk-guard/scripts/` 与安装态是更早的 2,740B，
+  给我这次给线上副本加编码行后线上又变成 3,400B ≠ 单源 —— 即 `artifactIntegrity` 会判 `fresh: false`。
+  现四处（单源 + skills 副本 + 安装态 + 线上）统一为 **v0.2 + UTF-8 输出 = 3,400B（含 BOM）**，
+  SHA256 唯一数 = 1；`skills/agent-risk-guard/SKILL.md` 里过期的体积数字（2729/2732B）
+  同步更正为 3397/3400B。
+
+### Removed
+
+- **`skills/agent-risk-guard/scripts/dangerous-commands-agy.ps1`（v0.1 适配器）**：头部自述即
+  "适配器（v0.1）"，已被 `agy-dangerous-commands.ps1`（v0.2，BOM + fail-closed 加固）取代；
+  不在 `HOOK_SINGLE_SOURCE_MAP`、不被任何代码/SKILL.md 清单引用，仅出现在历史任务报告里。
+  同步从仓库与安装态两侧移除（skill 文件数 39 → 38，接线巡检仍 exit 0）。
+  注：`docs/TODO.md` 与 `tasks/orchestrator/` 下的历史记录保留原文、不重写。
 
 ## [0.3.2] - 2026-09-19（`git branch` 删除的两条绕过：长选项 + 合并短选项）
 

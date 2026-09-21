@@ -36,6 +36,18 @@
 #           [R2-命令词锚定] cli-mysql-password-numeric 由「同段出现过 mysql 这个词」改为「段首 / ;&| 之后 /
 #               sudo|env|command 之后的 mysql|mariadb 本次调用」，消除 `ssh mysql -p2222 host`、
 #               `psql -h mysql -p5432 -U postgres` 的**端口**被当密码脱敏。判定逻辑零改动。
+# 改动记录（2026-09-20 输出编码修复）：
+#           [ENC-UTF8] Windows 上 Write-Output 默认按控制台代码页（本机 chcp=936/GBK）写 stdout，
+#               而三家消费方（cc / codex / agy）一律按 UTF-8 解析 JSON，导致中文 reason /
+#               systemMessage 到达模型时是乱码（**拦截判定完全正常，仅文案不可读**）。
+#               修复：在任何 Write-Output 之前设
+#               [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+#               （不带 BOM，否则会破坏消费方的 JSON 解析）。实测字节级证据：
+#               修复前 powershell.exe 434B / pwsh 424B **均非法 UTF-8**；
+#               修复后合法 UTF-8 且含真中文、无替换字符；deny/allow 判定不变。
+#               注意：assets/hooks 是本单源，三处生产副本（~/.claude、~/.codex、
+#               ~/.gemini/config/hooks）与 skills/agent-risk-guard 内附副本必须与之**字节一致**，
+#               由 scripts/riskguard-wiring-check.ps1 做 SHA256 巡检、-Fix 时从本文件覆盖。
 # 安装：在 settings.json / hooks.json PreToolUse 中引用此脚本
 # 输入：stdin JSON { tool_name, tool_input: { command }, ... }
 # 输出：stdout JSON { hookSpecificOutput: { permissionDecision }, systemMessage }
@@ -48,6 +60,13 @@
 param([string]$Cmd = '', [string]$RedactFile = '')
 
 $ErrorActionPreference = 'Stop'
+
+# ---- 输出编码强制 UTF-8（2026-09-20 / ENC-UTF8）----
+# Windows 上 Write-Output 默认按控制台代码页（本机 chcp=936/GBK）写 stdout，
+# 而消费方（cc / codex / agy）一律按 UTF-8 解析 JSON，导致中文 reason 变乱码
+# （实测：修复前 powershell.exe 434 字节 / pwsh 424 字节，均非法 UTF-8；修复后合法）。
+# 必须在任何 Write-Output 之前设置；UTF8Encoding($false) 不带 BOM，否则会破坏 JSON 解析。
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 
 # 当前命令文本（脚本作用域），供 Deny-Command 在 fail-closed 早期路径也能安全引用
 $script:curCmd = ''

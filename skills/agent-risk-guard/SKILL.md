@@ -221,7 +221,7 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 ### 脚本类（自动配置）
 
 - `scripts/dangerous-commands.ps1` — Claude Code / Codex 共用 PreToolUse hook 脚本（Windows 版，规则含 rm 全家桶/PowerShell 删除类/git 破坏整类（含 push -f/switch -C/worktree）/管道到 shell/子展开/docker/truncate/wmic 等 **66 条命令模式规则**（脚本 401 行，共 72 处 deny 分支含 6 条 fail-closed 防守卫），GAN 修复覆盖大小写/fail-closed/落盘链/插词/包装变体，四轮 GAN 审查加固至 8/10，ps1 89 条验证用例 + sh 侧 122 条全绿）
-- `scripts/agy-dangerous-commands.ps1` — Antigravity CLI (agy) PreToolUse hook 适配器（BOM + fail-closed，2729B→含 BOM 2732B），把 agy 的 run_command 协议翻译成 codex 规则源能识别的格式；2026-09-06 真实会话验证
+- `scripts/agy-dangerous-commands.ps1` — Antigravity CLI (agy) PreToolUse hook 适配器（BOM + fail-closed + **UTF-8 输出**，3397B→含 BOM 3400B），把 agy 的 run_command 协议翻译成 codex 规则源能识别的格式；2026-09-06 真实会话验证。2026-09-20 补 `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)`：Windows 下 `Write-Output` 按控制台代码页（chcp=936/GBK）写 stdout、而 agy 按 UTF-8 解析，导致中文 reason 乱码（**判定逻辑零改动**，只修文案）
 - `scripts/dangerous-commands-universal.ps1` — 跨 7 家 Agent 通用 hook（规则集与 dangerous-commands.ps1 完全同步，单一事实源，BOM 编码）
 - `scripts/opencode/destructive-operation-guard.ts` — OpenCode 完整插件（520 行，R16 修复版：检测器 + wrapper 解包 + 受保护路径 + trash 工具 + 日志，需 opencode.json 注册）
 - `scripts/dangerous-commands.sh` — bash/WSL 版（Linux/macOS，规则集与 ps1 同步，python3 解析，50/50 WSL 实测）

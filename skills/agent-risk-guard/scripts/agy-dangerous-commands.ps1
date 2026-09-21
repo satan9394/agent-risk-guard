@@ -14,6 +14,13 @@
 #   - stdin 为空 / 无 CommandLine → allow（无命令可查，非危险放行）
 $ErrorActionPreference = 'Stop'
 
+# ---- 输出编码强制 UTF-8（2026-09-20）----
+# 本适配器把引擎的同进程输出转成 agy 的 JSON 协议；Windows 下 Write-Output 默认按
+# 控制台代码页（chcp=936/GBK）写 stdout，而 agy 按 UTF-8 解析 → 中文 reason 乱码。
+# 引擎脚本内部已设同一行（同进程调用时即生效），此处再设一次是为了让本文件自足：
+# 引擎缺失/早期 fail-closed 路径也不会以错误编码输出。UTF8Encoding($false) 不带 BOM。
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+
 function Emit-Deny([string]$reason) {
     $esc = $reason.Replace('\', '\\').Replace('"', '\"').Replace("`r", '').Replace("`n", '\n')
     Write-Output ('{"decision":"deny","reason":"RiskGuard: ' + $esc + '"}')
