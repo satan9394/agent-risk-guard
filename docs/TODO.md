@@ -53,14 +53,27 @@
 
 - [ ] **`agy-plan-readonly.ps1` 入仓（判为「有用，但需独立切片」）**：该 hook 现在只活在
   `~/.gemini/config/hooks/agy-plan-readonly.ps1`（19,247B）＋ 个人脚本归档
-  `E:\Code_file\Claude_code\2026\09\20\`（含 93/93 测试台），**不在仓库、不在巡检、不在 CI**。
+  `E:\Code_file\Claude_code\2026\09\20\`（含 **59/59** 测试台），**不在仓库、不在巡检、不在 CI**。
   它是唯一压在热路径上（`matcher: "*"`，每次 agy 工具调用都过）却完全未版本化的脚本 ——
   静默坏掉无人发现。**为什么不并进 R7c/agy 那批**：它属**另一条政策轴**（「plan 模式下按能力
-  只读」），而本产品章程是不可逆破坏拦截；混进 `deny-risk-commands` 单源链会模糊产品边界，
-  且它自带三条未实测项（Shift+Tab 粘滞多轮、`$()` 无通用递归、`always-proceed` 下真删未验）。
-  **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 93/93 测试台
+  只读」），而本产品章程是不可逆破坏拦截；混进 `deny-risk-commands` 单源链会模糊产品边界。
+  它**已通过在真实会话验证**（2026-09-20 FDE 项目：`/plan` 会话里 `Create(...)` 被拦、诊断日志
+  `DENY tool: write_to_file`、且证明 hook deny 压得过 `always-proceed`；非 plan 会话全放行）。
+  **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 59/59 测试台
   收进 `skills/agent-risk-guard/tests/` 并进 CI；③ `compatibility.json` 增补对应能力面
-  （plan 模式下 `filesystem.write` = deny）；④ 三条未实测项逐一实测或登记。建议独立开一轮。
+  （plan 模式下 `filesystem.write` = deny）；④ 处理下述三项**已登记的具体缺口**。建议独立开一轮。
+- [ ] **`/plan` 多轮注入未实证（agy 侧唯一真实缺口）**：`plan-readonly-guard` 判「是不是 plan 模式」
+  靠读 transcript 最后一条 `USER_INPUT` 里有没有 `/plan` 标记，而官方文档只说 plan 模式
+  "prepends `/plan` to your prompts"（**多轮**是否每轮都注）。若只有第一轮带标记，多轮 plan 会话
+  从第二条起会**漏判 → 重新放行写入**。09-19 那条 4 轮会话（`fc867b6c`）第 2–4 条都没带标记，
+  但无法区分"用户自己切出了 plan"与"agy 不重注"，不足为证。验证：同一 plan 会话里再发一条不带
+  `/plan` 的消息，看 `transcript_full.jsonl` 的新 `USER_INPUT` 是否带标记。
+- [ ] **plan 模式下解释器全禁的体感代价**：`python -c "…"` 被 deny（第一 token 是绝对路径 python、
+  `-c` 可任意执行），研究只能降级到 `view_file`/`grep_search`；数据类项目的 plan 研究体感变差，
+  若要改善需另开一个窄口子（需权衡：开了就是可执行面）。
+- [ ] **plan 钩子成本约 0.5s/工具调用**（几乎全是 PowerShell 进程启动；80 字节空脚本走 `-File`+stdin
+  就要 560ms），而它 matcher 是 `"*"`。若体感太慢，可把 matcher 收窄到已知写工具集合，代价是
+  未知新工具不再默认拦截。
 - [x] ~~真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）~~ —— **已完成，2026-09-21**。
   agy **1.2.7** 真实会话里 `run_command` 执行 `git reset --hard HEAD` 被 hook 拒绝
   （`tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：…`），同会话 `Read` 与
@@ -69,15 +82,6 @@
   ⚠️ 方法论教训（已写进 notes）：用「把文件永久删掉」这类提示词会被 agy 在**规则层直接拒绝**
   （一次工具调用都不发，钩子日志零记录）——那是 `soft` 遵循而非 `hard` 拦截，**不构成 D3 证据**；
   必须用模型不认为该拒绝的命令（如 git reset）才能触发钩子。
-- [ ] **两个 PreToolUse hook 共存仍待实测**：`~/.gemini/config/hooks.json` 里有两条 ——
-  `dangerous-commands-guard`（matcher `run_command`）与 `plan-readonly-guard`（matcher `*`）。
-  需在 agy 里按 Shift+Tab 切 plan 模式，让它写文件，确认 plan 钩子生效；再切回普通模式执行同一条
-  命令，确认 **plan 钩子在非 plan 模式不误拦**。⚠️ 需人工在 TUI 里做（与上一项同一批，但没做）。
-- [ ] **D4（Repeated / production verified）的门槛全项目未定义**：当前 10 个 Agent **没有任何一个
-  在 D4**（claude-code / codex / opencode / dsh / agy 都是 D3）。agy 现在已具备「两个版本 × 两次
-  真实会话」的证据形态，但**不单方面给单个 Agent 升 D4** —— 需先定义门槛（例如「≥2 个真实会话
-  × ≥2 个版本」或「生产持续使用 N 天」），再统一评估各 Agent。这是 `docs/project-final-status.md`
-  里 M7 一类的政策项，不是某个 Agent 的局部结论。
 - [ ] **生成值 vs 本机手工值的两处差异（有意保留）**：引擎 `powershell.exe`（生成器，兼容无 pwsh
   的机器）vs `pwsh`（本机，规避 5.1 编码类问题）；guard 名 `riskguard-dangerous-commands` vs
   `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；
