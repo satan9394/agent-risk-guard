@@ -580,11 +580,10 @@ fi
 if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+push[^;]*--force([[:space:]]|$)|git[[:space:]]+push[^;]*-f([[:space:]]|$)'; then
     deny_command "git push --force/-f overwrites remote history."
 fi
-# R7c（2026-09-21）：删除标志**不必紧跟 `branch`**，且短簇判据是「含 d 或 D」而不是首字符。
-# 旧式 `-[dD]` 只看首字符 → `git branch -fd x`（force 在前）漏拦；旧式锚定 →
-# `git branch --force --delete x`（长选项重排序）漏拦（四端全漏）。两者都与 `-D` 等价。
-# 注：`-d` / `--delete`（无 force）**维持拦截**（分支引用删除一律拦，与 DSH 拦 update-ref 自洽）。
-if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+branch[[:space:]][^;&|]*--delete|git[[:space:]]+branch[[:space:]]+([^;&|]*[[:space:]])?-[A-Za-z]*[dD]'; then
+# ⚠️ 形态受**性能与语义双重约束**（详见 ps1 单源同处注释）：token 类排除空白、分隔符只吃空白，
+#   两个字符类不相交 ⇒ 线性；且要求标志处于 token 起点，`--merged`/`feat-d` 不被误伤。
+#   POSIX ERE 里用 `[[:blank:]]`（空格/TAB）；`[^;&|[:blank:]]` 是标准写法（类嵌在括号表达式内）。
+if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+branch[[:blank:]]([^;&|[:blank:]]*[[:blank:]])*(--delete|-[A-Za-z]*[dD])'; then
     deny_command "git branch -d/-D/--delete deletes a branch (branch ref deletion is irreversible)."
 fi
 # R7c：与 DSH patch 对齐（DSH 自 R4 起拦 update-ref / filter-branch，而 core/ps1/sh/opencode 四端全漏）

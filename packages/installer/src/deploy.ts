@@ -44,7 +44,8 @@ export function defaultDenyRules(): GuardRules {
     '\\bgit\\s+push\\b[^|;&\\n]*\\s(?:--force(?!-)|-[f]\\b)',
     // R7c（2026-09-21）：删除标志不必紧跟 `branch`（旧写法漏 `--force --delete` 重排序），
     // 且短簇判「含 d 或 D」而非首字符（sh 旧式 `-[dD]` 漏 `-fd`）。与 assets/dsh patch 逐条同步。
-    '\\bgit\\s+branch\\s[^|;&\\n]*--delete|\\bgit\\s+branch\\s+(?:[^|;&\\n]*\\s)?-[A-Za-z]*[dD]',
+    // ⚠️ 前导分隔符定长、跳过部分两个字符类不相交 —— 防 polynomial-redos，详见 normalize.ts 同处注释。
+    '\\bgit\\s+branch[ \\t](?:[^;&|\\n \\t]*[ \\t])*(?:--delete|-[A-Za-z]*[dD])',
     '\\bgit\\s+checkout\\s+--',
     '\\bgit\\s+restore\\b',
     '\\bgit\\s+stash\\s+(drop|clear)\\b',

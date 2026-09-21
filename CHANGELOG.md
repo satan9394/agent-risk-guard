@@ -36,6 +36,12 @@
   sh 四套 exit 0、`node --test` 全绿、`riskguard-wiring-check.ps1` exit 0。
   **变异验证**：只回退 ps1 → 恰好 N3/N9/N14 红；只回退 sh → 恰好 N1/N2/N3/N9/N14 红；
   两端**一起**移除 update-ref 规则 → 恰好 N10/N11/N12 红（证「两端同判但违应然」这一重判据有效）。
+  首版正则被 **CodeQL `js/polynomial-redos` 判为高危新告警**（本 PR 的 CodeQL 门禁因此变红），
+  根因是 `[^;&|\n]*\s` 这类「负类含空白 + 分隔符也吃空白」的重叠写法，实测
+  `'git branch' + 5 万空格 + '-d'` 从 0.6ms 劣化到 **4403ms**。最终形态把前导分隔符定为**定长** `[ \t]`、
+  跳过部分写成**互不相交**的 `(?:[^;&|\n \t]*[ \t])*`：语料零误差、200k 输入最坏 5.11ms（线性）。
+  两次中间方案（含 `\s+` 的嵌套量词版、用 `(?:[^ \t]+|[ \t])*` 的交替版）分别因**二次回溯**与
+  **丢失「标志必须在 token 起点」语义**（`--merged` / `feat-d` 被误伤）被实测否决，未落盘。
 - **`skills/agent-risk-guard/tests/hook-bypass-regression.ps1` 首行漏 `#`**：PowerShell 会把该行当命令
   执行，每次运行都吐一条 `CommandNotFound` 噪音（测试本身仍跑完）。已补 `#` 并加一行说明。
 - **`scripts/riskguard-wiring-check.ps1` 缺 UTF-8 BOM**：Windows PowerShell 5.1 会把无 BOM 的文件
