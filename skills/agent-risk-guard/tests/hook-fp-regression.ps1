@@ -1,4 +1,4 @@
-# hook-fp-regression.ps1 — Round 8 误伤回归（echo 字符串/注释/rmdir 非递归应放行；-Cmd 模式）
+﻿# hook-fp-regression.ps1 — Round 8 误伤回归（echo 字符串/注释/rmdir 非递归应放行；-Cmd 模式）
 # T11/Finding 18 增补：查看/打开回收站（非删除）应放行
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\scripts\dangerous-commands.ps1'

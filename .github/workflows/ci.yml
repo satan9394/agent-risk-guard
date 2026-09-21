@@ -108,14 +108,19 @@ jobs:
       - name: Run sh hook suite 4 (fail-closed semantics / JSON validity)
         run: bash skills/agent-risk-guard/tests/sh-failclosed-test.sh skills/agent-risk-guard/scripts/dangerous-commands.sh
 
-  # ── ps1 hook 判定回归（5 套 × 双引擎）─────────────────────────────────────────────
+  # ── ps1 hook 判定回归 + agy 适配器（6 套 × 双引擎）───────────────────────────────
   # 2026-09-13 补：此前 ps1 五套**完全不在 CI**，只在本地 `test-all.ps1` 里跑 ——
   # 正是 R10 的第 2 条假象「闸门存在 ≠ 闸门被执行」。windows-latest 自带
   # powershell.exe(5.1) 与 pwsh(7)，与本机本地双引擎口径一致。
   # 套件取自仓库内 `skills/agent-risk-guard/tests/`（自定位到 `../scripts/` 的 hook），
   # 与本地 test-all.ps1 用的是同一份、同一位置（改动前本地指向仓库外的 audit 树，CI 拿不到）。
-  # ⚠️ D9：`hook-bypass-regression.ps1` 无 BOM → PS 5.1 报 18/18、pwsh 报 20/20（**都 exit 0**）；
-  #    计数不同不是回归，故本 job 只断言**退出码**，不断言条数。
+  #
+  # 2026-09-21：**D9 已闭环** —— tests/ 下的 ps1 套件全部补了 UTF-8 BOM，于是
+  # PS 5.1 与 pwsh 7 连**条数**也一致了（此前 `hook-bypass-regression` 是 18/18 vs 20/20：
+  # 无 BOM 时 5.1 按 ANSI/GBK 读中文把字符串截断）。因此本 job 从「只断言退出码」
+  # 升级为「退出码 + 双引擎条数必须相同」—— 引擎差异不再有豁免。
+  # 同批加入 `agy-hook-test`：agy 适配器的接口与其它套件不同（stdin protojson → stdout JSON、
+  # 退出码恒 0），所以它是独立一套，且额外断言协议面与输出编码。
   ps1-hook:
     runs-on: windows-latest
     steps:
@@ -127,33 +132,30 @@ jobs:
           Write-Host "pwsh       : $($PSVersionTable.PSVersion)"
           & powershell -NoProfile -Command '"powershell : " + $PSVersionTable.PSVersion.ToString()'
 
-      - name: Run ps1 hook suites — Windows PowerShell 5.1
-        shell: powershell
-        run: |
-          $suites = @('hook-rules-test','hook-bypass-regression','hook-fp-regression','hook-audit-reregress','hook-redact-test')
-          $failed = @()
-          foreach ($s in $suites) {
-            Write-Host "=== $s (PS 5.1) ==="
-            & powershell -NoProfile -ExecutionPolicy Bypass -File "skills\agent-risk-guard\tests\$s.ps1"
-            Write-Host "exit=$LASTEXITCODE"
-            if ($LASTEXITCODE -ne 0) { $failed += $s }
-          }
-          if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join ', ')"; exit 1 }
-          Write-Host "ps1 hook suites (PS 5.1): 5/5 green"
-
-      - name: Run ps1 hook suites — PowerShell 7 (pwsh)
+      - name: Run ps1 hook + agy adapter suites (both engines, counts must agree)
         shell: pwsh
         run: |
-          $suites = @('hook-rules-test','hook-bypass-regression','hook-fp-regression','hook-audit-reregress','hook-redact-test')
+          $suites = @('hook-rules-test','hook-bypass-regression','hook-fp-regression','hook-audit-reregress','hook-redact-test','agy-hook-test')
+          $summary = @{}
           $failed = @()
-          foreach ($s in $suites) {
-            Write-Host "=== $s (pwsh 7) ==="
-            & pwsh -NoProfile -ExecutionPolicy Bypass -File "skills/agent-risk-guard/tests/$s.ps1"
-            Write-Host "exit=$LASTEXITCODE"
-            if ($LASTEXITCODE -ne 0) { $failed += $s }
+          foreach ($eng in @('powershell','pwsh')) {
+            foreach ($s in $suites) {
+              Write-Host "=== $s ($eng) ==="
+              $out = & $eng -NoProfile -ExecutionPolicy Bypass -File "skills/agent-risk-guard/tests/$s.ps1" 2>&1
+              $code = $LASTEXITCODE
+              $out | ForEach-Object { Write-Host $_ }
+              $last = ($out | Where-Object { $_ -match 'PASS:|^[0-9]+/[0-9]+$' } | Select-Object -Last 1)
+              Write-Host "exit=$code summary=$last"
+              $summary["$eng/$s"] = [string]$last
+              if ($code -ne 0) { $failed += "$s($eng)" }
+            }
           }
-          if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join ', ')"; exit 1 }
-          Write-Host "ps1 hook suites (pwsh 7): 5/5 green"
+          foreach ($s in $suites) {
+            $a = $summary["powershell/$s"]; $b = $summary["pwsh/$s"]
+            if ($a -ne $b) { $failed += "$s 双引擎条数不一致（PS5.1=$a / pwsh=$b）" }
+          }
+          if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join '; ')"; exit 1 }
+          Write-Host "ps1 + agy suites: 6/6 green on both engines, counts identical"
 
   # 决策账本：代码变更必须同时更新 docs/decisions.md。
   # check-decisions-log.ts 只管 A 表（已发布版本），管不到未发布的切片 —— PR #4 就是这么漏掉的。

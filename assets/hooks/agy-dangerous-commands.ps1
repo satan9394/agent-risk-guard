@@ -53,9 +53,21 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
     exit 0
 }
 
-$main = Join-Path $env:USERPROFILE '.codex\hooks\dangerous-commands.ps1'
-if (-not (Test-Path -LiteralPath $main)) {
-    Emit-Deny "rules engine missing: $main (fail-closed)"
+# 规则引擎位置，按优先级探测（2026-09-21 起不再硬编码单一绝对路径）：
+#   ① `RISKGUARD_AGY_ENGINE` 环境变量 —— 显式覆盖（测试密闭、多环境部署用）
+#   ② 本适配器**同目录**的 dangerous-commands.ps1 —— 自足：agy 部署目录里就有引擎
+#   ③ `~/.codex/hooks/dangerous-commands.ps1` —— 既有接线（保留兼容）
+#
+# 为什么改：此前只认 ③。于是「装了 agy、没装 codex」的机器上引擎必然缺失 → 适配器对
+# **任何** 命令都回 fail-closed 的 deny（把 agy 整个锁死），而 doctor 又看不见 agy（见
+# runtime-probe 的 agy 分支注释）。同时硬编码路径也让测试无法密闭 —— 套件只能去改真实 home。
+$engineCandidates = @()
+if (-not [string]::IsNullOrWhiteSpace($env:RISKGUARD_AGY_ENGINE)) { $engineCandidates += $env:RISKGUARD_AGY_ENGINE }
+$engineCandidates += (Join-Path $PSScriptRoot 'dangerous-commands.ps1')
+$engineCandidates += (Join-Path $env:USERPROFILE '.codex\hooks\dangerous-commands.ps1')
+$main = $engineCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($main)) {
+    Emit-Deny "rules engine missing (fail-closed); tried: $($engineCandidates -join ' | ')"
 }
 
 # 调用主规则脚本（-Cmd 模式），解析其 codex 格式输出

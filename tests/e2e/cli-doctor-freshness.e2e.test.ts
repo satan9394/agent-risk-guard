@@ -28,8 +28,20 @@ const DSH_SINGLE_SOURCE = join(ROOT, 'assets', 'dsh', 'deny-risk-commands.patch.
 const PS1_SINGLE_SOURCE = join(ROOT, 'assets', 'hooks', 'dangerous-commands.ps1');
 
 interface CliRun { status: number; stdout: string; stderr: string }
-function cli(args: string[], input = ''): CliRun {
-  const r = spawnSync(process.execPath, [LAUNCHER, ...args], { input, encoding: 'utf8', timeout: 120000 });
+/**
+ * 让 fake home **真正密闭**：把「机器级」探针（`%APPDATA%` / `%LOCALAPPDATA%`）也指向临时目录。
+ *
+ * 为什么必须这样（2026-09-21 实测踩到）：`AGENT_REGISTRY` 里有 7 个 Agent（cursor / windsurf /
+ * grok / copilot / hermes / cline / agy）的安装探针是**绝对路径**（`%LOCALAPPDATA%/…`），
+ * 它们读的是**进程环境**而不是 `--home` 参数。本机装着 agy（`%LOCALAPPDATA%/agy/bin/agy.exe`）时，
+ * 一个「什么都没装」的假 home 里 agy 仍会被探到 → doctor 判它 FAIL（装了但没接线）→ 这些
+ * 「只应有 WARN、不得有 FAIL」的断言全红。隔离 env 后 7 个 Agent 的机器依赖一起消失。
+ */
+function isolatedEnv(home: string): NodeJS.ProcessEnv {
+  return { ...process.env, LOCALAPPDATA: join(home, 'AppData', 'Local'), APPDATA: join(home, 'AppData', 'Roaming') };
+}
+function cli(args: string[], input = '', env?: NodeJS.ProcessEnv): CliRun {
+  const r = spawnSync(process.execPath, [LAUNCHER, ...args], { input, encoding: 'utf8', timeout: 120000, env: env ?? process.env });
   return { status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
@@ -93,7 +105,7 @@ function codexHomeWithStaleHook(): string {
 
 test('e2e G2: dsh patch 规则数少于仓库单源 → WARN dsh + exit 0（WARN ≠ FAIL）', () => {
   const home = dshHome(REPO_DSH_RULES - 1);
-  const r = cli(['doctor', '--home', home]);
+  const r = cli(['doctor', '--home', home], '', isolatedEnv(home));
   assert.equal(r.status, 0, `新鲜度 WARN 不得触发 exit 1（got ${r.status}）\n${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /WARN\s+dsh\s+patch 规则数少于仓库单源/);
   assert.doesNotMatch(r.stdout, /^FAIL\s+\S/m, '不得因新鲜度产生 FAIL');
@@ -103,14 +115,14 @@ test('e2e G2: dsh patch 规则数少于仓库单源 → WARN dsh + exit 0（WARN
 
 test('e2e G2: dsh 陈旧信号在 --verbose evidence 可见（rules N < repo M）', () => {
   const home = dshHome(REPO_DSH_RULES - 1);
-  const r = cli(['doctor', '--verbose', '--home', home]);
+  const r = cli(['doctor', '--verbose', '--home', home], '', isolatedEnv(home));
   assert.equal(r.status, 0);
   assert.match(r.stdout, new RegExp(`rules ${REPO_DSH_RULES - 1} < repo ${REPO_DSH_RULES}`));
 });
 
 test('e2e G2: dsh 陈旧信号在 --json 可见且 exitCode=0（CI 可消费）', () => {
   const home = dshHome(REPO_DSH_RULES - 1);
-  const r = cli(['doctor', '--json', '--home', home]);
+  const r = cli(['doctor', '--json', '--home', home], '', isolatedEnv(home));
   assert.equal(r.status, 0, `doctor --json 有 WARN 无 FAIL → exit 0（got ${r.status}）\n${r.stdout}${r.stderr}`);
   const report = JSON.parse(r.stdout) as { warn: number; fail: number; exitCode: number; checks: { level: string; agent: string; message: string }[] };
   assert.equal(report.fail, 0);
@@ -123,7 +135,7 @@ test('e2e G2: dsh 陈旧信号在 --json 可见且 exitCode=0（CI 可消费）'
 
 test('e2e G2: dsh patch 规则数与仓库单源一致 → PASS dsh + 0 WARN + exit 0（不误报）', () => {
   const home = dshHome(REPO_DSH_RULES);
-  const r = cli(['doctor', '--home', home]);
+  const r = cli(['doctor', '--home', home], '', isolatedEnv(home));
   assert.equal(r.status, 0);
   assert.match(r.stdout, /PASS\s+dsh\s+pre-execute patch/);
   assert.doesNotMatch(r.stdout, /WARN\s+dsh/);
@@ -137,13 +149,13 @@ test('e2e G2: dsh patch 规则数与仓库单源一致 → PASS dsh + 0 WARN + e
 
 test('e2e G2: codex hook 脚本与仓库单源不一致 → WARN codex + exit 0', { skip: process.platform !== 'win32' ? 'ps1 hook self-test 需要 powershell.exe' : false }, () => {
   const home = codexHomeWithStaleHook();
-  const r = cli(['doctor', '--home', home]);
+  const r = cli(['doctor', '--home', home], '', isolatedEnv(home));
   assert.equal(r.status, 0, `新鲜度 WARN 不得触发 exit 1（got ${r.status}）\n${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /WARN\s+codex\s+hook 脚本与仓库单源不一致/);
   assert.doesNotMatch(r.stdout, /^FAIL\s+\S/m);
   assert.match(r.stdout, /Summary: \d+ PASS \/ 1 WARN \/ 0 FAIL \/ \d+ SKIP/);
 
-  const verbose = cli(['doctor', '--verbose', '--home', home]);
+  const verbose = cli(['doctor', '--verbose', '--home', home], '', isolatedEnv(home));
   assert.match(verbose.stdout, /script differs from repo single source \(possibly stale\)/);
   assert.match(verbose.stdout, /self-test PASS/, '实弹 self-test 仍被执行且通过（不因新鲜度削弱）');
 });

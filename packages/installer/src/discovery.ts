@@ -106,8 +106,12 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
   },
   {
     id: 'agy', display: 'Antigravity CLI (agy)', mechanisms: ['hooks'],
-    configRel: [], configAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
-    probePaths: [], probeAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
+    // 2026-09-21：补 `~/.gemini/config/hooks.json` 作**home 相对**探针。
+    // 此前只探 `%LOCALAPPDATA%/agy/bin/agy.exe`（绝对路径、且 Windows 专属）——
+    // 于是 doctor/probe 的 `--home` 覆盖在 agy 上完全失效（测试无法做密闭的假 home），
+    // 且在 macOS/Linux 上永远判「未安装」。hooks.json 在位即说明该 Agent 在本机接线过。
+    configRel: ['.gemini/config/hooks.json'], configAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
+    probePaths: ['.gemini/config/hooks.json'], probeAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
     notes: '~/.gemini/config/hooks.json PreToolUse(run_command) → agy-dangerous-commands.ps1；D3(2026-09-06)',
   },
 ];

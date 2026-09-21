@@ -613,7 +613,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "全局 hooks ~/.gemini/config/hooks.json（PreToolUse matcher run_command → agy-dangerous-commands.ps1 适配器 → dangerous-commands.ps1 规则源 → deny JSON；hook command 必须绝对路径，相对路径子目录启动 127 绕过守卫；stdout 顶层 {decision,reason}，exit 0 恒）。2026-09-06 本机真实会话 D3：agy 1.1.27 会话尝试 git reset --hard HEAD → hook deny（\"tool call denied by pre-tool hook: RiskGuard: ...\"），未提交修改保留。",
+      "notes": "全局 hooks ~/.gemini/config/hooks.json（PreToolUse matcher run_command → agy-dangerous-commands.ps1 适配器 → 规则引擎 → deny JSON；hook command 必须绝对路径，相对路径子目录启动 127 绕过守卫；stdout 顶层 {decision,reason}，exit 0 恒）。2026-09-06 本机真实会话 D3：agy 1.1.27 会话尝试 git reset --hard HEAD → hook deny（\"tool call denied by pre-tool hook: RiskGuard: ...\"），未提交修改保留。⚠️ D3 证据对应 **1.1.27**；本机 2026-09-21 已装 **1.2.7**，真实会话复验尚未做（`componentInventory.version` 保持实测过的 1.1.27，不做未验证的版本声明）。2026-09-21 起该 Agent 已纳入 `doctor`（此前**已安装却在 doctor 输出里一行都没有**）与 ps1 套件 `agy-hook-test.ps1`（6 套 × 双引擎，含协议面与输出编码断言）。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",

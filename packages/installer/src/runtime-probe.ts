@@ -137,6 +137,60 @@ const HARMLESS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { comma
 /** hook 危险 self-test payload（必须被 DENY；仅测 parser/policy，不真正执行任何命令） */
 const DANGEROUS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git reset --hard HEAD' } });
 
+/**
+ * agy 的 payload 形状：protojson camelCase `{ toolCall: { name, args: { CommandLine } } }`。
+ * 与 CC 的 `{ tool_name, tool_input }` 完全不同 —— 用 CC 的 payload 喂 agy 适配器会走到
+ * 「CommandLine 缺失 → allow」，于是 self-test 会**假通过**。
+ */
+const AGY_HARMLESS_PAYLOAD = JSON.stringify({ toolCall: { name: 'run_command', args: { CommandLine: 'echo riskguard-self-test' } } });
+const AGY_DANGEROUS_PAYLOAD = JSON.stringify({ toolCall: { name: 'run_command', args: { CommandLine: 'git reset --hard HEAD' } } });
+
+/** 从 hook command 里认出要用的 PowerShell 引擎；认不出时用 powershell.exe（Windows 必带） */
+function interpreterFromCommand(command: string | undefined): string {
+  if (command && /(^|[\\/\s"])pwsh(\.exe)?(["\s]|$)/i.test(command)) return 'pwsh';
+  return 'powershell.exe';
+}
+
+/**
+ * agy（Antigravity CLI）适配器 self-test。
+ *
+ * 与 claude/codex 有三处**必须区别对待**的地方（照抄会得到假结果）：
+ *   ① 协议是 **stdout 顶层 JSON + 退出码恒 0** —— 不能用退出码判 deny；
+ *   ② payload 形状是 `{toolCall:{args:{CommandLine}}}`，不是 CC 的 `{tool_input:{command}}`；
+ *   ③ 适配器在被引用的规则引擎缺失时**故意 fail-closed**（回一条 deny）。
+ *      所以「看到 deny 就算过」是假通过 —— 必须排除 fail-closed 的措辞，
+ *      否则引擎没装齐的机器会显示"保护已生效"。
+ */
+function runAgyHookSelfTest(script: string, command: string | undefined): { ok: boolean; detail: string } {
+  if (!existsSync(script)) return { ok: false, detail: `agy adapter missing: ${script}` };
+  const interpreter = interpreterFromCommand(command);
+  const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script];
+  const run = (payload: string) => spawnSync(interpreter, args, { input: payload, encoding: 'utf8', timeout: 30000 });
+  try {
+    const safe = run(AGY_HARMLESS_PAYLOAD);
+    if (safe.error) return { ok: false, detail: `agy self-test: interpreter unavailable (${interpreter}: ${(safe.error as Error).message})` };
+    const safeOut = (safe.stdout ?? '').trim();
+    let safeAllowed = false;
+    try { safeAllowed = safe.status === 0 && JSON.parse(safeOut).decision === 'allow'; } catch { safeAllowed = false; }
+    if (!safeAllowed) return { ok: false, detail: `agy self-test: harmless payload not allowed (status=${safe.status} out=${safeOut.slice(0, 120)})` };
+
+    const danger = run(AGY_DANGEROUS_PAYLOAD);
+    const dangerOut = (danger.stdout ?? '').trim();
+    let decision = '';
+    let reason = '';
+    try { const j = JSON.parse(dangerOut); decision = String(j.decision ?? ''); reason = String(j.reason ?? ''); } catch { /* 非法 JSON = 未通过 */ }
+    // agy 要求 exit 0（hook 自身失败被当成 hook 失败）；非 0 也报出来便于定位
+    if (decision !== 'deny') return { ok: false, detail: `agy self-test: dangerous payload not denied (status=${danger.status} out=${dangerOut.slice(0, 120)})` };
+    // fail-closed 假通过：适配器在规则引擎缺失/读取失败时会同样回 deny，措辞可辨
+    if (/fail-closed|rules engine missing/i.test(reason)) {
+      return { ok: false, detail: `agy self-test: deny came from the fail-closed path, not from the rules engine — ${reason.slice(0, 120)}` };
+    }
+    return { ok: true, detail: `self-test PASS (agy via ${interpreter}: harmless=allow, dangerous=deny)` };
+  } catch (e) {
+    return { ok: false, detail: `agy self-test error: ${(e as Error).message}` };
+  }
+}
+
 /** 从 hook command 提取脚本路径（node pre-tool-hook.ts 或 powershell dangerous-commands.ps1）；无则 null */
 function extractHookScript(command: string | undefined): string | null {
   if (!command) return null;
@@ -393,6 +447,79 @@ export async function probeAgentRuntime(
       } else if (dshPatchFreshness === true) {
         ev.push(`dsh rule count in sync with repo single source (repo ${dshRepoRuleCount})`);
       }
+    } else if (agent === 'agy') {
+      // agy：适配器可真实 spawn（stdout JSON、exit 恒 0）→ dynamic。
+      //
+      // 2026-09-21 之前 agy **完全不在 doctor 覆盖内**：`HOOK_SINGLE_SOURCE_MAP` 里有它的条目，
+      // 但 probeAgentRuntime 没有分支、cmdDoctor 的 order 里也没有它 —— 结果是「已安装的 agy
+      // 在 doctor 里一行都不输出」（不是 SKIP：SKIP 只在未安装时打），新鲜度校验永远不会被走到。
+      verificationMode = 'dynamic';
+      const p = join(base, '.gemini', 'config', 'hooks.json');
+      const read = await readConfig(p);
+      if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
+        configValid = false;
+        ev.push(`config invalid: ${p}`);
+      } else if (read.state === 'valid') {
+        // hooks.json 的形状是 `{ "<guard 名>": { "PreToolUse": [ { matcher, hooks: [{ type, command, timeout }] } ] } }`。
+        // **不认 guard 名**：本机实际是 `dangerous-commands-guard`，而仓库生成器 agyHooksConfig() 写的是
+        // `riskguard-dangerous-commands` —— 只认名字的话，改个名就变盲。这里只认「PreToolUse → hooks[].command
+        // 指向 agy 适配器」这件事本身。
+        const allCommands: string[] = [];
+        for (const guard of Object.values(read.data as Record<string, unknown>)) {
+          const arr = (guard as any)?.['PreToolUse'];
+          if (!Array.isArray(arr)) continue;
+          for (const entry of arr as any[]) {
+            for (const hh of (Array.isArray(entry?.hooks) ? entry.hooks : [])) {
+              if (typeof hh?.command === 'string') allCommands.push(hh.command);
+            }
+          }
+        }
+        const agyCmd = allCommands.find((c) => /agy-dangerous-commands\.ps1$/i.test((extractHookScript(c) ?? '').trim()));
+        if (agyCmd) {
+          hookCommand = agyCmd;
+          wired = true;
+          ev.push(`wiring present: ${agyCmd.slice(0, 100)}`);
+          // matcher 面：只有 `run_command`（或 `*`）才会被真正走到 —— `run_command` 之外的值记一条证据
+          const matchers = Object.values(read.data as Record<string, unknown>)
+            .flatMap((g: any) => (Array.isArray(g?.['PreToolUse']) ? g['PreToolUse'] : []))
+            .filter((e: any) => (Array.isArray(e?.hooks) ? e.hooks : []).some((h: any) => typeof h?.command === 'string' && /agy-dangerous-commands\.ps1/i.test(h.command)))
+            .map((e: any) => String(e?.matcher ?? ''));
+          ev.push(`matcher(s) for the agy adapter: ${matchers.join(', ') || '(none)'}`);
+          if (!matchers.some((m) => m === 'run_command' || m === '*')) {
+            ev.push('WARNING: no matcher covers run_command — the adapter would never fire');
+          }
+        } else {
+          ev.push('no agy adapter hook found under PreToolUse in hooks.json');
+        }
+      }
+      const script = extractHookScript(hookCommand);
+      if (script) {
+        hookTargetExists = existsSync(script);
+        ev.push(`hook target ${hookTargetExists ? 'exists' : 'MISSING'}: ${script}`);
+        // 单源新鲜度（HOOK_SINGLE_SOURCE_MAP 已有 agy-dangerous-commands.ps1 条目）
+        if (hookTargetExists) {
+          const check = await checkHookScriptFreshness(resolve(script), root);
+          hookScriptChecks.push(check);
+          ev.push(check.detail);
+          hookScriptFreshness = aggregateHookFreshness(hookScriptChecks);
+          artifactIntegrity = hookScriptFreshness; // 与 claude/codex 同口径外传
+        }
+      }
+      if (wired && script && hookTargetExists && opts.deep === true) {
+        if (!runtimeAvailable) {
+          selfTestPassed = false;
+          selfTestDetail = 'node runtime unavailable — self-test skipped';
+          ev.push(selfTestDetail);
+        } else {
+          const st = runAgyHookSelfTest(script, hookCommand);
+          selfTestPassed = st.ok;
+          selfTestDetail = st.detail;
+          ev.push(st.detail);
+        }
+      } else if (wired && script && !hookTargetExists) {
+        selfTestDetail = 'hook target missing — cannot self-test';
+        ev.push(selfTestDetail);
+      }
     }
   } catch (e) {
     ev.push(`probe error: ${(e as Error).message}`);
@@ -405,6 +532,16 @@ export async function probeAgentRuntime(
   } else if (agent === 'dsh') {
     // dsh 非 manifest 管理：patch 在位且配置有效 → ACTIVE
     state = wired && configValid ? 'ACTIVE' : 'DETECTED';
+  } else if (agent === 'agy') {
+    // agy 同样非 manifest 管理（CLI install 未覆盖它），但它**有可 spawn 的适配器** ——
+    // 所以与 dsh 口径不同：deep 时必须 self-test 真过才算 ACTIVE。
+    if (!configValid) { state = 'BROKEN'; ev.push('hooks.json invalid → BROKEN'); }
+    else if (!wired) { state = 'DETECTED'; ev.push('no agy adapter wiring → DETECTED'); }
+    else if (hookCommand && !hookTargetExists) { state = 'BROKEN'; ev.push('agy adapter missing → BROKEN'); }
+    else if (opts.deep !== true) { state = 'INSTALLED'; ev.push('wiring present; deep self-test needed for ACTIVE'); }
+    else if (!runtimeAvailable) { state = 'BROKEN'; ev.push('node runtime unavailable → BROKEN'); }
+    else if (selfTestPassed) { state = 'ACTIVE'; ev.push('agy adapter self-test PASS → ACTIVE'); }
+    else { state = 'INSTALLED'; ev.push('wiring present but agy self-test not passed → INSTALLED'); }
   } else if (!manifestPresent) {
     state = 'DETECTED';
   } else {

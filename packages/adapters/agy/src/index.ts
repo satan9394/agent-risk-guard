@@ -44,7 +44,15 @@ export function renderAgyDecision(decision: { decision: string; reason?: string 
 }
 
 /** 生成 agy 全局 hooks.json 内容（PreToolUse → run_command → adapter 脚本，绝对路径） */
-export function agyHooksConfig(adapterScript: string, timeoutSec = 10): string {
+export function agyHooksConfig(adapterScript: string, timeoutSec = 15): string {
+  // 2026-09-21：timeout 默认值 10 → **15**，对齐**实测在用**的那份 hooks.json
+  //   （`~/.gemini/config/hooks.json` 的 agy 条目是 `pwsh -NoProfile -File ... ; timeout: 15`）。
+  //   理由：适配器不是终点 —— 它还要再 spawn 一次规则引擎（ps1，内部可能再调 python3/grep），
+  //   10s 在冷启动/杀软扫描时偏紧，而 15 是实际跑通并被 D3 会话验证过的值。生成器不得比实测值更紧。
+  //   仍在的两处「生成值 ≠ 本机值」（有意保留，非缺陷）：
+  //     · 引擎：生成器写 `powershell.exe`（Windows 必有），本机手工用了 `pwsh`（避免 5.1 的编码类问题）；
+  //     · guard 名：生成器写 `riskguard-dangerous-commands`（带命名空间），本机是历史的 `dangerous-commands-guard`。
+  //   两者都**不影响功能**：doctor 的 agy 探测按「PreToolUse → hooks[].command 指向适配器」识别，不认名字。
   // 2026-09-13 修复（实测，同 scripts/riskguard-wiring-check.ps1）：路径无空白/引号时**不加引号**。
   // 带引号写法在本机两种 spawn 机制下会让 hook 静默失效（powershell 报 Illegal characters in path、
   // 退出 4294770688、不产出 deny）；去引号后同一批危险载荷能正常 deny。含空白时才退回加引号。

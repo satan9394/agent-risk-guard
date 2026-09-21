@@ -45,7 +45,12 @@ test('agyHooksConfig：hooks.json 形状 + matcher run_command + 绝对路径', 
   assert.equal(entry.PreToolUse[0].hooks[0].type, 'command');
   assert.ok(entry.PreToolUse[0].hooks[0].command.includes('powershell.exe'));
   assert.ok(entry.PreToolUse[0].hooks[0].command.includes('agy-dangerous-commands.ps1'));
-  assert.equal(entry.PreToolUse[0].hooks[0].timeout, 10);
+  // 2026-09-21：默认 timeout 对齐**实测在用**的 15s（适配器还要再 spawn 一次规则引擎）。
+  //   生成器不得比实测值更紧 —— 本机 hooks.json 用的就是 15。
+  assert.equal(entry.PreToolUse[0].hooks[0].timeout, 15);
+  // 生成值与本机手工值的两处已知差异（有意保留）：引擎 powershell.exe vs pwsh、guard 名不同。
+  // 钉住「生成器仍写 powershell.exe」以免有人顺手改成 pwsh 而让无 pwsh 的机器装不上。
+  assert.match(entry.PreToolUse[0].hooks[0].command, /^powershell\.exe /);
 });
 
 test('官方路径常量', () => {

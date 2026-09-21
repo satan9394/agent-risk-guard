@@ -134,6 +134,9 @@ function doctorFixHint(id: string, kind: 'config' | 'wiring' | 'dsh' | 'runtime'
   // dsh 的接线由 skill / wiring-check 部署，不在本 CLI install 范围（installerKey('dsh') === null）
   if (kind === 'dsh') return '同步 deny-risk-commands patch（assets/dsh/deny-risk-commands.patch.yml → ~/.dsh/profiles/*/cordis.patch.yml，见 skills/agent-risk-guard/SKILL.md）后重跑: node bin/riskguard.mjs doctor';
   if (kind === 'config') return `先修复配置文件 JSON，再重跑: node bin/riskguard.mjs install --agent ${id}`;
+  // agy 与 dsh 一样不在 CLI install 覆盖范围内（由 skill / 文档手工接线）——
+  // 把它指到 `install --agent agy` 是误导：那条命令根本不会去动 ~/.gemini/config/hooks.json。
+  if (id === 'agy') return '重新注册 agy 适配器（见 docs/adding-an-agent.md 与 skills/agent-risk-guard/SKILL.md）：~/.gemini/config/hooks.json 的 PreToolUse.matcher=run_command 需指向 assets/hooks/agy-dangerous-commands.ps1，再重跑: node bin/riskguard.mjs doctor';
   return `重跑: node bin/riskguard.mjs install --agent ${id}`;
 }
 
@@ -667,7 +670,10 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
   const lines = ['RiskGuard Doctor:', ''];
   const checks: DoctorCheckResult[] = [];
   // 统一 probe：status / doctor / install-verification 共用同一 runtime 判定
-  const order = ['claude-code', 'codex', 'opencode', 'dsh'];
+  // 2026-09-21：加入 agy —— 此前它既不在 order 里、也没有 runtime-probe 分支，
+  //   于是「已安装的 agy」在 doctor 输出里**一行都没有**（SKIP 只在未安装时才打），
+  //   新鲜度校验永远走不到。凡是能接线的 Agent 都必须在 order 里出现。
+  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy'];
   const counts = { pass: 0, warn: 0, fail: 0, skip: 0 };
 
   /** 记一条 FAIL：行尾追加可执行修复提示（原 FAIL 行文本保持原样，仅追加） */
@@ -719,13 +725,27 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
         lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
         checks.push({ level: 'WARN', agent: id, message: msg });
       } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} pre-execute patch（deny-risk-commands）`); checks.push({ level: 'PASS', agent: id, message: 'pre-execute patch（deny-risk-commands）' }); }
+    } else if (id === 'agy') {
+      // agy：与 claude/codex 同形（可真实 spawn 的适配器），但没有 manifest 管理
+      if (!probe.configValid) { fail(id, '配置损坏', 'config'); }
+      else if (!probe.wired) { fail(id, 'RiskGuard 适配器未注册（hooks.json 的 PreToolUse）', 'wiring'); }
+      else if (!probe.hookTargetExists) { fail(id, 'hook 目标文件缺失', 'wiring'); }
+      else if (!probe.runtimeAvailable) { fail(id, 'node 运行时不可用', 'runtime'); }
+      else if (!probe.selfTestPassed) { fail(id, 'runtime self-test 未通过', 'wiring'); }
+      else if (probe.hookScriptFreshness === false) {
+        counts.warn++;
+        const msg = 'agy 适配器与仓库单源不一致（可能陈旧，详情见 --verbose）';
+        lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
+        checks.push({ level: 'WARN', agent: id, message: msg });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + adapter self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + adapter self-test' }); }
     }
     lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
   }
-  // 其它 registry agent（未纳入 probe 的）→ SKIP（未装）或按 doctor 旧逻辑
+  // 其它 registry agent（未纳入 probe 的）→ SKIP（未装）。判定与 order 共用同一列表，
+  // 避免「加了 order 忘了这里」导致该 agent 又变成一行都不输出。
   for (const desc of AGENT_REGISTRY) {
-    if (['claude-code', 'codex', 'opencode', 'dsh'].includes(desc.id)) continue;
+    if (order.includes(desc.id)) continue;
     const inst = detectAgent(desc, { home });
     if (!inst.installed) {
       counts.skip++;
