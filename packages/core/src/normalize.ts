@@ -170,10 +170,20 @@ export function classifyShellCommand(cmd: string, depth = 0): ShellClassified | 
   if (/\bgit\s+push\s+.*(--force|-f\b)/.test(c)) {
     return { domain: 'git', action: 'git_reset', confidence: 0.85 };
   }
-  // R7b：短标志允许组合（git 会把 -df 解析成 -d -f，实测等价 -D 并真的删除分支）。
-  // 用 [A-Za-z]*[dD] 覆盖 -df/-Df/-dd/-dfd；长选项单独一条。
-  if (/\bgit\s+branch\s+(?:-[A-Za-z]*[dD]|--delete\b)/.test(c)) {
+  // R7c（2026-09-21）：删除标志**不必紧跟 `branch`**。旧写法把标志锚在 `branch` 之后紧跟的
+  // 位置，于是 `git branch -fd x`（force 在前）与 `git branch --force --delete x`（长选项重排序）
+  // 全端漏拦，而两者都与 `-D` 等价（真的丢弃未合并提交）。新写法：标志可出现在 `branch` 之后的
+  // 任意 token 位置（仍不得跨 `; & |` 换句），短簇判据是「含 d 或 D」而不是首字符。
+  if (
+    /\bgit\s+branch\s[^;&|\n]*--delete/.test(c) ||
+    /\bgit\s+branch\s+(?:[^;&|\n]*\s)?-[A-Za-z]*[dD]/.test(c)
+  ) {
     return { domain: 'git', action: 'git_checkout_discard', confidence: 0.85 };
+  }
+  // R7c：与 DSH patch 对齐 —— DSH 自 R4 起拦 `git update-ref` / `filter-branch`，
+  // 而 core/ps1/sh/opencode 四端全漏；改写分支引用与重写历史都不可逆。
+  if (/\bgit\s+(?:update-ref|filter-branch)\b/.test(c)) {
+    return { domain: 'git', action: 'git_reset', confidence: 0.85 };
   }
   // R2 新向量：git gc --prune / git reflog expire（不可恢复历史清除）
   if (/\bgit\s+gc\b[^|;&\n]*--prune/.test(c) || /\bgit\s+reflog\s+expire\b/.test(c)) {

@@ -37,7 +37,9 @@ const CASES: RuleCase[] = [
   {
     // R7：长选项 --delete 与短选项 -d/-D 完全等价（--delete --force ≡ -D），必须同等拦截
     // R7b：短标志可组合（-df/-Df/-dd ≡ -D，真机实测确实删除分支），正则用 [A-Za-z]*[dD] 覆盖
-    ruleFragment: 'git\\s+branch\\s+(?:-[A-Za-z]*[dD]',
+    // R7c（2026-09-21）：标志**不必紧跟 `branch`**，且短簇判「含 d 或 D」。旧式锚定漏
+    //   `--force --delete`（长选项重排序，五端全漏）与 `-fd`（sh 旧式只看首字符）→ 补两条 positive。
+    ruleFragment: 'git\\s+branch',
     positive: [
       'git branch -D feature/x',
       'git branch -d feature/x',
@@ -46,8 +48,12 @@ const CASES: RuleCase[] = [
       'git branch -dd feature/x',
       'git branch --delete feature/x',
       'git branch --delete --force feature/x',
+      'git branch --force --delete feature/x',
+      'git branch -fd feature/x',
+      'git branch -fD feature/x',
+      'git branch --force -d feature/x',
     ],
-    negative: ['git branch -a', 'git branch -m old new', 'git branch', 'git branch --list', 'git branch --all', 'git branch -v'],
+    negative: ['git branch -a', 'git branch -m old new', 'git branch', 'git branch --list', 'git branch --all', 'git branch -v', 'git branch --contains feat-d'],
   },
   {
     ruleFragment: 'git\\s+checkout\\s+--',

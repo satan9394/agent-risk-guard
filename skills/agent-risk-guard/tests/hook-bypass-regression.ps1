@@ -1,4 +1,6 @@
-hook-bypass-regression.ps1 — Round 8 绕过回归（与 GAN 审查互补，锚定修复后行为）
+# hook-bypass-regression.ps1 — Round 8 绕过回归（与 GAN 审查互补，锚定修复后行为）
+# 2026-09-21 修：首行此前**漏了 `#`** —— PowerShell 会把它当命令执行，输出一条
+# CommandNotFound 噪音（测试仍跑完，但 CI 日志里多一行伪错误）。
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\scripts\dangerous-commands.ps1'
 $stdinTmp = Join-Path $env:TEMP 'rg-probe-in.json'

@@ -15,6 +15,29 @@
 
 ### Fixed
 
+- **`git branch` 删除分支的三处漏拦（R7c）**：R7/R7b 的规则写成
+  `branch\s+(?:-[A-Za-z]*[dD]|--delete\b)`，把删除标志**锚在 `branch` 之后紧跟的位置**，
+  并且 sh 侧的旧式 `-[dD]` 只看**首字符**。逐端实测（core / opencode / ps1 / sh + DSH patch）发现：
+  - `git branch -fd x`（force 在前）→ **sh 放行**（其余四端拦）；
+  - `git branch --force --delete x`（长选项**重排序**）→ **五端全部放行**；
+  - `git update-ref -d refs/heads/x` → **四端放行**（只有 DSH 自 R4 起拦）。
+
+  前两条都与 `-D` 等价（真的丢弃未合并提交），第三条与 `git branch -d` 等价 ——
+  而 `docs/TODO.md`/会话记录显示，此前正是用 `git update-ref -d` 绕开护栏清理分支的，
+  说明这个洞被真实使用过。修法：删除标志可落在 `branch` 之后的**任意 token 位置**
+  （仍不得跨 `; & |` 换句），短簇判据改为「含 d 或 D」而非首字符；并把
+  `update-ref` / `filter-branch` 补到 core / opencode / ps1 / sh 四端，与 DSH patch 对齐。
+  **有意维持不变**：`-d` / `--delete`（无 force）仍然拦 —— 产品立场是「分支引用删除一律拦」，
+  与 DSH 拦 `git update-ref` 自洽；本次只更正了文案里 “force-deletes a branch” 的事实错误
+  （`-d` 遇未合并分支会拒绝，不是 force delete），并在 `docs/TODO.md` 登记为已知过拦。
+  落盘面：core `normalize.ts`、opencode 单源 + skills 副本、ps1 单源 + 6 副本、sh + 副本、
+  `assets/dsh/deny-risk-commands.patch.yml` + `defaultDenyRules()`、DSH 生产 profile ×2。
+  `decision-parity` 新增 **N 段 21 条**（N1–N21）。验证：ps1 五套 × PS 5.1/pwsh 7 exit 0、
+  sh 四套 exit 0、`node --test` 全绿、`riskguard-wiring-check.ps1` exit 0。
+  **变异验证**：只回退 ps1 → 恰好 N3/N9/N14 红；只回退 sh → 恰好 N1/N2/N3/N9/N14 红；
+  两端**一起**移除 update-ref 规则 → 恰好 N10/N11/N12 红（证「两端同判但违应然」这一重判据有效）。
+- **`skills/agent-risk-guard/tests/hook-bypass-regression.ps1` 首行漏 `#`**：PowerShell 会把该行当命令
+  执行，每次运行都吐一条 `CommandNotFound` 噪音（测试本身仍跑完）。已补 `#` 并加一行说明。
 - **`scripts/riskguard-wiring-check.ps1` 缺 UTF-8 BOM**：Windows PowerShell 5.1 会把无 BOM 的文件
   按 ANSI/GBK 解析，脚本里的中文全角括号把字符串截断 → **解析报错、一条都修不了**。
   该脚本是计划任务 `RiskGuard_WiringCheck` 的修复入口（用于兜 cc-switch 抹掉
