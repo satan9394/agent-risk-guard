@@ -61,11 +61,23 @@
   **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 93/93 测试台
   收进 `skills/agent-risk-guard/tests/` 并进 CI；③ `compatibility.json` 增补对应能力面
   （plan 模式下 `filesystem.write` = deny）；④ 三条未实测项逐一实测或登记。建议独立开一轮。
-- [ ] **真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）**：`compatibility.json` 的
-  agy `componentInventory.version` 仍写 1.1.27（只声明实测过的版本），notes 已注明本机已升 1.2.7。
-  复验内容：`run_command` 触发 deny（`git reset --hard`、永久删除类）、中文文案可读不乱码、
-  allow 路径无误拦，以及**两个 hook 共存**（`dangerous-commands-guard` 与 `plan-readonly-guard`
-  同为 PreToolUse）时谁说了算。⚠️ 需人工在真实 agy TUI 里做。
+- [x] ~~真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）~~ —— **已完成，2026-09-21**。
+  agy **1.2.7** 真实会话里 `run_command` 执行 `git reset --hard HEAD` 被 hook 拒绝
+  （`tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：…`），同会话 `Read` 与
+  `git status` 放行、工作区未提交改动存活；钩子日志有对应的 `decision=deny` 行。
+  `compatibility.json` 的 agy `componentInventory.version` 已由 1.1.27 升至 **1.2.7**。
+  ⚠️ 方法论教训（已写进 notes）：用「把文件永久删掉」这类提示词会被 agy 在**规则层直接拒绝**
+  （一次工具调用都不发，钩子日志零记录）——那是 `soft` 遵循而非 `hard` 拦截，**不构成 D3 证据**；
+  必须用模型不认为该拒绝的命令（如 git reset）才能触发钩子。
+- [ ] **两个 PreToolUse hook 共存仍待实测**：`~/.gemini/config/hooks.json` 里有两条 ——
+  `dangerous-commands-guard`（matcher `run_command`）与 `plan-readonly-guard`（matcher `*`）。
+  需在 agy 里按 Shift+Tab 切 plan 模式，让它写文件，确认 plan 钩子生效；再切回普通模式执行同一条
+  命令，确认 **plan 钩子在非 plan 模式不误拦**。⚠️ 需人工在 TUI 里做（与上一项同一批，但没做）。
+- [ ] **D4（Repeated / production verified）的门槛全项目未定义**：当前 10 个 Agent **没有任何一个
+  在 D4**（claude-code / codex / opencode / dsh / agy 都是 D3）。agy 现在已具备「两个版本 × 两次
+  真实会话」的证据形态，但**不单方面给单个 Agent 升 D4** —— 需先定义门槛（例如「≥2 个真实会话
+  × ≥2 个版本」或「生产持续使用 N 天」），再统一评估各 Agent。这是 `docs/project-final-status.md`
+  里 M7 一类的政策项，不是某个 Agent 的局部结论。
 - [ ] **生成值 vs 本机手工值的两处差异（有意保留）**：引擎 `powershell.exe`（生成器，兼容无 pwsh
   的机器）vs `pwsh`（本机，规避 5.1 编码类问题）；guard 名 `riskguard-dangerous-commands` vs
   `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；

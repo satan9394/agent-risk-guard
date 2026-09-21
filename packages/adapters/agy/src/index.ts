@@ -1,7 +1,9 @@
 /**
  * @riskguard/adapter-agy — Antigravity CLI (agy) PreToolUse Hook Adapter（v0.1，D3 Windows shell.execute 实测）
  *
- * 官方机制（antigravity.google/docs/hooks + CLI 1.1.27 实测，2026-09-06 核查）：
+ * 官方机制（antigravity.google/docs/hooks + CLI 实测：1.1.27 于 2026-09-06 首次核查、
+ * **1.2.7 于 2026-09-21 复验——协议无变化**：payload 仍是 `{toolCall:{name,args:{CommandLine}}}`、
+ * 仍是 stdout 顶层 JSON、退出码仍恒 0）：
  *   - 全局 hooks 配置：~/.gemini/config/hooks.json（workspace: <root>/.agents/hooks.json）
  *   - 事件：PreToolUse（matcher = 工具名正则，如 run_command）/ PostToolUse / PreInvocation / PostInvocation / Stop
  *   - 输入（stdin，protojson camelCase）：{ "toolCall": { "name": "run_command", "args": { "CommandLine": "...", "Cwd": "..." } } }
