@@ -1,7 +1,13 @@
-// Agent Risk Guard plugin for OpenCode (v0.1.0 namespace: agent-risk-guard)
+// Agent Risk Guard plugin for OpenCode (v0.2.0 namespace: agent-risk-guard)
 // Deterministic pre-execution safety - no LLM, no network, no subprocess
-import type { Plugin } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
+//
+// Dual entrypoint, and no top-level plugin-package import:
+//   V2 (OpenCode >= 2.0) reads `id` + `setup(ctx)` and registers hooks through
+//     the plugin context (shell / tool / permission hooks + a JSON-Schema tool).
+//   V1 (OpenCode 1.18.x) calls `server(ctx)`; the legacy `tool()` helper is
+//     imported lazily inside it, so the V2 loader never resolves that package.
+// Keeping this file free of top-level plugin imports also lets the adapter
+// tests run the pure detection core under Node's native type-stripping.
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync } from "node:child_process"
@@ -483,106 +489,247 @@ function analyzeCommand(command: string): AR {
   return { blocked: false }
 }
 // --- Trash tool (Windows Recycle Bin) ---
-function makeTrashTool($: any) {
-  return tool({
-    description: "Move a file or directory to the system recycle bin. Use this instead of rm/del/Remove-Item for file deletion.",
-    args: { path: tool.schema.string() },
-    async execute(args: { path: string }, context: any) {
-      const targetPath = path.isAbsolute(args.path)
-        ? args.path
-        : path.resolve(context.directory || context.worktree, args.path)
-      if (!fs.existsSync(targetPath))
-        return { output: `Error: Path not found: ${targetPath}` }
-      const isDir = fs.statSync(targetPath).isDirectory()
-      const esc = targetPath.replace(/'/g, "''")
-      const psCmd = isDir
-        ? `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('${esc}', 'OnlyErrorDialogs', 'SendToRecycleBin')`
-        : `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${esc}', 'OnlyErrorDialogs', 'SendToRecycleBin')`
-      try {
-        execSync(`pwsh -NoProfile -NonInteractive -Command "${psCmd}"`, { timeout: 30000, windowsHide: true })
-        return { output: `Moved to recycle bin: ${targetPath}` }
-      } catch (e: any) {
-        return { output: `Error: Could not move to recycle bin: ${e.message || e}. Do NOT fall back to permanent deletion.` }
-      }
-    },
-  })
+type V2ToolResult = { content: string }
+type V2ToolContext = {
+  sessionID?: string
+  messageID?: string
+  agent?: string
+  id?: string
+  signal?: AbortSignal
+  directory?: string
 }
 
-// --- Plugin export ---
-const Guard: Plugin = async (ctx) => {
+function resolveTarget(target: string, baseDir: string): string {
+  const expanded = expandTilde(target)
+  return path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded)
+}
+
+function moveToRecycleBin(targetPath: string): { ok: boolean; message: string } {
+  if (!fs.existsSync(targetPath)) return { ok: false, message: `Error: Path not found: ${targetPath}` }
+  const fn = fs.statSync(targetPath).isDirectory() ? "DeleteDirectory" : "DeleteFile"
+  const esc = targetPath.replace(/'/g, "''")
+  const psCmd = `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::${fn}('${esc}', 'OnlyErrorDialogs', 'SendToRecycleBin')`
+  try {
+    execSync(`pwsh -NoProfile -NonInteractive -Command "${psCmd}"`, { timeout: 30000, windowsHide: true })
+    return { ok: true, message: `Moved to recycle bin: ${targetPath}` }
+  } catch (e: any) {
+    return { ok: false, message: `Error: Could not move to recycle bin: ${e?.message || e}. Do NOT fall back to permanent deletion.` }
+  }
+}
+
+const TRASH_DESCRIPTION = "Move a file or directory to the system recycle bin. Use this instead of rm/del/Remove-Item for file deletion."
+
+/** V2 tool definition: plain JSON Schema in, structured `content` out. */
+function makeTrashToolV2(baseDir: string) {
   return {
-    "tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }, output: { args: any }) => {
-      try {
-        // bash
-        if (input.tool === "bash") {
-          const cmd = output.args?.command
-          if (!cmd || typeof cmd !== "string") return
-          const r = analyzeCommand(cmd)
-          if (r.blocked) {
-            logBlock({ tool: "bash", policy: r.policy, command: r.command, reason: r.reason, sid: input.sessionID, wd: ctx.directory })
-            throw new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${r.policy}\nReason: ${r.reason}`)
-          }
-        }
-        // edit - protect guard plugin
-        if (input.tool === "edit") {
-          const fp = output.args?.filePath
-          if (fp && typeof fp === "string") {
-            const pp = checkProtected(fp)
-            if (pp.hit && pp.label === "Guard plugin file") {
-              logBlock({ tool: "edit", policy: P.PROTECTED_GUARD_MUTATION, command: `edit ${fp}`, reason: "Cannot modify the safety guard plugin.", sid: input.sessionID, wd: ctx.directory })
-              throw new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${P.PROTECTED_GUARD_MUTATION}\nReason: Cannot modify the safety guard plugin.`)
-            }
-          }
-        }
-        // write - protect guard plugin
-        if (input.tool === "write") {
-          const fp = output.args?.filePath
-          if (fp && typeof fp === "string") {
-            const pp = checkProtected(fp)
-            if (pp.hit && pp.label === "Guard plugin file") {
-              logBlock({ tool: "write", policy: P.PROTECTED_GUARD_MUTATION, command: `write ${fp}`, reason: "Cannot overwrite the safety guard plugin.", sid: input.sessionID, wd: ctx.directory })
-              throw new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${P.PROTECTED_GUARD_MUTATION}\nReason: Cannot overwrite the safety guard plugin.`)
-            }
-          }
-        }
-        // apply_patch - protect guard plugin
-        if (input.tool === "apply_patch") {
-          const pt = output.args?.patchText
-          if (pt && typeof pt === "string") {
-            const markers = [...pt.matchAll(/\*\*\*\s*(?:Delete|Update|Add|Move to)\s*File:\s*(.+)/g)]
-            for (const m of markers) {
-              const rel = m[1].trim()
-              const abs = path.resolve(ctx.worktree, rel)
-              const pp = checkProtected(abs)
-              if (pp.hit && pp.label === "Guard plugin file") {
-                logBlock({ tool: "apply_patch", policy: P.PROTECTED_GUARD_MUTATION, command: `patch -> ${rel}`, reason: "Cannot modify/delete the safety guard plugin via patch.", sid: input.sessionID, wd: ctx.directory })
-                throw new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${P.PROTECTED_GUARD_MUTATION}\nReason: Cannot modify/delete the safety guard plugin via patch.`)
-              }
-            }
-          }
-        }
-      } catch (e: any) {
-        // Re-throw known block errors
-        if (e?.message?.startsWith("BLOCKED_BY_GLOBAL_SAFETY_GUARD")) throw e
-        // Fail-closed: crash + dangerous signal = block
-        if (input.tool === "bash") {
-          const cmd = String(output.args?.command || "")
-          if (hasDangerousSignal(cmd)) {
-            logBlock({ tool: "bash", policy: P.UNPARSEABLE_DESTRUCTIVE, command: cmd, reason: "Detection error with dangerous signal - fail-closed block.", sid: input.sessionID, wd: ctx.directory })
-            throw new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${P.UNPARSEABLE_DESTRUCTIVE}\nReason: Detection failure with dangerous signal.`)
-          }
-        }
-        // Unknown command without dangerous signal: allow
-      }
+    name: "trash",
+    description: TRASH_DESCRIPTION,
+    input: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File or directory to move to the system recycle bin." },
+      },
+      required: ["path"],
+      additionalProperties: false,
     },
-    tool: {
-      trash: makeTrashTool((ctx as any).$),
+    async execute(args: Record<string, unknown>, context?: V2ToolContext): Promise<V2ToolResult> {
+      const raw = typeof args?.path === "string" ? args.path : ""
+      if (!raw) return { content: "Error: path is required." }
+      return { content: moveToRecycleBin(resolveTarget(raw, context?.directory || baseDir)).message }
     },
   }
 }
 
-// V1 plugin shape: id + server
-export default { id: "agent-risk-guard", server: Guard }
+/** V1 tool definition: legacy `tool()` helper and `{ output }` result. */
+function makeTrashToolV1(tool: any, ctx: any) {
+  return tool({
+    description: TRASH_DESCRIPTION,
+    args: { path: tool.schema.string() },
+    async execute(args: { path: string }) {
+      const baseDir = ctx?.directory || ctx?.worktree || process.cwd()
+      return { output: moveToRecycleBin(resolveTarget(args.path, baseDir)).message }
+    },
+  })
+}
 
-// Export internals for testing (not loaded by V1 plugin loader)
+// --- Blocking helpers ---
+function blockError(policy: PolicyId, reason: string): Error {
+  return new Error(`BLOCKED_BY_GLOBAL_SAFETY_GUARD\nPolicy: ${policy}\nReason: ${reason}`)
+}
+function isBlockError(e: any): boolean {
+  return typeof e?.message === "string" && e.message.startsWith("BLOCKED_BY_GLOBAL_SAFETY_GUARD")
+}
+/** Targets named by OpenCode's `patch` tool (OpenAI apply_patch format). */
+function patchTargets(patchText: string): string[] {
+  const out: string[] = []
+  for (const m of patchText.matchAll(/\*\*\*\s*(?:Delete|Update|Add|Move to)\s*File:\s*(.+)/g)) {
+    const rel = typeof m[1] === "string" ? m[1].trim() : ""
+    if (rel) out.push(rel)
+  }
+  return out
+}
+/**
+ * Decide the outcome for one shell command. `null` means it may run.
+ * A crash while analyzing a command that carries a dangerous signal is
+ * fail-closed: the command is blocked rather than silently allowed.
+ */
+function shellDecision(cmd: string): { policy: PolicyId; reason: string } | null {
+  try {
+    const r = analyzeCommand(cmd)
+    return r.blocked ? { policy: r.policy, reason: r.reason } : null
+  } catch {
+    return hasDangerousSignal(cmd)
+      ? { policy: P.UNPARSEABLE_DESTRUCTIVE, reason: "Detection failure with dangerous signal." }
+      : null
+  }
+}
+/** Guard-plugin-file mutation check shared by the V2 tool hook. */
+function guardFileHit(candidate: string, baseDir: string): { hit: boolean; label: string } {
+  return checkProtected(resolveTarget(candidate, baseDir))
+}
+
+// --- Plugin export (V2: default definition with id + setup) ---
+const plugin = {
+  id: "agent-risk-guard",
+  async setup(ctx: any) {
+    const baseDir: string = ctx?.location?.directory || process.cwd()
+
+    // 1) Every shell command (the `shell` tool, `!` prompts, and any other shell
+    //    creation) is analyzed before it runs. Throwing aborts the shell.
+    await ctx.shell.hook("create.before", (event: any) => {
+      const cmd = typeof event?.command === "string" ? event.command : ""
+      if (!cmd) return
+      const d = shellDecision(cmd)
+      if (d) {
+        logBlock({ tool: "shell", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: event?.cwd || baseDir })
+        throw blockError(d.policy, d.reason)
+      }
+    })
+
+    // 2) Tool-level gate: the `shell` tool as a second layer, plus protection of
+    //    the guard plugin file itself against edit / write / patch.
+    await ctx.tool.hook("execute.before", (event: any) => {
+      const toolName = String(event?.tool ?? "")
+      const input = (event?.input ?? {}) as Record<string, unknown>
+      try {
+        if (toolName === "shell") {
+          const cmd = typeof input.command === "string" ? input.command : ""
+          if (cmd) {
+            const d = shellDecision(cmd)
+            if (d) {
+              logBlock({ tool: "shell", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: baseDir })
+              throw blockError(d.policy, d.reason)
+            }
+          }
+        }
+
+        if (toolName === "edit" || toolName === "write") {
+          const fp = typeof input.path === "string" ? input.path : typeof input.filePath === "string" ? input.filePath : ""
+          if (fp) {
+            const pp = guardFileHit(fp, baseDir)
+            if (pp.hit && pp.label === "Guard plugin file") {
+              logBlock({ tool: toolName, policy: P.PROTECTED_GUARD_MUTATION, command: `${toolName} ${fp}`, reason: "Cannot modify the safety guard plugin.", sid: event?.sessionID, wd: baseDir })
+              throw blockError(P.PROTECTED_GUARD_MUTATION, "Cannot modify the safety guard plugin.")
+            }
+          }
+        }
+
+        if (toolName === "patch" || toolName === "apply_patch") {
+          const pt = typeof input.patchText === "string" ? input.patchText : ""
+          for (const rel of patchTargets(pt)) {
+            const pp = guardFileHit(rel, baseDir)
+            if (pp.hit && pp.label === "Guard plugin file") {
+              logBlock({ tool: toolName, policy: P.PROTECTED_GUARD_MUTATION, command: `patch -> ${rel}`, reason: "Cannot modify/delete the safety guard plugin via patch.", sid: event?.sessionID, wd: baseDir })
+              throw blockError(P.PROTECTED_GUARD_MUTATION, "Cannot modify/delete the safety guard plugin via patch.")
+            }
+          }
+        }
+      } catch (e: any) {
+        if (isBlockError(e)) throw e
+        // Fail-closed: a detection crash on a shell command with a dangerous signal.
+        if (toolName === "shell") {
+          const cmd = typeof input.command === "string" ? input.command : ""
+          if (hasDangerousSignal(cmd)) {
+            logBlock({ tool: "shell", policy: P.UNPARSEABLE_DESTRUCTIVE, command: cmd, reason: "Detection error with dangerous signal - fail-closed block.", sid: event?.sessionID, wd: baseDir })
+            throw blockError(P.UNPARSEABLE_DESTRUCTIVE, "Detection failure with dangerous signal.")
+          }
+        }
+      }
+    })
+
+    // 3) Third layer: deny matching shell permissions outright. Stays fail-open
+    //    on evaluation errors; the shell / tool hooks remain the hard gate.
+    if (ctx.permission && typeof ctx.permission.hook === "function") {
+      await ctx.permission.hook("evaluate", (event: any) => {
+        const action = String(event?.action ?? "").toLowerCase()
+        if (!action.includes("bash") && !action.includes("shell") && !action.includes("exec")) return
+        const resources: unknown[] = Array.isArray(event?.resources) ? event.resources : []
+        for (const res of resources) {
+          if (typeof res !== "string" || !res) continue
+          const d = shellDecision(res)
+          if (d) {
+            event.effect = "deny"
+            event.message = `BLOCKED_BY_GLOBAL_SAFETY_GUARD Policy: ${d.policy} Reason: ${d.reason}`
+            logBlock({ tool: "permission", policy: d.policy, command: res, reason: d.reason, sid: event?.sessionID, wd: baseDir })
+            return
+          }
+        }
+      })
+    }
+
+    // 4) The recycle-bin replacement for permanent deletion.
+    await ctx.tool.transform((editor: any) => {
+      editor.add(makeTrashToolV2(baseDir))
+    })
+  },
+}
+
+// --- V1 plugin (same file, legacy `server()` entrypoint) ---
+async function v1Server(ctx: any) {
+  // Imported lazily so the V2 loader never resolves the legacy plugin package.
+  const { tool } = await import("@opencode-ai/plugin")
+  const directory: string = ctx?.directory || ctx?.worktree || process.cwd()
+  return {
+    "tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }, output: { args: any }) => {
+      const toolName = input?.tool
+      if (toolName === "bash" || toolName === "shell") {
+        const cmd = output?.args?.command
+        if (!cmd || typeof cmd !== "string") return
+        const d = shellDecision(cmd)
+        if (d) {
+          logBlock({ tool: toolName, policy: d.policy, command: cmd, reason: d.reason, sid: input?.sessionID, wd: directory })
+          throw blockError(d.policy, d.reason)
+        }
+      }
+      if (toolName === "edit" || toolName === "write") {
+        const fp = output?.args?.filePath ?? output?.args?.path
+        if (fp && typeof fp === "string") {
+          const pp = checkProtected(fp)
+          if (pp.hit && pp.label === "Guard plugin file") {
+            logBlock({ tool: toolName, policy: P.PROTECTED_GUARD_MUTATION, command: `${toolName} ${fp}`, reason: "Cannot modify the safety guard plugin.", sid: input?.sessionID, wd: directory })
+            throw blockError(P.PROTECTED_GUARD_MUTATION, "Cannot modify the safety guard plugin.")
+          }
+        }
+      }
+      if (toolName === "apply_patch" || toolName === "patch") {
+        const pt = output?.args?.patchText
+        if (pt && typeof pt === "string") {
+          for (const rel of patchTargets(pt)) {
+            const pp = checkProtected(path.resolve(directory, rel))
+            if (pp.hit && pp.label === "Guard plugin file") {
+              logBlock({ tool: toolName, policy: P.PROTECTED_GUARD_MUTATION, command: `patch -> ${rel}`, reason: "Cannot modify/delete the safety guard plugin via patch.", sid: input?.sessionID, wd: directory })
+              throw blockError(P.PROTECTED_GUARD_MUTATION, "Cannot modify/delete the safety guard plugin via patch.")
+            }
+          }
+        }
+      }
+    },
+    tool: { trash: makeTrashToolV1(tool, ctx) },
+  }
+}
+
+// V1 + V2 in one default export: V2 reads `id`/`setup`, V1 calls `server()`.
+export default { ...plugin, server: v1Server }
+
+// Export internals for testing (the pure detection core; not part of the plugin API).
 export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, P }

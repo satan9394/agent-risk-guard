@@ -243,7 +243,7 @@ async function resolveActiveRoot(home: string): Promise<{ root: string; source: 
 export function mergeForAgent(id: string, repoRoot: string, existing: Record<string, unknown> | null | undefined, home: string): { config: Record<string, unknown>; changed: boolean } {
   if (id === 'claude-code') return mergeClaudeSettings(existing, installers['claude-code'].buildInjection(repoRoot));
   if (id === 'codex') return mergeCodexHooks(existing, installers.codex.buildInjection(repoRoot));
-  if (id === 'opencode') return mergeOpencodePlugins(existing, installers.opencode.buildInjection(repoRoot));
+  if (id === 'opencode') return mergeOpencodePlugins(existing, installers.opencode.buildInjection(repoRoot), { home });
   return { config: (existing ?? {}), changed: false };
 }
 
@@ -490,7 +490,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   const merged = (() => {
     if (inst.id === 'claude-code') return mergeClaudeSettings(existingRaw, inst.buildInjection(activeRoot));
     if (inst.id === 'codex') return mergeCodexHooks(existingRaw, inst.buildInjection(activeRoot));
-    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(activeRoot));
+    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(activeRoot), { home });
     return { config: (existingRaw ?? {}), changed: false };
   })();
 
@@ -906,13 +906,21 @@ function removeInjection(id: string, cfg: Record<string, unknown>): { config: Re
     }
   }
 
-  // opencode plugin 数组移除（新名 agent-risk-guard 或旧名 destructive-operation-guard 都算我方）
+  // opencode plugin 数组移除（V1 `plugin` 与 V2 `plugins` 都清；新名 agent-risk-guard 或旧名 destructive-operation-guard 都算我方）
   if (id === 'opencode') {
-    const plugins = Array.isArray(config['plugin']) ? config['plugin'] : [];
-    const keptPlugins = plugins.filter((p) => !isRiskGuardPluginRef(p));
-    if (keptPlugins.length !== plugins.length) {
+    for (const key of ['plugin', 'plugins'] as const) {
+      const list = config[key];
+      if (!Array.isArray(list)) continue;
+      const kept = list.filter((p) => !isRiskGuardPluginRef(p));
+      if (kept.length === list.length) continue;
       changed = true;
-      config = { ...config, plugin: keptPlugins };
+      if (kept.length) {
+        config = { ...config, [key]: kept };
+      } else {
+        const next = { ...config };
+        delete next[key];
+        config = next;
+      }
     }
   }
 
