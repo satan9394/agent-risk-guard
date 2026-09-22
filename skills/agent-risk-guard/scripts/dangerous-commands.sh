@@ -102,6 +102,9 @@ REDACT_SENTINEL='@@RG_REDACTED@@'
 
 # 对 stdin 文本做脱敏并输出（顺序与 core SECRET_RULES 完全一致：先专用后通用）
 redact_text() {
+    # 2026-09-21：`cli-mysql-password` 改为命令词锚定（对齐 core/ps1）—— 原 `(^|[^-A-Za-z0-9_])-p…`
+    #   把任何 `-p<非数字>` 当密码，实测误伤 `find -printf` / `-path` / `-print`。现与下一条 numeric 同形。
+    # ⚠️ 注释必须放在 sed 命令**之外**：`\` 续行把 -e 列表连成一条命令，插在续行中间的 `#` 会被 sed 当成参数。
     sed -E \
         -e "s#(AKIA|ASIA)[0-9A-Z]{16}#${REDACT_SENTINEL}#g" \
         -e "s#gh[pousr]_[A-Za-z0-9]{20,255}#${REDACT_SENTINEL}#g" \
@@ -113,7 +116,7 @@ redact_text() {
         -e "s#${REDACT_KEYS_AWS}([[:space:]]*[:=][[:space:]]*|[[:space:]]+)${REDACT_VALUE}#${REDACT_SENTINEL}#g" \
         -e "s#\"?(${REDACT_KEYS_GENERIC})\"?[[:space:]]*[:=][[:space:]]*${REDACT_VALUE}#${REDACT_SENTINEL}#g" \
         -e "s#${REDACT_CI_AUTHORIZATION}[[:space:]]*[:=][[:space:]]*(${REDACT_CI_BEARER}|${REDACT_CI_BASIC})[[:space:]]+[A-Za-z0-9._-]+#${REDACT_SENTINEL}#g" \
-        -e "s#(^|[^-A-Za-z0-9_])-p[^[:space:]]*[^0-9[:space:]][^[:space:]]*#\1${REDACT_SENTINEL}#g" \
+        -e "s#${REDACT_ANCHOR}(${REDACT_CI_MYSQL}|${REDACT_CI_MARIADB})([^;&|]*)([[:space:]])-p[^[:space:]]*[^0-9[:space:]][^[:space:]]*#\1\2\3\4${REDACT_SENTINEL}#g" \
         -e "s#${REDACT_ANCHOR}(${REDACT_CI_MYSQL}|${REDACT_CI_MARIADB})([^;&|]*)([[:space:]])-p[0-9]+#\1\2\3\4${REDACT_SENTINEL}#g" \
         -e "s#(^|[^-A-Za-z0-9_])-u[[:space:]]+[^[:space:]:]+:[^[:space:]]+#\1${REDACT_SENTINEL}#g" \
         -e "s#${REDACT_ANCHOR}(curl|wget)([^;&|]*)([[:space:]]--user[[:space:]]+)[^[:space:]:]+:[^[:space:]]*[^0-9[:space:]:][^[:space:]]*#\1\2\3\4${REDACT_SENTINEL}#g" \

@@ -71,6 +71,22 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 当前命令文本（脚本作用域），供 Deny-Command 在 fail-closed 早期路径也能安全引用
 $script:curCmd = ''
 
+# ---- RG_ALLOW_DELETE（2026-09-21）：把「删除文件/目录」让给下游 safe-delete ----
+# 背景：WorkBuddy（CodeBuddy Code 桌面版）自带 safe-delete shim —— bash safe-bin/{rm,rmdir,unlink}、
+#   node-safe-delete-shim.cjs、sitecustomize.py、覆写 PowerShell Remove-Item —— 全部**强制转回收站**
+#   且 fail-closed（trash 失败即拒绝，绝不降级真删），覆盖面含脚本内的 API 调用。
+#   本 hook 若再拦删除，会造成死锁：命令执行不到 ⇒ shim 没机会转 trash；而 platform 又禁
+#   Add-Type / New-Object -ComObject / Reflection.Assembly::Load（硬编码正则，无配置开关），
+#   使 deny 文案指向的「Microsoft.VisualBasic 回收站命令」不可达。
+# 语义：置 RG_ALLOW_DELETE=1 时，reason 含「永久删除」的拦截（= 删除文件/目录类）改为放行，
+#   由下游 safe-delete 负责进回收站；其余规则一律照旧。
+# **不豁免**（reason 不含「永久删除」，故自动保留拦截）：
+#   · rule 1/2 根目录 / 关键系统目录（文案是「递归强制删除根目录」「删除关键系统目录」）
+#   · shred（文案「永久销毁」）、wmic shadowcopy、Clear-RecycleBin/cleanmgr/$Recycle.Bin（删除链终点）
+#   · Clear-Content（**清空文件内容**，不是删除文件，shim 不管）—— 由下面的负向条件显式排除
+# 默认（未设该变量）行为完全不变，CC / Codex / agy / gemini 等无 shim 的端不受影响。
+$script:AllowDelete = ($env:RG_ALLOW_DELETE -eq '1')
+
 # ---- 辅助函数：返回拒绝（全部硬拦截，不询问）----
 # 日志写到 %TEMP%（不污染 skill 发布目录；生产调试时查看 %TEMP%\riskguard-hook-calls.log）
 $hookLog = Join-Path $env:TEMP 'riskguard-hook-calls.log'
@@ -109,7 +125,10 @@ $script:RedactRules = @(
     @{ id = 'aws-space-kv';        re = ('(?i)(?:aws_)?(?:secret_access_key|access_key_id|session_token)(?:\s*[:=]\s*|\s+)' + $script:RedactValue); repl = $null },
     @{ id = 'generic-kv';          re = ('(?i)"?(?:api[_-]?key|access[_-]?token|token|secret[_-]?key|client[_-]?secret|credential|secret|passwd)"?\s*[:=]\s*' + $script:RedactValue); repl = $null },
     @{ id = 'authorization';       re = '(?i)authorization\s*[:=]\s*(?:bearer|basic)\s+[A-Za-z0-9._-]+'; repl = $null },
-    @{ id = 'cli-mysql-password';  re = '(^|[^-A-Za-z0-9_])-p[^\s]*[^\s0-9][^\s]*';                       repl = '$1@@RG_REDACTED@@' },
+    # 2026-09-21 命令词锚定：原 `(^|[^-A-Za-z0-9_])-p…` 把任何 `-p<非数字>` 当密码，实测误伤
+    # `find -printf` / `-path` / `-print`（日志里被写成 [REDACTED]，可读性受损）。改为与
+    # cli-mysql-password-numeric 同形（mysql|mariadb 锚定）。三端同步，由 redact-parity 守住。
+    @{ id = 'cli-mysql-password';  re = '(?im)(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[^\s]*[^\s0-9][^\s]*'; repl = '$1$2$3$4@@RG_REDACTED@@' },
     # G15b-FIX2 R2：改为**命令词锚定**（旧写法只要求「同段出现过 mysql」，把 `ssh mysql -p2222 host` 的端口、
     # `psql -h mysql -p5432` 的端口都当密码脱敏；sh 生产路径还会跨折叠后的换行命中别的命令 → 两端发散）
     # G15b-FIX3（P0）：加**内联 `(?m)`**（≡ [System.Text.RegularExpressions.RegexOptions]::Multiline，使 `^` 匹配**行首**）。
@@ -166,6 +185,13 @@ function Write-HookLog {
     } catch { }
 }
 function Deny-Command($reason) {
+    # RG_ALLOW_DELETE：删除文件/目录类让给下游 safe-delete（见文件顶部说明）。
+    # 判据用 reason 含「永久删除」—— 精确覆盖删文件/目录的规则；根目录/系统目录/shred/wmic/
+    # 回收站清空 的文案不含此词，故不受影响。Clear-Content 显式排除（清空内容 ≠ 删除文件）。
+    if ($script:AllowDelete -and $reason -match '永久删除' -and $reason -notmatch '清空文件内容') {
+        Write-HookLog 'allow' ("[delete-exempted:RG_ALLOW_DELETE] " + $script:curCmd)
+        exit 0
+    }
     $safeReason = Redact-Secrets $reason
     Write-HookLog 'deny' $safeReason
     $safeCmd = Redact-Secrets $script:curCmd
@@ -199,19 +225,42 @@ if (-not [string]::IsNullOrWhiteSpace($Cmd)) {
 } elseif ($env:RG_CMD) {
     $data = @{ tool_name = 'Bash'; tool_input = @{ command = $env:RG_CMD } }
 } else {
-    # ---- 读取 stdin ----
+    # ---- 读取 stdin（原始字节 → 多编码回退）----
+    # 2026-09-21 修复：原先用 [Console]::In.ReadToEnd()，其解码跟随 Console.InputEncoding
+    # （Windows PowerShell 5.1 默认 OEM/GBK），WorkBuddy 在中文路径下会喂进解码歧义，
+    # 导致 ConvertFrom-Json 失败 → fail-closed 误拦合法命令（实测：含「测试」的路径命令被拦）。
+    # 改为先取原始字节，再按 UTF-8 / 系统 ANSI / UTF-16LE 依次尝试；全失败时把字节 hex 落盘便于诊断。
+    $rawBytes = $null
     try {
-        $inputJson = [Console]::In.ReadToEnd()
+        $ms = New-Object System.IO.MemoryStream
+        [Console]::OpenStandardInput().CopyTo($ms)
+        $rawBytes = $ms.ToArray()
+        $ms.Dispose()
     } catch {
         Deny-Command '无法读取 hook 输入（读取 stdin 失败）'
     }
-    if ([string]::IsNullOrWhiteSpace($inputJson)) { Deny-Command 'hook 收到空输入（未提供命令）' }
-    try {
-        $data = $inputJson | ConvertFrom-Json
-    } catch {
+    if ($null -eq $rawBytes -or $rawBytes.Length -eq 0) { Deny-Command 'hook 收到空输入（未提供命令）' }
+
+    $data = $null
+    $encodings = @(
+        (New-Object System.Text.UTF8Encoding($false)),
+        [System.Text.Encoding]::Default,
+        (New-Object System.Text.UnicodeEncoding($false, $false)),
+        (New-Object System.Text.UTF8Encoding($true))
+    )
+    foreach ($enc in $encodings) {
+        try {
+            $candidate = $enc.GetString($rawBytes).TrimStart([char]0xFEFF)
+            $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop
+            if ($parsed) { $data = $parsed; break }
+        } catch { }
+    }
+    if (-not $data) {
+        $n = [Math]::Min(400, $rawBytes.Length)
+        $hex = (($rawBytes[0..($n - 1)]) | ForEach-Object { $_.ToString('x2') }) -join ''
+        Write-HookLog 'deny' ("STDIN_DECODE_FAIL len={0} hex={1}" -f $rawBytes.Length, $hex)
         Deny-Command 'JSON 解析失败，无法确认命令安全'
     }
-    if (-not $data) { Deny-Command '无法解析 hook 输入' }
 }
 
 # ---- 只拦截 shell 类工具（闭集白名单；Wsl/Nushell 等不在名单者按需求放行）----
@@ -444,6 +493,15 @@ if ($cmd -match '(?i)\brimraf\b') {
 }
 if ($cmd -match '(?i)\bClear-Content\b') {
     Deny-Command 'Clear-Content 清空文件内容是永久删除，请改用回收站命令'
+}
+# 16b2a) Node.js 删除类（2026-09-21 补缺：Windows 版此前仅覆盖 fs-extra remove，
+#        漏拦 fs.rmSync / fs.unlink / fs.rmdir / fs.promises.rm / require('fs').rmSync 等；
+#        sh 版 L554 已覆盖，此处补齐对齐。方法名无前缀分支用于 require('fs').rmSync 形态）
+if ($cmd -match '(?i)\bfs\.(?:promises\.)?(?:rm|unlink|rmdir)(?:Sync)?\s*\(') {
+    Deny-Command 'Node.js fs.rm/fs.unlink/fs.rmdir 是永久删除（不进回收站），请改用回收站命令'
+}
+if ($cmd -match '(?i)\b(?:rmSync|unlinkSync|rmdirSync)\s*\(') {
+    Deny-Command 'Node.js rmSync/unlinkSync/rmdirSync 是永久删除（不进回收站），请改用回收站命令'
 }
 if ($cmd -match '\bfs\.remove\w*\s*\(') {
     Deny-Command 'fs-extra remove 是永久删除（不进回收站），请改用回收站命令'
