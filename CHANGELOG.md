@@ -37,6 +37,25 @@
 - **`docs/TODO.md`** 新增「agy 相关欠账」节：登记 `agy-plan-readonly.ps1` 入仓（判为**有用但需
   独立切片**，附入仓需做的四件事）、真实会话 D3 复验（1.2.7 待验，`compatibility.json` 仍只声明
   实测过的 1.1.27）与两处有意保留的生成值差异。
+- **`RG_ALLOW_DELETE`：允许把「删除类」拦截交给下游 safe-delete（默认关）**。WorkBuddy
+  （CodeBuddy Code 桌面版）自带 safe-delete 层 —— bash `safe-bin/{rm,rmdir,unlink}`、Node
+  `node-safe-delete-shim.cjs`、Python `sitecustomize.py`、覆写 PowerShell `Remove-Item` ——
+  一律**强制转回收站**且 **fail-closed**（回收站失败即拒绝，源码注释明写「绝不降级为真删」）。
+  本 hook 若再拦删除，即与它**语义冲突并造成死锁**：命令不执行 ⇒ shim 没机会改道；而 deny 文案
+  建议的 `Microsoft.VisualBasic` 回收站路径又被平台硬编码策略拦住（`Add-Type` /
+  `New-Object -ComObject` / `Reflection.Assembly::Load`，且无配置开关）。置 `RG_ALLOW_DELETE=1` 时，
+  reason 含「永久删除」的拦截转为放行。**判据基于文案而非规则清单**，边界因此自动成立：
+  `rm -rf /`、`rm -rf /usr`、`shred`、`wmic shadowcopy`、回收站清空族（`Clear-RecycleBin` /
+  `cleanmgr` / 直删 `$Recycle.Bin`）的文案都不含该词 ⇒ **仍拦**；`Clear-Content`（含该词，
+  但语义是清空内容、不是删除文件）显式排除。默认关 ⇒ cc / codex / agy / gemini 行为完全不变。
+- **`riskguard-wiring-check.ps1`：workbuddy 落点纳入 ps1 目标 + skill 内 ps1 锚定 assets 单源**。
+  ① `~/.workbuddy/hooks/dangerous-commands.ps1` 此前**完全不在巡检内**，与单源同步全靠人工记忆
+  （实测漏过两次：副本落后一版，而巡检照报 OK）。② 新增 **4a** 段：`skills/agent-risk-guard/scripts/dangerous-commands.ps1`
+  必须等于 `assets/hooks/dangerous-commands.ps1` —— 原第 4 段只做「repo skill ↔ 安装 skill」互比，
+  于是两份镜像可以**一致地一起旧着**（本轮两次命中：单源已 53,134B，镜像仍停在 52,755B）。
+  **4a 必须排在镜像同步之前**：顺序反了，`-Fix` 会把已污染的 repo 副本先灌进安装目录、再单独修
+  repo，安装目录因此留污染（实测复验仍报 1 处漂移）。**漂移注入自证**：对 workbuddy 副本与
+  repo skill 的 ps1 各注入一行 → 巡检报 **3 项**，单次 `-Fix` 收敛。
 
 ### Fixed
 
@@ -132,6 +151,25 @@
   现四处（单源 + skills 副本 + 安装态 + 线上）统一为 **v0.2 + UTF-8 输出 = 3,400B（含 BOM）**，
   SHA256 唯一数 = 1；`skills/agent-risk-guard/SKILL.md` 里过期的体积数字（2729/2732B）
   同步更正为 3397/3400B。
+- **Windows 规则引擎漏拦 Node.js fs 删除**：`fs.rmSync` / `fs.unlink` / `fs.rmdir` /
+  `fs.promises.rm` 以及 `require('fs').rmSync(...)` 形态**全部放行**，而 sh 端自 G3 起已覆盖
+  （`sh L554`）。补两条规则：`fs.<method>(` 形态，与裸 `rmSync|unlinkSync|rmdirSync(` 形态
+  （后者覆盖 `require('fs')` 写法）。验证：`node -e "require('fs').rmSync('/x',{recursive:true})"`
+  由 allow → **deny**。
+- **stdin 解码在非 UTF-8 输入下 fail-closed（含中文路径的命令被整体误拦）**：
+  `[Console]::In.ReadToEnd()` 的解码跟随 `Console.InputEncoding`（中文 Windows PowerShell 5.1
+  为 OEM/GBK），而 WorkBuddy 喂的是 UTF-8 ⇒ 任何含工作区名「测试」的命令在 `ConvertFrom-Json`
+  处解码歧义失败、被 fail-closed 拒绝（用户体感为「引用该工作区的命令全被拦」）。改为**先读原始
+  字节**，再按 UTF-8 → 系统 ANSI → UTF-16LE → UTF-8+BOM 依次尝试解析；**全部失败才 deny**，
+  并把原始字节 hex（前 400B）写进 hook 日志，使下一次同类失败可诊断而非死路。验证：含中文路径
+  的命令恢复放行、`Remove-Item` 配中文路径仍 deny、GBK 编码的负载亦可解析。
+- **脱敏规则 `cli-mysql-password` 误伤普通命令行参数**：原式
+  `(^|[^-A-Za-z0-9_])-p[^\s]*[^\s0-9][^\s]*` 把**任何** `-p<非数字>` 都当密码 —— 实测
+  `find . -printf '%y %s\n'` 被写成 `find . [REDACTED] …`、`find /x -path *.log -print`
+  两个参数全被抹掉（仅影响日志/文案可读性，不影响判定）。改为与 `cli-mysql-password-numeric`
+  同形的**命令词锚定**（`mysql|mariadb` 须落在段首 / `;&|` 之后 / `sudo|env|command` 之后）。
+  取舍是「准确优先」——不再覆盖非 mysql 类 CLI 的 `-p<password>`（那些 CLI 的 `-p` 多为端口或
+  路径，误伤远多于命中）。三端同步（core / ps1 / sh），`redact-parity` + `redact.test` **18/18**。
 
 ### Removed
 
