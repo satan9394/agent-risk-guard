@@ -111,11 +111,16 @@ export const SECRET_RULES: RedactRule[] = [
   { id: 'authorization', re: /authorization\s*[:=]\s*(?:bearer|basic)\s+[A-Za-z0-9._-]+/gi },
 
   // ── CLI 参数类 ────────────────────────────────────────────────────
-  // mysql -p<password>：值须含至少一个非数字字符，避免误伤 `-p2222` 端口 / `--prefix` / `-p 8080:80`
+  // mysql -p<password>：值须含至少一个非数字字符；**命令词锚定**（2026-09-21）。
+  // 旧写法 `(^|[^-A-Za-z0-9_])-p…` 把**任何** `-p<非数字>` 参数当密码 —— 实测误伤：
+  //   `find . -printf '%y %s\n'` → `find . [REDACTED] …`；`find /x -path *.log -print` 两个参数全被抹掉。
+  // 现与 `cli-mysql-password-numeric` 同形：`-p` 必须落在「段首 / ;&| 之后 / sudo|env|command 之后的
+  //   mysql|mariadb 本次调用」之内。取舍是「准确优先」—— 不再覆盖非 mysql 类 CLI 的 `-p<password>`
+  //   （那些 CLI 的 `-p` 多为端口/路径，误伤远多于命中）。
   {
     id: 'cli-mysql-password',
-    re: /(^|[^-A-Za-z0-9_])-p[^\s]*[^\s0-9][^\s]*/g,
-    repl: '$1' + SENTINEL,
+    re: /(^\s*|[;&|]\s*|sudo\s+|env\s+|command\s+)(mysql|mariadb)([^;&|\n]*)(\s)-p[^\s]*[^\s0-9][^\s]*/gim,
+    repl: '$1$2$3$4' + SENTINEL,
   },
   // G15b-FIX F4 / G15b-FIX2 R2：**全数字**密码（`mysql -p12345678`）在 mysql/mariadb 上下文里脱敏。
   // G15b-FIX2 改为**命令词锚定**：`-p<数字>` 必须紧跟在「段首（或 ; & | 后、sudo/env/command 前缀后）

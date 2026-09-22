@@ -9,12 +9,14 @@
 #   pwsh scripts/riskguard-wiring-check.ps1 -Fix       # 巡检并自动从单源恢复（备份进回收站目录）
 #
 # 检查点（单一规则源纪律，全部期望字节一致）：
-#   ps1      : .claude/hooks + .codex/hooks + .gemini/config/hooks ← 仓库 assets/hooks/dangerous-commands.ps1
+#   ps1      : .claude/hooks + .codex/hooks + .gemini/config/hooks + .workbuddy/hooks ← assets/hooks/dangerous-commands.ps1
+#              （每个目标配自己的单源；agy 适配器用 assets/hooks/agy-dangerous-commands.ps1）
 #   opencode : .config/opencode/plugins ← 仓库 assets/opencode/agent-risk-guard.ts
 #   dsh      : profiles/*/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
 #              （组合文件不整比 hash，改为**逐条正则文本比对**；缺任一条即失败，-Fix 按单源替换）
 #   skill    : .claude/skills/custom/agent-risk-guard-audit ← 仓库 skills/agent-risk-guard/
-#              （逐文件 SHA256 比对；曾长期落后单源，是"比单源弱"的旁路副本）
+#              （逐文件 SHA256 比对，忽略行尾；**另**校验 repo skill 内 scripts/dangerous-commands.ps1
+#                == assets/hooks 生产单源 —— 否则「repo skill ↔ 安装 skill」这对镜像可以一起旧着）
 #   接线     : cc settings.json PreToolUse 在位 / codex hooks.json+config.toml / agy hooks.json / dsh patch 注入
 #
 # 退出码：0 = 全部 OK；1 = 发现缺失或漂移（-Fix 后仍残留）；2 = 本机无法定位仓库单源
@@ -85,7 +87,10 @@ $ps1Targets = @(
   @{ dest = (Join-Path $userHome '.claude\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'claude hooks' },
   @{ dest = (Join-Path $userHome '.codex\hooks\dangerous-commands.ps1');              src = $srcPs1;    label = 'codex hooks' },
   @{ dest = (Join-Path $userHome '.gemini\config\hooks\dangerous-commands.ps1');       src = $srcPs1;    label = 'gemini hooks' },
-  @{ dest = (Join-Path $userHome '.gemini\config\hooks\agy-dangerous-commands.ps1');   src = $srcPs1Agy; label = 'agy adapter' }
+  @{ dest = (Join-Path $userHome '.gemini\config\hooks\agy-dangerous-commands.ps1');   src = $srcPs1Agy; label = 'agy adapter' },
+  # 2026-09-21 新增：WorkBuddy（CodeBuddy Code 桌面版）的 hook 落点。此前完全不在巡检内，
+  # 每次改单源都要靠人工记忆同步 —— 实测漏过两次（副本落后一版而巡检仍报 OK）。
+  @{ dest = (Join-Path $userHome '.workbuddy\hooks\dangerous-commands.ps1');           src = $srcPs1;    label = 'workbuddy hooks' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -183,11 +188,15 @@ if (-not $dshProfiles) {
   Write-Check 'dsh profiles 目录' $false (Join-Path $userHome '.dsh\profiles')
 }
 
-# ---- 4. skill 副本（~/.claude/skills/custom/agent-risk-guard-audit）vs 仓库单源 ----
+# ---- 4. skill 内脚本锚定（4a）+ 安装副本同步（4b）—— 顺序不可颠倒 ----
 # 2026-09-19：该 skill 长期是「手工快照」，落后单源多个版本（缺 G3-FIX8、缺 R7 的
 # `--delete`/组合短选项），却仍是 skill 部署流程的取源 —— 属「比单源弱」的旁路副本。
-# 这里按文件逐一比对，-Fix 则从单源回灌。
-Write-Host "`n[skill 副本]"
+#
+# 2026-09-21 新增 4a 并**置于 4b 之前**（实测教训）：4b 是「repo skill ↔ 安装 skill」互比，
+# 盲区是两份镜像能**一致地一起旧着**（repo skills/ 的 ps1 不跟 assets/hooks 单源，巡检却报 OK ——
+# 本轮两次改单源都命中：单源已 53,134 B 而镜像停在 52,755 B）。
+# 但顺序反过来（先 4b 再 4a）会在 -Fix 时**把已污染的 repo 副本先灌进安装目录**、再单独修 repo，
+# 安装目录因此留着污染（实测复验仍报 1 处漂移）。故必须**先锚定单源、再同步镜像**。
 $srcSkill = Join-Path $repo 'skills\agent-risk-guard'
 $liveSkill = Join-Path $userHome '.claude\skills\custom\agent-risk-guard-audit'
 # skill 是**镜像**：按内容比对、忽略行尾差异。
@@ -203,6 +212,19 @@ function Get-NormHash([string]$path) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   return [BitConverter]::ToString($sha.ComputeHash($out.ToArray())).Replace('-', '')
 }
+# ---- 4a. skill 内 ps1 == assets 生产单源（必须先于 4b，见上方说明）----
+Write-Host "`n[skill 内脚本 vs assets 生产单源]"
+$skillPs1 = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.ps1'
+if (-not (Test-Path $skillPs1)) {
+  Write-Check 'skill 内 ps1 存在' $false $skillPs1
+} else {
+  $okSkillPs1 = ((Get-NormHash $skillPs1) -eq (Get-NormHash $srcPs1))
+  Write-Check 'skill 内 ps1 == assets 生产单源' $okSkillPs1 $skillPs1
+  if (-not $okSkillPs1) { Restore-Single-Source $skillPs1 $srcPs1 'skill 内 ps1 镜像' }
+}
+
+# ---- 4b. 安装副本 ↔ 仓库 skill ----
+Write-Host "`n[skill 副本]"
 if (-not (Test-Path $liveSkill)) {
   Write-Check 'skill 安装目录' $false $liveSkill
 } else {
