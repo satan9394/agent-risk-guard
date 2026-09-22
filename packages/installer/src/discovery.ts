@@ -116,9 +116,16 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
   },
 ];
 
+/** 去掉结尾的分隔符（线性扫描；不要用 `/[\\/]+$/` —— CodeQL 会判 polynomial-redos） */
+function stripTrailingSeparators(s: string): string {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === '\\' || s[end - 1] === '/')) end--;
+  return s.slice(0, end);
+}
+
 /** 路径比较用归一（大小写、分隔符、尾斜杠不敏感） */
 function samePath(a: string, b: string): boolean {
-  const n = (s: string): string => s.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+  const n = (s: string): string => stripTrailingSeparators(s).replaceAll('\\', '/').toLowerCase();
   const na = n(a);
   return na !== '' && na === n(b);
 }
