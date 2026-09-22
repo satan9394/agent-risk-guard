@@ -27,6 +27,7 @@ import { readConfig } from './config-read.ts';
 import { hasManifest } from './manifest.ts';
 import { detectAgent, AGENT_REGISTRY } from './discovery.ts';
 import { sha256File } from './hash.ts';
+import { detectOpencodeConfigMode, findOpencodeRiskGuardRef } from './merge.ts';
 import type { RuntimeState } from './runtime-state.ts';
 
 export interface RuntimeProbeResult {
@@ -386,35 +387,43 @@ export async function probeAgentRuntime(
       // opencode：验证 wiring/artifact/integrity（不 spawn 真实 interception）→ static
       verificationMode = 'static';
       const p = join(base, '.config', 'opencode', 'opencode.json');
+      const plugFile = join(base, '.config', 'opencode', 'plugins', 'agent-risk-guard.ts');
+      const legacyPlugFile = join(base, '.config', 'opencode', 'plugins', 'destructive-operation-guard.ts');
+      const pluginOnDisk = existsSync(plugFile) ? plugFile : existsSync(legacyPlugFile) ? legacyPlugFile : null;
       const read = await readConfig(p);
       if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
         configValid = false;
         ev.push(`config invalid: ${p}`);
       } else if (read.state === 'valid') {
-        const plugins = (read.data['plugin'] as unknown[]) ?? [];
-        const refNew = plugins.find((x) => String(x).replace(/\\/g, '/').split('/').pop() === 'agent-risk-guard.ts');
-        const refLegacy = plugins.find((x) => String(x).replace(/\\/g, '/').split('/').pop() === 'destructive-operation-guard.ts');
-        wired = Boolean(refNew || refLegacy);
-        if (wired) {
-          ev.push(`plugin reference present (${refNew ? 'agent-risk-guard' : 'destructive-operation-guard'})`);
-          // artifact 存在 + hash 校验
-          const plugFile = join(base, '.config', 'opencode', 'plugins', refNew ? 'agent-risk-guard.ts' : 'destructive-operation-guard.ts');
-          artifactPresent = existsSync(plugFile);
-          ev.push(`artifact ${artifactPresent ? 'exists' : 'MISSING'}: ${plugFile}`);
-          if (artifactPresent) {
-            // 与仓库 artifact hash 比对（REPO asset 存在时）
-            const repoAsset = join(root, 'assets', 'opencode', 'agent-risk-guard.ts');
-            if (existsSync(repoAsset)) {
-              const [h1, h2] = [await sha256File(plugFile), await sha256File(repoAsset)];
-              artifactIntegrity = h1 === h2;
-              ev.push(`artifact integrity ${artifactIntegrity ? 'OK' : 'MISMATCH (user-modified?)'}`);
-            } else {
-              artifactIntegrity = null;
-              ev.push('repo artifact unavailable — integrity not checked');
-            }
-          }
+        const mode = detectOpencodeConfigMode(read.data, base);
+        const ref = findOpencodeRiskGuardRef(read.data);
+        if (mode === 'v2') {
+          // V2：本地插件由 `plugins/` 目录自动发现，不再需要（也不接受）配置里的文件路径引用。
+          wired = pluginOnDisk !== null;
+          ev.push(`opencode config mode=v2 (auto-discovery); artifact ${wired ? 'exists' : 'MISSING'}: ${pluginOnDisk ?? plugFile}`);
+          if (ref.found) ev.push(`note: legacy file-path reference remains in ${ref.key}[…] (ignored by V2; merge cleans it)`);
         } else {
-          ev.push('no RiskGuard plugin reference in opencode.json');
+          wired = ref.found;
+          if (wired) {
+            ev.push(`plugin reference present (${ref.key})`);
+            artifactPresent = pluginOnDisk !== null;
+            ev.push(`artifact ${artifactPresent ? 'exists' : 'MISSING'}: ${pluginOnDisk ?? plugFile}`);
+          } else {
+            ev.push('no RiskGuard plugin reference in opencode.json');
+          }
+        }
+        // artifact 存在 + hash 校验（两种形态共用）
+        if (wired && pluginOnDisk) {
+          artifactPresent = true;
+          const repoAsset = join(root, 'assets', 'opencode', 'agent-risk-guard.ts');
+          if (existsSync(repoAsset)) {
+            const [h1, h2] = [await sha256File(pluginOnDisk), await sha256File(repoAsset)];
+            artifactIntegrity = h1 === h2;
+            ev.push(`artifact integrity ${artifactIntegrity ? 'OK' : 'MISMATCH (user-modified?)'}`);
+          } else {
+            artifactIntegrity = null;
+            ev.push('repo artifact unavailable — integrity not checked');
+          }
         }
       }
       // opencode self-test：无统一可 spawn 的 CLI hook；以 artifact + 引用 +（可选）语法解析代替。

@@ -12,9 +12,16 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectAgent, AGENT_REGISTRY } from './discovery.ts';
+import {
+  detectOpencodeConfigMode,
+  findOpencodeRiskGuardRef,
+  OPENCODE_PLUGIN_ID,
+  OPENCODE_PLUGIN_LEGACY_ID,
+} from './merge.ts';
 
 /** 仓库根（doctor.ts 位于 packages/installer/src → 上溯 3 = repo root；portable runtime 内布局相同） */
 const REPO_ROOT: string = (() => {
@@ -210,21 +217,51 @@ export async function checkCodexHook(home?: string): Promise<DoctorCheck> {
   }
 }
 
-/** OpenCode：检查 opencode.json 的 plugin 数组是否注册 RiskGuard 插件（R25：R17 实测仅放 plugins/ 不生效；v0.1.0 认 agent-risk-guard 新名 + 兼容旧名） */
+/**
+ * OpenCode：检查 RiskGuard 是否在位。
+ *
+ * v0.2.0 起支持 V2：V2 的本地 `.ts` 插件由 `~/.config/opencode/plugins/` **目录自动发现**，
+ * 不允许（也不需要）把文件路径写进配置（写了会报 "must be a directory"）。故：
+ *   - V2：`plugins/agent-risk-guard.ts` 在位即 ok（配置里的遗留引用会被 install 清理）；
+ *   - V1：沿用 `plugin` 数组引用检查（R25：V1 仅放 `plugins/` 不生效）。
+ */
 export async function checkOpencodePlugin(home?: string): Promise<DoctorCheck> {
   const base = home ?? process.env.USERPROFILE ?? process.env.HOME ?? '.';
   const p = join(base, '.config', 'opencode', 'opencode.json');
+  const plugDir = join(base, '.config', 'opencode', 'plugins');
+  const artifact =
+    existsSync(join(plugDir, `${OPENCODE_PLUGIN_ID}.ts`)) ||
+    existsSync(join(plugDir, `${OPENCODE_PLUGIN_LEGACY_ID}.ts`));
+  const check = 'plugin 注册（opencode.json）/ V2 目录自动发现（plugins/）';
   try {
     const raw = await readFile(p, 'utf8');
-    const hitNew = raw.includes('agent-risk-guard');
-    const hitLegacy = raw.includes('destructive-operation-guard');
-    const hit = hitNew || hitLegacy;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (detectOpencodeConfigMode(parsed, base) === 'v2') {
+      return {
+        agent: 'opencode', check,
+        state: artifact ? 'ok' : 'missing',
+        detail: artifact
+          ? `V2：plugins/ 下发现 ${OPENCODE_PLUGIN_ID}.ts（目录自动发现，配置无需登记）`
+          : `V2：plugins/ 下未发现 ${OPENCODE_PLUGIN_ID}.ts`,
+      };
+    }
+    const ref = findOpencodeRiskGuardRef(parsed);
+    const hitNew = raw.includes(OPENCODE_PLUGIN_ID);
+    const hitLegacy = raw.includes(OPENCODE_PLUGIN_LEGACY_ID);
+    const hit = ref.found || hitNew || hitLegacy;
     return {
-      agent: 'opencode', check: 'plugin 注册（opencode.json）',
+      agent: 'opencode', check,
       state: hit ? 'ok' : 'missing',
       detail: hitNew ? '发现 agent-risk-guard 插件注册' : hitLegacy ? '发现旧名 destructive-operation-guard 插件注册（建议重装升级到 agent-risk-guard）' : 'opencode.json plugin 未注册 RiskGuard',
     };
   } catch {
+    if (artifact) {
+      return {
+        agent: 'opencode', check,
+        state: 'ok',
+        detail: `V2：配置文件不可读，但 plugins/ 下发现 ${OPENCODE_PLUGIN_ID}.ts（目录自动发现）`,
+      };
+    }
     return { agent: 'opencode', check: 'plugin 注册（opencode.json）', state: 'missing', detail: `未找到 ${p}` };
   }
 }
