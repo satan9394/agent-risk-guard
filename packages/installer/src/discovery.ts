@@ -116,9 +116,43 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
   },
 ];
 
-/** 解析带 %ENV% 前缀的探测路径 */
-export function expandProbePath(p: string, home: string, env: Record<string, string | undefined> = process.env as never): string {
-  const map: Record<string, string> = { '%APPDATA%': env.APPDATA ?? '', '%LOCALAPPDATA%': env.LOCALAPPDATA ?? '', '%USERPROFILE%': home, '~': home };
+/** 去掉结尾的分隔符（线性扫描；不要用 `/[\\/]+$/` —— CodeQL 会判 polynomial-redos） */
+function stripTrailingSeparators(s: string): string {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === '\\' || s[end - 1] === '/')) end--;
+  return s.slice(0, end);
+}
+
+/** 路径比较用归一（大小写、分隔符、尾斜杠不敏感） */
+function samePath(a: string, b: string): boolean {
+  const n = (s: string): string => stripTrailingSeparators(s).replaceAll('\\', '/').toLowerCase();
+  const na = n(a);
+  return na !== '' && na === n(b);
+}
+
+/**
+ * 解析带 %ENV% 前缀的探测路径。
+ *
+ * `hermetic`（密闭模式）：调用方给了**非真实 home** 的 `--home` 时，`%APPDATA%` / `%LOCALAPPDATA%`
+ * 按该 home 推导（Windows 默认布局 `<home>/AppData/Roaming|Local`），而不是取进程真实环境变量。
+ *
+ * 为什么必须如此：`configAbs` / `probeAbs` 里的绝对探针（`%LOCALAPPDATA%/agy/bin/agy.exe`、
+ * `%APPDATA%/Cursor/...`）若始终按真实环境展开，`--home <假 home>` 就挡不住本机已装的 Agent ——
+ * `doctor` 会在密闭的测试 home 里凭空报 `FAIL agy`（2026-09-22 实测：`cli-exit-codes` 两个用例
+ * 在本机因此红、CI 因无 `~/.gemini` 而绿）。真实 home（或不显式传 home）时行为与以前完全一致。
+ */
+export function expandProbePath(
+  p: string,
+  home: string,
+  env: Record<string, string | undefined> = process.env as never,
+  hermetic = false,
+): string {
+  const map: Record<string, string> = {
+    '%APPDATA%': hermetic && home ? join(home, 'AppData', 'Roaming') : (env.APPDATA ?? ''),
+    '%LOCALAPPDATA%': hermetic && home ? join(home, 'AppData', 'Local') : (env.LOCALAPPDATA ?? ''),
+    '%USERPROFILE%': home,
+    '~': home,
+  };
   for (const [k, v] of Object.entries(map)) {
     if (p.startsWith(k)) return v + p.slice(k.length);
   }
@@ -127,9 +161,13 @@ export function expandProbePath(p: string, home: string, env: Record<string, str
 
 /** 探测单一 agent 是否安装（只读 stat） */
 export function detectAgent(desc: AgentDescriptor, opts: { home?: string; env?: Record<string, string | undefined> } = {}): AgentInstall {
-  const home = opts.home ?? (process.env.USERPROFILE ?? process.env.HOME ?? '');
+  const realHome = process.env.USERPROFILE ?? process.env.HOME ?? '';
+  const home = opts.home ?? realHome;
   const env = opts.env ?? (process.env as never);
-  const probes = [...(desc.configRel ?? []).map((r) => join(home, r)), ...(desc.configAbs ?? [])].map((p) => expandProbePath(p, home, env));
+  // 显式传入且不同于真实 home → 密闭模式：绝对探针按该 home 推导，不再读真实环境变量。
+  const hermetic = opts.home !== undefined && !samePath(opts.home, realHome);
+  const probes = [...(desc.configRel ?? []).map((r) => join(home, r)), ...(desc.configAbs ?? [])]
+    .map((p) => expandProbePath(p, home, env, hermetic));
   let hit: string | null = null;
   for (const p of probes) {
     try { statSync(p); hit = p; break; } catch { /* absent */ }

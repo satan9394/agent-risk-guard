@@ -45,6 +45,7 @@ Run-Test "adversarial corpus (D4)" @("$ROOT\tests\adversarial\adversarial-corpus
 Run-Test "rule alignment (single source)" @("$ROOT\tests\adversarial\rule-alignment.test.ts")
 Run-Test "installer M6 (discovery/deploy/backup/doctor)" @("$ROOT\packages\installer\test\installer.test.ts")
 Run-Test "installer opencode V1/V2 config mode" @("$ROOT\packages\installer\test\opencode-config-mode.test.ts")
+Run-Test "installer discovery --home isolation" @("$ROOT\packages\installer\test\discovery-home-isolation.test.ts")
 Run-Test "installer audit re-regress (GAN R22)" @("$ROOT\packages\installer\test\installer-audit-reregress.test.ts")
 Run-Test "codex M5 (rules-compiler)" @("$ROOT\packages\codex\test\rules-compiler.test.ts")
 Run-Test "dsh plugin M2 (pre-execute + guard)" @("$ROOT\packages\dsh\test\dsh-plugin.test.ts")
