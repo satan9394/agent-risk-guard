@@ -1,0 +1,29 @@
+# .mailmap — 作者身份的规范化映射
+#
+# 为什么需要：本仓库的历史里，同一个人留下了多个 author 名字/邮箱组合，
+# `git log` / `git shortlog -sne` / `git blame` 因此把一个贡献者拆成好几行：
+#
+#   satan9394 <yichenzhang439@gmail.com>                          ← 本地命令行提交（142 笔）
+#   xuanchen  <105955691+satan9394@users.noreply.github.com>      ← 网页界面 squash merge（26 笔）
+#   satan9394 <satan9394@users.noreply.github.com>                ← 本地临时改用 noreply（2 笔）
+#
+# 三者是**同一个 GitHub 账号**：邮箱前缀 `105955691` 就是该账号 id，
+# `xuanchen` 是该账号当时的 profile 显示名（网页 merge 时由 GitHub 取用）。
+# GitHub 的 Contributors 统计按账号归并（所以一直是 170 笔 / 一个条目），
+# 但**本地 git 是按名字+邮箱字符串分组**的，于是会裂成三行。
+#
+# 本文件把三者统一显示为 `satan9394 <yichenzhang439@gmail.com>`。
+#
+# 注意（避免误解）：
+#   · 只影响**显示**。不改写任何 git 对象、不改哈希、不需要 force push。
+#   · 只对 `%aN`/`%aE`、`%cN`/`%cE`、`git shortlog`、`git blame` 等
+#     **尊重 mailmap 的输出**生效；`%an`/`%ae`（小写）按 git 设计就是要看原始值，不受影响。
+#   · 靠 `mailmap.file` / `mailmap.blob` 配置或本文件随仓库检出自动生效（放仓库根即默认启用）。
+#   · Contributors 页面由 GitHub 服务端统计，不受本文件影响（也无需影响：那边本就只有一个你）。
+#
+# 格式：`规范名 <规范邮箱> 别名邮箱` / `规范名 <规范邮箱> 原始名 <原始邮箱>`
+# 文档：https://git-scm.com/docs/gitmailmap
+
+satan9394 <yichenzhang439@gmail.com> <105955691+satan9394@users.noreply.github.com>
+satan9394 <yichenzhang439@gmail.com> xuanchen <105955691+satan9394@users.noreply.github.com>
+satan9394 <yichenzhang439@gmail.com> <satan9394@users.noreply.github.com>
