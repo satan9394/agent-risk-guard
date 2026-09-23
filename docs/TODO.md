@@ -39,10 +39,16 @@
 - [ ] **`git branch -m/-M/-c/-C`（重命名/复制分支）不被判为破坏**：`-M` 会覆盖同名分支，
   理论上可丢引用；当前五端放行，与 `isReadOnlyCommand` 不把它们当只读的事实并不矛盾
   （既不只读、也不判破坏 → 走默认路径）。未实测是否值得收紧，登记。
-- [ ] **`skills/agent-risk-guard/scripts/opencode/destructive-operation-guard.ts` 是旧代次副本**
+- [x] **`skills/agent-risk-guard/scripts/opencode/destructive-operation-guard.ts` 是旧代次副本**
   （27.5KB / v0.1 时代）而现网加载的是 `assets/opencode/agent-risk-guard.ts`（32.4KB）；
   `SKILL.md` 与 `references/opencode-wiring.md` 仍把它写成部署取源，照做会装回旧插件。
   R7c 只同步了其中的 `git branch` 规则，**未做整代对齐**（属独立欠账）。
+  **2026-09-23 已闭环**：单源覆盖 + 统一文件名为 `agent-risk-guard.ts`（旧名副本移入回收站），
+  `SKILL.md` / `references/{opencode-wiring,opencode}.md` / `sync-prod.ps1` 同步改名与体积，
+  巡检 4a 由「只查 ps1 一个文件」改为逐对锚定四个单源（含 opencode 插件与 dsh patch），
+  并补 4b 的**反向比对**（安装侧多余文件报出并 `-Fix` 移入回收站）。
+  同批还发现并修掉两处**同型漂移**：skill 内 dsh patch 停在 R7b（缺 R7c 收紧）、
+  agy 适配器此前完全不在比对范围。见 `docs/decisions.md` 2026-09-23 行。
 
 ## agy（Antigravity CLI）相关欠账
 

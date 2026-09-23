@@ -30,20 +30,20 @@ export const DenyRiskCommands = async () => {
 
 ## 参考实现（推荐能力完整的版本）
 
-`destructive-operation-guard.ts`（440 行，2026-08 实测可用）应包含：
+`agent-risk-guard.ts`（735 行，V1+V2 双入口；单源在 `assets/opencode/agent-risk-guard.ts`，skill 内镜像逐字节一致）应包含：
 - 检测器：POSIX（rm/rmdir/unlink/shred/find -delete/xargs rm）、PowerShell（Remove-Item/Clear-Content/.NET）、CMD（del/erase/rd/rmdir）、Python（os/shutil/pathlib）、Node（fs.rmSync/rimraf）、git（clean/reset --hard/checkout -- ./restore .）、磁盘（format/diskpart/Clear-Disk/mkfs/fdisk/parted/dd）
 - wrapper 解包：`powershell -enc/-c`、`cmd /c`、`bash -c`、`python -c`、`node -e`、EncodedCommand 混淆检测
 - 受保护路径：插件自身文件、配置目录、HOME、Windows 系统目录（防篡改 + 防重定向覆盖）
 - fail-closed：检测器抛错但命令含危险信号时仍拦截
 - **trash 工具**：注册回收站删除工具，拦截后引导模型用它（Windows 走 Microsoft.VisualBasic）
-- 日志：拦截记录写 `~/.config/opencode/logs/destructive-operation-guard.log`
+- 日志：拦截记录写 `~/.config/opencode/logs/agent-risk-guard.log`
 - 导出 `analyzeCommand()` 等供单测
 
 ## 验证
 
 - 单测：`analyzeCommand('rm -rf /tmp/x')` 应返回 `{blocked: true, policy: ...}`；`analyzeCommand('git status')` 返回 `{blocked: false}`
 - 真实会话：让 OpenCode 执行删除命令 → 应报 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`
-- 查日志：`~/.config/opencode/logs/destructive-operation-guard.log` 有 `result=BLOCKED` 记录即证明加载并工作过
+- 查日志：`~/.config/opencode/logs/agent-risk-guard.log` 有 `result=BLOCKED` 记录即证明加载并工作过
 
 ## 陷阱
 

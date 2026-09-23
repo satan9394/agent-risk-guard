@@ -6,6 +6,7 @@
 #     （规则数翻倍，且是追加式、幂等性为零）；
 #   · 把插件写到 ~/.config/opencode/plugins/destructive-operation-guard.ts，
 #     而现网实际加载的是 agent-risk-guard.ts → 会多出一个重复的插件文件。
+#     （2026-09-23 起 skill 内只保留 `agent-risk-guard.ts` 单一文件名，旧名副本已删。）
 # 现统一委派给单源巡检器 riskguard-wiring-check.ps1（逐条正则校验 + -Fix 自愈 + 备份进
 # ~/.risk-guard-backup/），避免两个部署脚本各自漂移。
 #

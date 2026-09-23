@@ -170,6 +170,34 @@
   同形的**命令词锚定**（`mysql|mariadb` 须落在段首 / `;&|` 之后 / `sudo|env|command` 之后）。
   取舍是「准确优先」——不再覆盖非 mysql 类 CLI 的 `-p<password>`（那些 CLI 的 `-p` 多为端口或
   路径，误伤远多于命中）。三端同步（core / ps1 / sh），`redact-parity` + `redact.test` **18/18**。
+- **skill 内 opencode 插件是 v0.1 旧代次副本（V2 上装得上但一个 hook 都注册不上）**：
+  `skills/agent-risk-guard/scripts/opencode/destructive-operation-guard.ts` 是 2026-09-07 建 skill
+  时拷入的快照（28,131 B / 527 行），此后只被 R7/R7b/R7c 三次**局部**同步（仅 `git branch`
+  规则）。它顶层 `import { tool } from "@opencode-ai/plugin"`、只导出 `{id, server}`、**无 `setup`**
+  ⇒ 在 OpenCode V2 上 `ctx.shell.hook` / `ctx.tool.hook` / `ctx.permission.hook` / `create.before`
+  **四项全缺**：**装得上、却拦不住任何东西，而且不报错**。单源是 `assets/opencode/agent-risk-guard.ts`
+  （38,925 B / 735 行，V1+V2 双入口）。现网（`~/.config/opencode/plugins/agent-risk-guard.ts`）
+  加载的是新版，故**当时无缺口**；风险在于 `SKILL.md` 第 72/226 行与
+  `references/opencode-wiring.md` 第 13/19/30 行仍把旧文件写成部署取源 —— **照 skill 部署就会
+  装回一个失效门禁**。修法：用单源覆盖 skill 副本并**统一文件名为 `agent-risk-guard.ts`**
+  （消除「同名不同代」，旧名副本移入回收站）；同步改文档的文件名/体积/路径描述，并按 V1/V2
+  分流重写接线步骤（V2 由 `plugins/` 目录自动发现、不再写配置）。
+- **skill 内另两处同型漂移（同批体检发现）**：① `skills/agent-risk-guard/assets/dsh/deny-risk-commands.patch.yml`
+  停在 **R7b** —— 缺 R7c 对 `git branch --force --delete` / `-fd` 的收紧，**照 skill 部署会把
+  已修好的洞装回去**；② `scripts/agy-dangerous-commands.ps1` **完全不在比对范围**（当时恰好
+  同哈希，属侥幸而非有保障）。两处均已锚定各自单源。
+- **接线巡检的两个盲区（它们正是上述漂移能长期与「巡检全绿」并存的原因）**：
+  ① 4a 段**只校验 ps1 一个文件**，其余镜像全靠人工记忆 → 改为**一张逐对锚定单源的表**
+  （`scripts/dangerous-commands.ps1` / `scripts/agy-dangerous-commands.ps1` /
+  `scripts/opencode/agent-risk-guard.ts` / `assets/dsh/deny-risk-commands.patch.yml`），
+  判据沿用同一 `Get-NormHash` 口径（忽略 CRLF/LF —— 仓库 `.gitattributes` 的 `eol=crlf`
+  会在检出时改写行尾），并加「skill 内 opencode 不得再出现旧文件名」的反向断言
+  （**只报不改**：删除须进回收站，属人工裁决，不由巡检静默执行）。
+  ② 4b 段是**单向**比对（只查安装侧缺没缺、变没变），**多出来的文件永远看不见** ——
+  于是本次改名后旧文件会在安装侧静默留残。现补**反向比对**：安装目录里有、仓库 skill 里
+  没有的文件即报出，`-Fix` 时按铁律**移入回收站**（非永久删除）。
+- **`docs/TODO.md`** 第 42–45 行「skill 内 opencode 是旧代次副本」登记项随之划线闭环。
+
 
 ### Removed
 
