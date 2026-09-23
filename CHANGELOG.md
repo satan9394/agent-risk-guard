@@ -56,6 +56,15 @@
   **4a 必须排在镜像同步之前**：顺序反了，`-Fix` 会把已污染的 repo 副本先灌进安装目录、再单独修
   repo，安装目录因此留污染（实测复验仍报 1 处漂移）。**漂移注入自证**：对 workbuddy 副本与
   repo skill 的 ps1 各注入一行 → 巡检报 **3 项**，单次 `-Fix` 收敛。
+- **`.mailmap`：把同一贡献者的三个身份在本地 git 输出里归一**。历史中同一个人留下了三组
+  author 名/邮箱：`satan9394 <yichenzhang439@gmail.com>`（本地命令行，142 笔）、
+  `xuanchen <105955691+satan9394@users.noreply.github.com>`（网页界面 squash merge，26 笔）、
+  `satan9394 <satan9394@users.noreply.github.com>`（本地临时用 noreply，2 笔）。三者是**同一个
+  GitHub 账号**——邮箱前缀 `105955691` 即该账号 id，`xuanchen` 是其当时的 profile 显示名
+  （网页 merge 时由 GitHub 取用）。**GitHub 的 Contributors 一直只显示一个条目**（按账号归并，
+  170 笔），裂开的只有**本地** `git log` / `git shortlog -sne` / `git blame`（按名字+邮箱字符串
+  分组）。`.mailmap` 只影响显示：不改对象、不改哈希、不需 force push，且仅对 `%aN`/`%aE`、
+  `shortlog`、`blame` 等**尊重 mailmap 的输出**生效（`%an`/`%ae` 按设计仍看原始值）。
 
 ### Fixed
 
