@@ -105,10 +105,38 @@ $ocDest = Join-Path $userHome '.config\opencode\plugins\agent-risk-guard.ts'
 $ok = Test-Hash $hashOc $ocDest
 Write-Check 'opencode 插件 hash 一致' $ok $ocDest
 if (-not $ok) { Restore-Single-Source $ocDest $srcOc 'opencode' }
-# opencode.json 注册检查
-$ocJson = Join-Path $userHome '.config\opencode\opencode.json'
-$ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard')
-Write-Check 'opencode.json 插件注册' $ocReg $ocJson
+# opencode.json 注册检查（V1/V2 形态分流）
+# 2026-09-22：此前只认 V1 形态 —— 要求在 opencode.json 里能匹配到
+# `agent-risk-guard|destructive-operation-guard`。V2（`@opencode/cli` >= 2.0）改为
+# **本地插件由 `plugins/` 目录自动发现**，配置里本就不该出现该字符串（见 PR #25 的
+# `detectOpencodeConfigMode` / `findOpencodeRiskGuardRef`），于是本项在 V2 机器上
+# **每 30 分钟恒报一次且 -Fix 修不掉**（该项不写文件），形成永久噪音。
+# 现按与 `packages/installer/src/merge.ts` 同一套判据分流：
+#   v2 → wiring 由 `plugins/` 目录产物决定（上面第 2 段已做 hash 校验），此处只断言产物在位；
+#        若配置里仍残留 V1 文件路径引用只记 note（V2 会忽略，merge 会清理），不算问题。
+#   v1 → 保持原行为：必须在 `plugin` 数组里找到引用。
+$ocJson    = Join-Path $userHome '.config\opencode\opencode.json'
+$ocCliJson = Join-Path $userHome '.config\opencode\cli.json'
+$ocCfg     = $null
+if (Test-Path $ocJson) {
+  try { $ocCfg = Get-Content $ocJson -Raw | ConvertFrom-Json } catch { $ocCfg = $null }
+}
+# 与 merge.ts 同序：先看 plugins/plugin 两键，都没有时用 cli.json 作 V2 旁证。
+$ocModeV2 = $false
+if ($ocCfg -and $ocCfg.PSObject.Properties.Name -contains 'plugins') { $ocModeV2 = $true }
+elseif ($ocCfg -and $ocCfg.PSObject.Properties.Name -contains 'plugin') { $ocModeV2 = $false }
+elseif (Test-Path $ocCliJson) { $ocModeV2 = $true }
+
+if ($ocModeV2) {
+  # V2：自动发现，判定看产物（与第 2 段同源）；配置里不该有该字符串。
+  $ocArtifact = Test-Path $ocDest
+  Write-Check 'opencode.json 插件注册（V2 目录自动发现）' $ocArtifact $ocDest
+  $legacyRef = ($ocCfg -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard'))
+  if ($legacyRef) { Write-Host "  [note] opencode.json 仍残留 V1 文件路径引用（V2 忽略，merge 会清理）" -ForegroundColor Yellow }
+} else {
+  $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard')
+  Write-Check 'opencode.json 插件注册（V1 plugin 数组）' $ocReg $ocJson
+}
 
 # ---- 3. dsh patch 生产 vs 单源（逐条正则比对）----
 Write-Host "`n[dsh pre-execute 门禁]"
