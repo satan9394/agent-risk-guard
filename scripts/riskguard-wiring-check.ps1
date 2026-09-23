@@ -15,8 +15,11 @@
 #   dsh      : profiles/*/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
 #              （组合文件不整比 hash，改为**逐条正则文本比对**；缺任一条即失败，-Fix 按单源替换）
 #   skill    : .claude/skills/custom/agent-risk-guard-audit ← 仓库 skills/agent-risk-guard/
-#              （逐文件 SHA256 比对，忽略行尾；**另**校验 repo skill 内 scripts/dangerous-commands.ps1
-#                == assets/hooks 生产单源 —— 否则「repo skill ↔ 安装 skill」这对镜像可以一起旧着）
+#              （逐文件 SHA256 比对，忽略行尾；**另**校验 repo skill 内的生产镜像
+#               —— scripts/{dangerous-commands,agy-dangerous-commands}.ps1、
+#               scripts/opencode/agent-risk-guard.ts、assets/dsh/deny-risk-commands.patch.yml
+#               —— 分别 == assets/ 下各自的单源；否则「repo skill ↔ 安装 skill」这对镜像
+#               可以一起旧着，照 skill 部署即装回旧版）
 #   接线     : cc settings.json PreToolUse 在位 / codex hooks.json+config.toml / agy hooks.json / dsh patch 注入
 #
 # 退出码：0 = 全部 OK；1 = 发现缺失或漂移（-Fix 后仍残留）；2 = 本机无法定位仓库单源
@@ -240,35 +243,79 @@ function Get-NormHash([string]$path) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   return [BitConverter]::ToString($sha.ComputeHash($out.ToArray())).Replace('-', '')
 }
-# ---- 4a. skill 内 ps1 == assets 生产单源（必须先于 4b，见上方说明）----
-Write-Host "`n[skill 内脚本 vs assets 生产单源]"
-$skillPs1 = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.ps1'
-if (-not (Test-Path $skillPs1)) {
-  Write-Check 'skill 内 ps1 存在' $false $skillPs1
+# ---- 4a. skill 内镜像 == assets 生产单源（必须先于 4b，见上方说明）----
+# 2026-09-23：本段此前**只比 ps1 一个文件**，其余镜像全靠人工记忆，于是三处同型漂移并存
+# 而巡检报绿：
+#   · `scripts/opencode/destructive-operation-guard.ts` 停在 v0.1 旧版（28,131B / 527 行；
+#     顶层 `import { tool } from "@opencode-ai/plugin"`、只导出 `{id, server}`、无 `setup`）
+#     —— 在 OpenCode V2 上 `ctx.shell.hook` / `ctx.tool.hook` / `ctx.permission.hook` /
+#     `create.before` **四项全缺**，照 SKILL.md 部署会装上一个「装得上但不拦任何东西」的门禁，
+#     而巡检不报错（正是「表面绿、实际裸奔」）。单源 `assets/opencode/agent-risk-guard.ts`
+#     为 V1+V2 双入口（38,925B / 735 行），文件名也统一为 `agent-risk-guard.ts`（消除同名不同代）。
+#   · `assets/dsh/deny-risk-commands.patch.yml` 停在 R7b —— 缺 R7c 对
+#     `git branch --force --delete` / `-fd` 的收紧（照 skill 部署会把已修的洞装回去）。
+#   · `scripts/agy-dangerous-commands.ps1` 完全不在比对范围（当时恰好同哈希，属侥幸）。
+# 现改为**一张表逐对锚定单源**，判据沿用同一 `Get-NormHash` 口径（忽略 CRLF/LF：仓库
+# `.gitattributes` 的 `eol=crlf` 会在检出时改写行尾，镜像跟随它没有意义）。
+Write-Host "`n[skill 内镜像 vs assets 生产单源]"
+$skillMirrors = @(
+  @{ rel = 'scripts\dangerous-commands.ps1';          src = $srcPs1;    label = 'ps1' },
+  @{ rel = 'scripts\agy-dangerous-commands.ps1';      src = $srcPs1Agy; label = 'agy 适配器' },
+  @{ rel = 'scripts\opencode\agent-risk-guard.ts';    src = $srcOc;     label = 'opencode 插件' },
+  @{ rel = 'assets\dsh\deny-risk-commands.patch.yml'; src = $srcDsh;    label = 'dsh patch' }
+)
+foreach ($m in $skillMirrors) {
+  $skillFile = Join-Path $srcSkill $m.rel
+  if (-not (Test-Path $skillFile)) {
+    Write-Check ("skill 内 {0} 存在" -f $m.label) $false $skillFile
+    continue
+  }
+  $okMirror = ((Get-NormHash $skillFile) -eq (Get-NormHash $m.src))
+  Write-Check ("skill 内 {0} == assets 生产单源" -f $m.label) $okMirror $skillFile
+  if (-not $okMirror) { Restore-Single-Source $skillFile $m.src ("skill 内 {0} 镜像" -f $m.label) }
+}
+# 反向断言：skill 的 opencode 目录**不得**再出现旧文件名（防「同名不同代」回归）。
+# 只报不改：删除须进回收站，属人工裁决动作，不由巡检静默执行。
+$skillOldOc = Join-Path $srcSkill 'scripts\opencode\destructive-operation-guard.ts'
+if (Test-Path $skillOldOc) {
+  Write-Check 'skill 内 opencode 无旧代次副本' $false "$skillOldOc（应移入回收站后改用 agent-risk-guard.ts）"
 } else {
-  $okSkillPs1 = ((Get-NormHash $skillPs1) -eq (Get-NormHash $srcPs1))
-  Write-Check 'skill 内 ps1 == assets 生产单源' $okSkillPs1 $skillPs1
-  if (-not $okSkillPs1) { Restore-Single-Source $skillPs1 $srcPs1 'skill 内 ps1 镜像' }
+  Write-Check 'skill 内 opencode 无旧代次副本' $true 'destructive-operation-guard.ts 已不存在'
 }
 
 # ---- 4b. 安装副本 ↔ 仓库 skill ----
+# 2026-09-23：本段此前只做**单向**比对（遍历仓库 skill 的文件看安装侧缺没缺、变没变），
+# **多出来的文件永远看不见**。于是「skill 内改名/删除」这类动作在安装侧静默留残——
+# 本次改名的正是 opencode 插件：仓库把 `destructive-operation-guard.ts` 换成
+# `agent-risk-guard.ts` 后，安装目录里的旧文件不会被删，巡检照样报 OK，而
+# 「同名不同代」的隐患原样留在部署面上。现补**反向比对**（extras）：
+# 安装目录里有、仓库 skill 里没有的文件即报出；`-Fix` 时按铁律**移入回收站**（非永久删除）。
 Write-Host "`n[skill 副本]"
 if (-not (Test-Path $liveSkill)) {
   Write-Check 'skill 安装目录' $false $liveSkill
 } else {
   $skillMissing = [System.Collections.Generic.List[string]]::new()
   $skillDrifted = [System.Collections.Generic.List[string]]::new()
+  $skillExtra   = [System.Collections.Generic.List[string]]::new()
   $srcSkillFiles = Get-ChildItem $srcSkill -Recurse -File
+  $srcRelSet = @{}
   foreach ($f in $srcSkillFiles) {
     $rel = $f.FullName.Substring($srcSkill.Length).TrimStart('\')
+    $srcRelSet[$rel] = $true
     $dest = Join-Path $liveSkill $rel
     if (-not (Test-Path $dest)) { $skillMissing.Add($rel); continue }
     if ((Get-NormHash $f.FullName) -ne (Get-NormHash $dest)) { $skillDrifted.Add($rel) }
   }
-  $skillStale = $skillMissing.Count + $skillDrifted.Count
+  # 反向：安装侧多出来的文件（仓库 skill 已改名/删除的残留）
+  foreach ($f in (Get-ChildItem $liveSkill -Recurse -File)) {
+    $rel = $f.FullName.Substring($liveSkill.Length).TrimStart('\')
+    if (-not $srcRelSet.ContainsKey($rel)) { $skillExtra.Add($rel) }
+  }
+  $skillStale = $skillMissing.Count + $skillDrifted.Count + $skillExtra.Count
   Write-Check ("skill 副本与单源一致（{0} 个文件{1}）" -f $srcSkillFiles.Count, $(if ($skillStale -gt 0) { "，$skillStale 处漂移" } else { "" })) ($skillStale -eq 0) $liveSkill
   if ($skillStale -gt 0) {
     foreach ($r in ($skillMissing + $skillDrifted)) { Write-Host ("     漂移: {0}" -f $r) -ForegroundColor Yellow }
+    foreach ($r in $skillExtra) { Write-Host ("     多余（仓库已删/改名）: {0}" -f $r) -ForegroundColor Yellow }
     if ($Fix) {
       foreach ($r in ($skillMissing + $skillDrifted)) {
         $dest = Join-Path $liveSkill $r
@@ -276,9 +323,22 @@ if (-not (Test-Path $liveSkill)) {
         if (Test-Path $dest) { Backup-File $dest }
         Copy-Item (Join-Path $srcSkill $r) $dest -Force
       }
-      Write-Host ("  [Fix] 已从单源回灌 {0} 个文件（备份到 ~/.risk-guard-backup/）" -f $skillStale) -ForegroundColor Cyan
+      # 多余文件移入回收站（铁律：删除必须进回收站，禁止永久删除）
+      $extraRemoved = 0
+      foreach ($r in $skillExtra) {
+        $dest = Join-Path $liveSkill $r
+        Backup-File $dest
+        try {
+          Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+          [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($dest, 'OnlyErrorDialogs', 'SendToRecycleBin')
+          if (-not (Test-Path $dest)) { $extraRemoved++ }
+        } catch {
+          Write-Host ("  删除多余文件失败（需人工处理）: {0} — {1}" -f $r, $_.Exception.Message) -ForegroundColor Yellow
+        }
+      }
+      Write-Host ("  [Fix] 已从单源回灌 {0} 个文件、移入回收站 {1} 个多余文件（均备份到 ~/.risk-guard-backup/）" -f ($skillMissing.Count + $skillDrifted.Count), $extraRemoved) -ForegroundColor Cyan
     } else {
-      Write-Host "  注意: 加 -Fix 可从单源回灌（备份到 ~/.risk-guard-backup/）" -ForegroundColor Yellow
+      Write-Host "  注意: 加 -Fix 可从单源回灌、并把多余文件移入回收站（均备份到 ~/.risk-guard-backup/）" -ForegroundColor Yellow
     }
   }
 }
