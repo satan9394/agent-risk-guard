@@ -15,6 +15,28 @@
 
 ### Added
 
+- **R18 动态调用/间接构造拦截（2026-09-27）**：用户实测「门禁只挡字面命令」，五种间接写法在 OpenCode V2 上
+  完全绕过（且真把文件永久删掉，不经回收站）：`$v='Remove-Item'; & $v`、`$c='Remo'+'ve-Item'; & $c`、
+  `iex (Get-Content .\cmd.txt)`、`& ([scriptblock]::Create('Remove-'+'Item ...'))`、
+  `python -c "getattr(os,'rem'+'ove')(p)"`。
+  - **根因**：单一事实源 `defaultDenyRules()` 的 R4 段本就有 `& $x` / 拼接命令名两条规则 —— 是 **OpenCode 插件的
+    检测集没跟上**（`detectPOSIX/detectPowerShell/...` 是独立手写的一套）；另三种为五端共缺的新向量。
+  - **修法**：插件新增 `detectDynamicExec()`，并在**完整命令**上判定（`splitStmts` 会把「赋值」与「调用」拆到两段、
+    `unwrapWrapper` 会吃掉 `iex` 前缀，按段检测必漏）；core / ps1 / sh / DSH patch 同源补 5 条：命令位锚定的
+    `iex|invoke-expression`、`[ScriptBlock]::Create` / `Add-Type`、Python `getattr|setattr|__import__|
+    importlib.import_module|operator.attrgetter`、call 运算符 + 引号中的删除动词。
+  - **取态**：动态构造无法静态验证 → fail-closed；`-join` 拼接与逐字符构造不拦（拦它会误伤 `@('a','b')`
+    数组字面量），并入残余风险。规则是 **Pattern Policy 不是 Capability Policy**（见 CONTRIBUTING）。
+  - **验证（逐套实测，不写"跑过了"）**：插件离线 24 例（12 拦 / 12 放）；ps1 六套 49/49 · 12/12 · 20/20 · 59/59 · 119/119 + agy 24/24；
+    sh 四套 70/70 · 40/40 · 208/208 · 34/34；`rule-alignment` 单源一致；**已安装副本** payload 实测（claude-code / codex / workbuddy）各 10/10；
+    定向跨端一致性（R18+F18 共 20 例，ps1 vs sh 逐条比对）全对；`riskguard-wiring-check.ps1` 只读巡线 `exit 0`（含自动回灌 skill 副本 1 处漂移）。
+    **关于整体跑批的实测口径**：跨端闸门 `decision-parity` 单套约 **17 分钟**——290 条载荷 ×（ps1 ≈2.5 s/次 + wsl ≈1.0 s/次）**串行** spawn
+    （测试注释已写明并发会产出非 JSON 告警，属已知不做并发的设计），且 `node --test` 按文件缓冲输出，未跑完时日志无输出、**看起来像卡死**；
+    本轮在改动定稿后单独重跑，结果见 PR 记录。其余套件均按上表逐套执行。
+  - **实现过程中被自己的检查打到两次（都已入语料）**：
+    ① `'Remo'+'ve-Item'` 在 **sh 端曾漏拦**：`grep -oE` 逐片段输出多行，join 后成 `remo\nve-item`，动词正则被换行断开（四套 sh 用例 + `rule-alignment` **都没抓到**，只有**跨端**逐条比对抓到）。修法 `tr -d "'\"\n"`。
+    ② `Clear-RecycleBin -Force` 在 **sh 端完全缺失**（ps1 自 F18 起就拦）：**既存发散**，此前无人发现，因为 `decision-parity` 语料里**根本没有回收站用例**。
+    两处连同 R18 一起补进语料（+11 条），另给 sh 套件补 5 条 F18 用例。**教训：语料没覆盖的类别，再慢的闸门也看不见——补规则必须同时补语料。**
 - **agy 的真实会话 D3 复验完成（2026-09-21，agy 1.2.7）**：`compatibility.json` 的 agy
   `componentInventory.version` 由 1.1.27 升至 **1.2.7**，notes 补记本次会话与两条方法论结论。
   证据：会话内 `run_command` 执行 `git reset --hard HEAD` 返回

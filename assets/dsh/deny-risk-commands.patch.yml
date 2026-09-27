@@ -113,3 +113,11 @@
           - { re: '\bcleanmgr(?:\.exe)?\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
           - { re: '\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b[^|;&\r\n]{0,120}\$recycle\.bin', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
           - { re: '\$recycle\.bin[^|;&\r\n]{0,120}\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\b', reason: '回收站清空不可逆，如需清理请用户手动操作（Finding 18）' }
+          # ---- R18（2026-09-27 用户实测「门禁只挡字面命令，变量间接调用可绕过」）----
+          # 动态调用/间接构造，与 core defaultDenyRules() R18 段 / ps1 段 37 / sh 段 19 / opencode detectDynamicExec 同源。
+          # 动态构造无法静态验证 → fail-closed。命令位锚定（^|[;&|(]）避免误伤 `grep -i iex file` 这类检索。
+          - { re: '(?:^|[;&|(])\s*(?:iex|invoke-expression)\b', reason: '高危：iex/Invoke-Expression 命令位动态执行无法静态验证，按 fail-closed 拒绝（R18）' }
+          - { re: '\[(?:system\.management\.automation\.)?scriptblock\]\s*::\s*create\b', reason: '高危：运行时构造脚本块无法静态验证，按 fail-closed 拒绝（R18）' }
+          - { re: '\badd-type\b', reason: '高危：运行时构造类型（Add-Type）无法静态验证，按 fail-closed 拒绝（R18）' }
+          - { re: '\b(?:python[23]?(?:\.\d+)?|py)(?:\.exe)?\b[^|&\n]{0,200}\b(?:getattr|setattr|__import__|importlib\.import_module|operator\.attrgetter)\s*\(', reason: '高危：Python 动态属性/动态导入构造删除调用，按 fail-closed 拒绝（R18）' }
+          - { re: '[&.]\s*[''"]\s*(?:remove-item|clear-content|rmdir|shred|erase|rimraf|del|rm|unlink)\b', reason: '高危：call 运算符间接调用删除动词，按 fail-closed 拒绝（R18）' }

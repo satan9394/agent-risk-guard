@@ -408,6 +408,25 @@ echo "--- 24. Docker exec ---"
 run_case 'docker exec container rm -rf /app' deny 'docker-exec-rm'
 run_case 'docker exec container sh -c "rm -rf /app"' deny 'docker-exec-sh-c'
 
+# --- 25. R18 动态调用/间接构造（2026-09-27 用户实测）---
+echo "--- 25. R18 dynamic invocation ---"
+run_case 'iex (Get-Content ./cmd.txt)' deny 'r18-iex-deferred'
+run_case 'Invoke-Expression "Remove-Item /tmp/a"' deny 'r18-iex-inline'
+run_case 'Add-Type -TypeDefinition $src' deny 'r18-add-type'
+run_case 'python -c "import os;getattr(os,chr(114)+chr(109))(\"/tmp/a\")"' deny 'r18-py-getattr'
+run_case "& 'Remove-Item' /tmp/a" deny 'r18-call-quoted'
+run_case '[scriptblock]::Create("Remove-Item /tmp/a")' deny 'r18-scriptblock'
+run_case 'grep -rin iex docs/' allow 'r18-fp-grep-iex'
+run_case 'rg "getattr\(" src/' allow 'r18-fp-rg-getattr'
+
+# --- 26. F18 回收站清空（2026-09-27：本轮实测 sh 端此前完全缺失 → 跨端发散）---
+echo "--- 26. F18 recycle-bin (was missing on sh) ---"
+run_case 'Clear-RecycleBin -Force' deny 'f18-clear-recycle-bin'
+run_case 'Clear-RecycleBin -DriveLetter C' deny 'f18-clear-driveletter'
+run_case 'cleanmgr /sagerun:1' deny 'f18-cleanmgr'
+run_case 'rd C:\$Recycle.Bin' deny 'f18-rd-recycle-store'
+run_case 'Get-ChildItem C:\$Recycle.Bin -Force' allow 'f18-fp-view-recycle'
+
 echo ""
 echo "================================"
 echo "TOTAL: $total  PASS: $pass  FAIL: $fail"

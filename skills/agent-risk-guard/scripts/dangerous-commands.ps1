@@ -722,6 +722,39 @@ if ($cmd -match '(?i)(?:^|[;&|\r\n])\s*icacls\b[^|;&\n]*(?:\/grant|\/deny|\/seti
     Deny-Command 'icacls 权限修改操作（system 路径），禁止'
 }
 
+# 37) R18（2026-09-27 用户实测「门禁只挡字面命令，变量间接调用可绕过」）：动态调用/间接构造。
+#     与 core defaultDenyRules() R18 段 / sh 段 19 / opencode 插件 detectDynamicExec / DSH patch 同源。
+#     动态构造无法静态验证 → fail-closed 拒绝（宁可错杀，可人工放行）。对应实测绕过：
+#       $v='Remove-Item'; & $v  ·  'Remo'+'ve-Item'  ·  iex (Get-Content x)  ·  [scriptblock]::Create(...)  ·  python getattr
+#     命令位锚定（^ ; & | ( ）避免误伤 `grep -i iex file` 这类检索；引号用 \u0027/\u0022 正则转义，
+#     免去 PowerShell 字符串里的引号嵌套（正则语义等价）。
+if ($cmd -match '(?i)(?:^|[;&|(])\s*(?:iex|invoke-expression)\b') {
+    Deny-Command 'iex / Invoke-Expression 动态执行无法静态验证，按 fail-closed 拒绝；如需删除请走回收站'
+}
+if ($cmd -match '(?i)\[(?:system\.management\.automation\.)?scriptblock\]\s*::\s*create\b|\badd-type\b') {
+    Deny-Command '运行时构造脚本块/类型（ScriptBlock::Create / Add-Type）无法静态验证，按 fail-closed 拒绝'
+}
+if ($cmd -match '(?i)\b(?:python[23]?(?:\.\d+)?|py)(?:\.exe)?\b[^|&\n]{0,200}\b(?:getattr|setattr|__import__|importlib\.import_module|operator\.attrgetter)\s*\(') {
+    Deny-Command 'Python 动态属性/动态导入（getattr/__import__/importlib/attrgetter）无法静态验证，按 fail-closed 拒绝'
+}
+if ($cmd -match '(?i)[&.]\s*[\u0027\u0022]\s*(?:remove-item|clear-content|rmdir|shred|erase|rimraf|\bdel\b|\brm\b|unlink)\b') {
+    Deny-Command 'call 运算符间接调用删除动词（& ''Remove-Item''），按 fail-closed 拒绝；如需删除请走回收站'
+}
+# 字符串片段拼接还原出删除动词：'Remo'+'ve-Item'
+if ($cmd -match '[\u0027\u0022]\s*\+\s*[\u0027\u0022]') {
+    $rgJoined = (([regex]::Matches($cmd, '[\u0027\u0022]([^\u0027\u0022]*)[\u0027\u0022]') | ForEach-Object { $_.Groups[1].Value }) -join '').ToLower()
+    if ($rgJoined -match '(remove-item|clear-content|clear-recyclebin|rmdir|shred|erase|rimraf|unlink|\bdel\b|\brm\b|delete)') {
+        Deny-Command '字符串拼接还原出的命令名含删除动词，按 fail-closed 拒绝；如需删除请走回收站'
+    }
+}
+# 删除动词存入变量后被 call 运算符调用：$v='Remove-Item'; & $v
+foreach ($rgM in [regex]::Matches($cmd, '\$([A-Za-z_]\w*)\s*=\s*[\u0027\u0022]([^\u0027\u0022]+)[\u0027\u0022]')) {
+    if ($rgM.Groups[2].Value -match '(?i)(remove-item|clear-content|rmdir|shred|erase|rimraf|unlink|\bdel\b|\brm\b|delete)' -and
+        $cmd -match ('(?i)[&.]\s*\$' + [regex]::Escape($rgM.Groups[1].Value) + '\b')) {
+        Deny-Command '变量间接调用删除命令（删除动词被拆出字面量），按 fail-closed 拒绝；如需删除请走回收站'
+    }
+}
+
 # ===== 未匹配 — 放行 =====
 # G3-FIX5/B：日志读**原文** $cmdOrig（归一前的检测文本会让日志与用户输入不一致）。
 Write-HookLog 'allow' $cmdOrig

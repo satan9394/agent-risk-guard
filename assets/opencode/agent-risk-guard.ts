@@ -437,6 +437,44 @@ function detectPipe(s: string): Block | null {
   return null
 }
 
+// --- R18 动态调用/间接构造检测（2026-09-27，用户实测：门禁只挡字面命令，变量间接调用可绕过）---
+// 与 core defaultDenyRules() R4 段（iex / `& $x` / 拼接命令名）同源，另补 R18 新向量：
+//   scriptblock::Create、`iex (Get-Content ...)` 延迟执行、Python getattr/__import__ 动态属性名。
+// 设计取舍：动态构造无法静态验证 → fail-closed 一律拒绝（宁可错杀，可人工放行）。
+const DELETION_VERBS = "(?:remove-item|clear-content|clear-recyclebin|rmdir|shred|erase|rimraf|unlink|delete|\\brd\\b|\\brm\\b|\\bdel\\b|\\bri\\b)"
+function detectDynamicExec(s: string): Block | null {
+  const norm = s.replace(/''/g, "").replace(/""/g, "").normalize("NFKC")
+  const lo = norm.toLowerCase().replace(/\s+/g, " ")
+  // (a) 解释器/脚本块在运行时解释字符串：原文不可验证
+  //     命令定位锚定（^|;|&|||() —— 避免误伤 `grep -i iex file` 这类检索
+  if (/(?:^|[;&|(])\s*(?:iex|invoke-expression)\b/.test(lo))
+    return { policy: P.PERMANENT_DELETE_POWERSHELL, reason: "Dynamic evaluation via iex/Invoke-Expression cannot be verified (fail-closed). Use the trash tool instead." }
+  if (/\[(?:system\.management\.automation\.)?scriptblock\]\s*::\s*create\b/.test(lo) || /\badd-type\b/.test(lo))
+    return { policy: P.PERMANENT_DELETE_POWERSHELL, reason: "Runtime-built scriptblock/type cannot be verified (fail-closed). Use the trash tool instead." }
+  if (/\b(?:python[23]?(?:\.\d+)?|py)(?:\.exe)?\b[\s\S]*\b(?:getattr|setattr|__import__|importlib\.import_module|operator\.attrgetter)\s*\(/.test(lo))
+    return { policy: P.PERMANENT_DELETE_PYTHON, reason: "Dynamic attribute/import indirection cannot be verified (fail-closed). Use the trash tool instead." }
+  if (/\b(?:python[23]?(?:\.\d+)?|py|node|nodejs)(?:\.exe)?\b[\s\S]*\b(?:eval|exec|compile)\s*\(/.test(lo) && new RegExp(DELETION_VERBS).test(lo))
+    return { policy: P.PERMANENT_DELETE_PYTHON, reason: "Dynamic evaluation of a deletion payload cannot be verified (fail-closed)." }
+  // (b) 引号片段 + 号拼接还原出删除动词：'Remo'+'ve-Item'。
+  //     仅认 `+` 拼接：PowerShell 数组字面量 @('a','b') 与 -join 组合会误伤正常脚本，收益不值 → 记为残余风险。
+  if (/['"]\s*\+\s*['"]/.test(norm)) {
+    const frags = [...norm.matchAll(/['"]([^'"]*)['"]/g)].map((m) => m[1]).join("").toLowerCase()
+    if (new RegExp(DELETION_VERBS).test(frags))
+      return { policy: P.PERMANENT_DELETE_POWERSHELL, reason: "Concatenated string resolves to a deletion verb (fail-closed). Use the trash tool instead." }
+  }
+  // (c) 删除动词存入变量/字面量后被 call 运算符调用：& $v / . 'Remove-Item'
+  for (const m of norm.matchAll(/\$([A-Za-z_]\w*)\s*=\s*['"]([^'"]+)['"]/g)) {
+    if (new RegExp(DELETION_VERBS).test(m[2].toLowerCase()) &&
+        new RegExp("[&.]\\s*\\$" + m[1] + "\\b", "i").test(norm))
+      return { policy: P.PERMANENT_DELETE_POWERSHELL, reason: "Indirect invocation of a deletion verb via variable (fail-closed). Use the trash tool instead." }
+  }
+  for (const m of norm.matchAll(/[&.]\s*['"]([^'"]+)['"]/g)) {
+    if (new RegExp(DELETION_VERBS).test(m[1].toLowerCase()))
+      return { policy: P.PERMANENT_DELETE_POWERSHELL, reason: "Indirect invocation of a deletion verb via call operator (fail-closed). Use the trash tool instead." }
+  }
+  return null
+}
+
 // --- Main analysis ---
 type AR = { blocked: false } | { blocked: true; policy: PolicyId; reason: string; command: string }
 
@@ -444,6 +482,10 @@ function analyzeCommand(command: string): AR {
   // R16 修复（B-13）：管道到 shell 在分段前检查完整命令（splitStmts 拆掉 | 会漏检测）
   const pipeHit = detectPipe(command)
   if (pipeHit) return { blocked: true, policy: pipeHit.policy, reason: pipeHit.reason, command }
+  // R18：动态调用/间接构造在**完整命令**上检测 —— splitStmts 会把「赋值」与「调用」拆到不同段
+  //（$v='Remove-Item'; & $v），unwrapWrapper 又会吃掉 `iex` 前缀（iex (Get-Content x)），分段后都看不见。
+  const dynHit = detectDynamicExec(command)
+  if (dynHit) return { blocked: true, policy: dynHit.policy, reason: dynHit.reason, command }
   // GAN-fix（F2）：变量赋值拼接执行（x=rm; $x -rf ...）在完整命令上检测——分割符分段会拆开「赋值」与「使用」
   {
     const eb = command.toLowerCase().replace(/\\(?=[a-z])/g, "").normalize('NFKC')
@@ -472,7 +514,7 @@ function analyzeCommand(command: string): AR {
     if (rd) return { blocked: true, policy: rd.policy, reason: rd.reason, command }
 
     // Run all detectors
-    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe]
+    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, detectDynamicExec]
     for (const det of detectors) {
       const r = det(t)
       if (r) {
@@ -732,4 +774,4 @@ async function v1Server(ctx: any) {
 export default { ...plugin, server: v1Server }
 
 // Export internals for testing (the pure detection core; not part of the plugin API).
-export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, P }
+export { analyzeCommand, checkProtected, expandSegments, detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, detectDynamicExec, P }

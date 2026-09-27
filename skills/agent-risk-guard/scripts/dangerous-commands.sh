@@ -691,5 +691,42 @@ case "$cmd" in
     *':(){'*|*':|:&'*|*'};:'*) deny_command "Fork bomb detected." ;;
 esac
 
+# 19) R18（2026-09-27 用户实测「门禁只挡字面命令，变量间接调用可绕过」）：动态调用/间接构造。
+#     与 core defaultDenyRules() R18 段 / ps1 段 37 / opencode 插件 detectDynamicExec / DSH patch 同源。
+#     动态构造无法静态验证 → fail-closed 拒绝。命令位锚定（^ ; & | ( ）避免误伤 `grep -i iex file`。
+if printf '%s' "$cmd" | grep -qiE '(^|[;&|(])[[:space:]]*(iex|invoke-expression)([[:space:]]|$|\()'; then
+    deny_command "iex/Invoke-Expression dynamic execution cannot be verified (fail-closed)."
+fi
+if printf '%s' "$cmd" | grep -qiE '\[(system\.management\.automation\.)?scriptblock\][[:space:]]*::[[:space:]]*create|(^|[^[:alnum:]_-])add-type([^[:alnum:]_-]|$)'; then
+    deny_command "Runtime-built scriptblock/type cannot be verified (fail-closed)."
+fi
+if printf '%s' "$cmd" | grep -qiE '(^|[^[:alnum:]_])(python[23]?(\.([0-9]+))?|py)(\.exe)?([[:space:]]|$).*(getattr|setattr|__import__|importlib\.import_module|operator\.attrgetter)[[:space:]]*\('; then
+    deny_command "Python dynamic attribute/import indirection cannot be verified (fail-closed)."
+fi
+if printf '%s' "$cmd" | grep -qE '[&.][[:space:]]*['"'"'"][[:space:]]*(remove-item|clear-content|rmdir|shred|erase|rimraf|del|rm|unlink)([^[:alnum:]_-]|$)'; then
+    deny_command "Call-operator invocation of a deletion verb (fail-closed)."
+fi
+# 字符串片段拼接还原出删除动词：'Remo'+'ve-Item'
+if printf '%s' "$cmd" | grep -qE "['\"]\s*\+\s*['\"]"; then
+    joined=$(printf '%s' "$cmd" | grep -oE "['\"][^'\"]*['\"]" | tr -d "'\"\n" | tr 'A-Z' 'a-z')
+    if printf '%s' "$joined" | grep -qE '(remove-item|clear-content|clear-recyclebin|rmdir|shred|erase|rimraf|unlink|delete|(^|[^[:alnum:]_-])(rd|rm|del|ri)([^[:alnum:]_-]|$))'; then
+        deny_command "Concatenated string resolves to a deletion verb (fail-closed)."
+    fi
+fi
+
+# 20) F18 回收站清空（对齐 ps1 段 T11/Finding 18 与 DSH patch；2026-09-27 实测 sh 端此前**完全缺失**
+#     —— `Clear-RecycleBin -Force` 在 sh 端 allow、ps1 端 deny，是本轮跨端一致性检查抓到的既存发散；
+#     语料此前没有回收站用例，所以它一直没被发现，本次连同语料一起补）
+if printf '%s' "$cmd" | grep -qiE '(^|[^[:alnum:]_-])clear-recyclebin([^[:alnum:]_-]|$)'; then
+    deny_command "Recycle bin emptying is irreversible - ask the user to do it manually."
+fi
+if printf '%s' "$cmd" | grep -qiE '(^|[^[:alnum:]_-])cleanmgr(\.exe)?([^[:alnum:]_-]|$)'; then
+    deny_command "cleanmgr (disk cleanup) may purge the recycle bin - ask the user to do it manually."
+fi
+if printf '%s' "$cmd" | grep -qiE '\$recycle\.bin' && \
+   printf '%s' "$cmd" | grep -qiE '\b(remove-item|ri|rm|rmdir|rd|del|erase|unlink|shred|rimraf)\b|fs\.(promises\.)?(rm|unlink|rmdir)(sync)?[[:space:]]*\(|\.delete[[:space:]]*\(|\[(system\.)?io\.(file|directory)\]::delete'; then
+    deny_command "Direct deletion of the recycle-bin store is irreversible."
+fi
+
 # ===== 未匹配 — 放行 =====
 exit 0

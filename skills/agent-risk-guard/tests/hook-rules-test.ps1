@@ -39,9 +39,23 @@ $cases = @(
   @{ cmd = 'del C:\$Recycle.Bin\S-1-5-*'; expect = 'deny' },
   @{ cmd = 'rm C:\$Recycle.Bin'; expect = 'deny' },
   @{ cmd = 'node -e "fs.rmSync(''C:/$Recycle.Bin'')"'; expect = 'deny' },
+  # ---- R18（2026-09-27 用户实测「门禁只挡字面命令，变量间接调用可绕过」）：动态调用/间接构造 ----
+  @{ cmd = '$v=''Remove-Item''; & $v -LiteralPath C:\tmp\a.txt -Force'; expect = 'deny' },
+  @{ cmd = '$c=''Remo''+''ve-Item''; & $c -Force C:\tmp\a.txt'; expect = 'deny' },
+  @{ cmd = 'iex (Get-Content .\cmd.txt)'; expect = 'deny' },
+  @{ cmd = 'Invoke-Expression "Remove-Item C:\tmp\a.txt"'; expect = 'deny' },
+  @{ cmd = '& ([scriptblock]::Create(''Remove-''+''Item C:\tmp\a.txt''))'; expect = 'deny' },
+  @{ cmd = 'Add-Type -TypeDefinition $src'; expect = 'deny' },
+  @{ cmd = '& ''Remove-Item'' C:\tmp\a.txt'; expect = 'deny' },
+  @{ cmd = 'python -c "import os;getattr(os,''rem''+''ove'')(''C:/tmp/a.txt'')"'; expect = 'deny' },
   # 清空回收站误伤防线：查看/打开回收站是正常操作，应放行
   @{ cmd = 'Get-ChildItem C:\$Recycle.Bin -Force'; expect = 'allow' },
   @{ cmd = 'explorer C:\$Recycle.Bin'; expect = 'allow' },
+  # R18 误伤防线：检索单词 / 卸载包 / 读文件不是动态执行
+  @{ cmd = 'grep -rin iex docs/'; expect = 'allow' },
+  @{ cmd = 'rg "getattr\(" src/'; expect = 'allow' },
+  @{ cmd = 'Get-Content .\cmd.txt'; expect = 'allow' },
+  @{ cmd = 'npm uninstall lodash'; expect = 'allow' },
   @{ cmd = 'git status';          expect = 'allow' },
   @{ cmd = 'ls -la';              expect = 'allow' },
   @{ cmd = 'npm test';            expect = 'allow' },

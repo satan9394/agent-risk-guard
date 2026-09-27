@@ -96,6 +96,22 @@ export function defaultDenyRules(): GuardRules {
     '\\bcleanmgr(?:\\.exe)?\\b',
     '\\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\\b[^|;&\\r\\n]{0,120}\\$recycle\\.bin',
     '\\$recycle\\.bin[^|;&\\r\\n]{0,120}\\b(?:remove-item|del|erase|rd|rmdir|rm|unlink|shred|rimraf|ri)\\b',
+    // ---- R18（2026-09-27 用户实测「门禁只挡字面命令，变量间接调用可绕过」）----
+    // 动态调用/间接构造：与 assets/hooks/dangerous-commands.ps1 段 37、dangerous-commands.sh 段 19、
+    // assets/opencode/agent-risk-guard.ts 的 detectDynamicExec 同源；与 assets/dsh patch 逐条一致。
+    // 动态构造无法静态验证 → fail-closed 拒绝（宁可错杀，可人工放行）。对应实测绕过：
+    //   $v='Remove-Item'; & $v   ·   'Remo'+'ve-Item'   ·   iex (Get-Content x)
+    //   [scriptblock]::Create('Remove-'+'Item ...')   ·   python -c "getattr(os,'rem'+'ove')(p)"
+    // [P0] iex / Invoke-Expression 处于命令位（延迟执行 `iex (Get-Content x)` 不含删除词，旧规则漏）
+    //      命令位锚定（^|;&|( ）避免误伤 `grep -i iex file` 这类检索
+    '(?:^|[;&|(])\\s*(?:iex|invoke-expression)\\b',
+    // [P0] 运行时构造脚本块 / 动态类型
+    '\\[(?:system\\.management\\.automation\\.)?scriptblock\\]\\s*::\\s*create\\b',
+    '\\badd-type\\b',
+    // [P0] Python 动态属性 / 动态导入构造删除调用（getattr/os.'rem'+'ove'/__import__/importlib/attrgetter）
+    '\\b(?:python[23]?(?:\\.\\d+)?|py)(?:\\.exe)?\\b[^|&\\n]{0,200}\\b(?:getattr|setattr|__import__|importlib\\.import_module|operator\\.attrgetter)\\s*\\(',
+    // [P0] call 运算符直接调用引号中的删除动词（& 'Remove-Item' / . "rm"）
+    '[&.]\\s*[\'"]\\s*(?:remove-item|clear-content|rmdir|shred|erase|rimraf|del|rm|unlink)\\b',
   ];
 }
 
