@@ -20,6 +20,7 @@
 | Codex CLI | `~/.codex/config.toml` + `hooks.json` | ✅ | ✅ PreToolUse | ✅ | ✅(含 Windows) | 中 | codex.md |
 | DeepSeek Harness | `~/.dsh/profiles/*/cordis.patch.yml` | ✅ | ✅ pre-execute | ✅(沙箱+审批) | ✅(仅文件) | 中 | dsh.md |
 | Antigravity CLI (agy) | `~/.gemini/config/hooks.json` + `hooks/` | ✅ | ✅ PreToolUse run_command | ✅(deny) | — | 中（fail-closed 适配器） | codex.md（复用 codex 规则源）+ agy 内联 |
+| WorkBuddy (CodeBuddy) | `~/.workbuddy/settings.json` + `hooks/` | ✅ | ✅ PreToolUse（CC 兼容） | ✅ | — | 中（**须 RG_ALLOW_DELETE=1**：删除委派给平台 safe-delete，不可逆仍拦） | workbuddy.md |
 | Cline | VS Code 设置 + `.clinerules` | ✅ | ✅ PreToolUse(v3.36+) | ✅(auto-approve) | — | 中 | cline-kilo-qwen.md |
 | Qwen Code | `~/.config/qwen-code/` + `.qwen/` | ✅ | ✅ PreToolUse | ✅(deny) | — | 中 | cline-kilo-qwen.md |
 | Cursor | `.cursor/rules/` + `~/.cursor/hooks.json` | ✅ | ✅ postToolUse | ✅ | — | 中 | cursor-windsurf.md |

@@ -137,6 +137,12 @@ export function aggregateHookFreshness(checks: HookScriptCheck[]): boolean | nul
 const HARMLESS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo riskguard-self-test' } });
 /** hook 危险 self-test payload（必须被 DENY；仅测 parser/policy，不真正执行任何命令） */
 const DANGEROUS_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git reset --hard HEAD' } });
+/**
+ * WorkBuddy 委派自检专用：一条**删除类**命令。
+ * 默认模式下它会被拦；WorkBuddy 的正确接线（RG_ALLOW_DELETE=1）下应**放行**——因为平台的
+ * safe-delete shim 会把它改道进回收站。用错的模式测会得到看似通过、实则相反的结论。
+ */
+const WORKBUDDY_DELETE_PAYLOAD = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'Remove-Item -Force C:\\tmp\\riskguard-self-test.txt' } });
 
 /**
  * agy 的 payload 形状：protojson camelCase `{ toolCall: { name, args: { CommandLine } } }`。
@@ -238,6 +244,48 @@ function runHookSelfTest(script: string, agent: 'claude' | 'codex'): { ok: boole
     return { ok: true, detail: 'self-test PASS (harmless=allow, dangerous=deny)' };
   } catch (e) {
     return { ok: false, detail: `self-test error: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * WorkBuddy self-test：**必须在委派模式（`RG_ALLOW_DELETE=1`）下**跑。
+ *
+ * 为什么不复用 `runHookSelfTest`：那条测的是**默认模式**（hook 拦删除）。WorkBuddy 的正确接线是
+ * 「删除委派给平台 safe-delete shim、不可逆操作才拦」，用默认模式会得到「危险载荷被 deny → 通过」
+ * 的**假结论**，而生产上跑的是另一套行为。
+ *
+ * 三条断言，少一条都不算通过：
+ *   ① 无害命令 → allow（不误拦）；
+ *   ② 删除类命令 → allow（**证明 RG_ALLOW_DELETE 真的生效**；若仍 deny，则命令不执行、shim 无机会
+ *      改道 → 死锁，这正是 2026-09-21 那轮真实会话暴露的问题）；
+ *   ③ 不可逆命令（`git reset --hard`）→ deny（委派 ≠ 放行一切）。
+ */
+function runWorkbuddyHookSelfTest(script: string, command: string | undefined): { ok: boolean; detail: string } {
+  if (!existsSync(script)) return { ok: false, detail: `workbuddy hook missing: ${script}` };
+  const interpreter = interpreterFromCommand(command);
+  const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script];
+  const env = { ...process.env, RG_ALLOW_DELETE: '1' };
+  const run = (payload: string) => spawnSync(interpreter, args, { input: payload, encoding: 'utf8', timeout: 30000, env });
+  const isDenied = (out: string): boolean => out.includes('permissionDecision') && out.includes('deny');
+  try {
+    const safe = run(HARMLESS_PAYLOAD);
+    if (safe.error) return { ok: false, detail: `workbuddy self-test: interpreter unavailable (${interpreter}: ${(safe.error as Error).message})` };
+    const safeOut = (safe.stdout ?? '').trim();
+    if (isDenied(safeOut)) return { ok: false, detail: `workbuddy self-test: harmless payload denied (${safeOut.slice(0, 120)})` };
+
+    const delegated = run(WORKBUDDY_DELETE_PAYLOAD);
+    const delegatedOut = (delegated.stdout ?? '').trim();
+    if (isDenied(delegatedOut)) {
+      return { ok: false, detail: 'workbuddy self-test: deletion payload still denied — RG_ALLOW_DELETE is not in effect, so the platform safe-delete shim could never run (deadlock risk)' };
+    }
+
+    const hard = run(DANGEROUS_PAYLOAD);
+    const hardOut = (hard.stdout ?? '').trim();
+    if (!isDenied(hardOut)) return { ok: false, detail: `workbuddy self-test: irrecoverable payload not denied in delegation mode (${hardOut.slice(0, 120)})` };
+
+    return { ok: true, detail: `self-test PASS (workbuddy delegation mode via ${interpreter}: harmless=allow, deletion=delegated, irreversible=deny)` };
+  } catch (e) {
+    return { ok: false, detail: `workbuddy self-test error: ${(e as Error).message}` };
   }
 }
 
@@ -521,6 +569,68 @@ export async function probeAgentRuntime(
           ev.push(selfTestDetail);
         } else {
           const st = runAgyHookSelfTest(script, hookCommand);
+          selfTestPassed = st.ok;
+          selfTestDetail = st.detail;
+          ev.push(st.detail);
+        }
+      } else if (wired && script && !hookTargetExists) {
+        selfTestDetail = 'hook target missing — cannot self-test';
+        ev.push(selfTestDetail);
+      }
+    } else if (agent === 'workbuddy') {
+      // WorkBuddy（CodeBuddy Code 桌面版）：CC 兼容 PreToolUse（settings.json），hook 是共享 ps1 规则引擎。
+      // 与 claude/codex 的两处本质差别：
+      //   ① 注册命令**带 `RG_ALLOW_DELETE=1` 前缀** —— 平台自带 safe-delete shim，删除要**委派**而不是拦下，
+      //      否则命令不执行、shim 没机会改道（死锁），且 deny 文案建议的 VB 回收站路径又被平台黑名单拦住；
+      //   ② self-test 必须在**这个模式下**跑并断言「委派 + 仍拦不可逆操作」（见 runWorkbuddyHookSelfTest）。
+      verificationMode = 'dynamic';
+      const p = join(base, '.workbuddy', 'settings.json');
+      const read = await readConfig(p);
+      if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
+        configValid = false;
+        ev.push(`config invalid: ${p}`);
+      } else if (read.state === 'valid') {
+        const hookArr = (read.data['hooks'] as any)?.['PreToolUse'];
+        const allCommands: string[] = [];
+        if (Array.isArray(hookArr)) {
+          for (const entry of hookArr as any[]) {
+            for (const hh of (Array.isArray(entry?.hooks) ? entry.hooks : [])) {
+              if (typeof hh?.command === 'string') allCommands.push(hh.command);
+            }
+          }
+        }
+        const wbCmd = allCommands.find((c) => /dangerous-commands\.ps1$/i.test((extractHookScript(c) ?? '').trim()));
+        if (wbCmd) {
+          hookCommand = wbCmd;
+          wired = true;
+          ev.push(`wiring present: ${wbCmd.slice(0, 140)}`);
+          // 模式面：缺 RG_ALLOW_DELETE=1 时平台 safe-delete 永远轮不到 → 明确警告（不是静默通过）
+          if (!/RG_ALLOW_DELETE=1/.test(wbCmd)) {
+            ev.push('WARNING: RG_ALLOW_DELETE=1 missing from the hook command — WorkBuddy would block deletions before its own safe-delete shim can redirect them (deadlock)');
+          }
+        } else {
+          ev.push('no dangerous-commands.ps1 hook found under hooks.PreToolUse in settings.json');
+        }
+      }
+      const script = extractHookScript(hookCommand);
+      if (script) {
+        hookTargetExists = existsSync(script);
+        ev.push(`hook target ${hookTargetExists ? 'exists' : 'MISSING'}: ${script}`);
+        if (hookTargetExists) {
+          const check = await checkHookScriptFreshness(resolve(script), root);
+          hookScriptChecks.push(check);
+          ev.push(check.detail);
+          hookScriptFreshness = aggregateHookFreshness(hookScriptChecks);
+          artifactIntegrity = hookScriptFreshness; // 与 claude/codex/agy 同口径外传
+        }
+      }
+      if (wired && script && hookTargetExists && opts.deep === true) {
+        if (!runtimeAvailable) {
+          selfTestPassed = false;
+          selfTestDetail = 'node runtime unavailable — self-test skipped';
+          ev.push(selfTestDetail);
+        } else {
+          const st = runWorkbuddyHookSelfTest(script, hookCommand);
           selfTestPassed = st.ok;
           selfTestDetail = st.detail;
           ev.push(st.detail);

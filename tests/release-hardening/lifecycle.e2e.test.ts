@@ -69,8 +69,8 @@ test('lifecycle: detect 全部 detected', () => {
     assert.equal(map.opencode, true);
     assert.equal(map.dsh, false);
     assert.equal(typeof map.agy, 'boolean');
-    // 全量列齐：既有四件套 + agy + 其余 registry 全部出现
-    for (const id of ['claude-code', 'codex', 'opencode', 'cursor', 'windsurf', 'grok', 'claude-code-copilot', 'hermes', 'cline', 'aider', 'goose', 'agy', 'dsh']) {
+    // 全量列齐：既有四件套 + agy + workbuddy + 其余 registry 全部出现
+    for (const id of ['claude-code', 'codex', 'opencode', 'cursor', 'windsurf', 'grok', 'claude-code-copilot', 'hermes', 'cline', 'aider', 'goose', 'agy', 'dsh', 'workbuddy']) {
       assert.ok(id in map, `detect --json should include ${id}`);
     }
   } finally { rmSync(home, { recursive: true, force: true }); }
@@ -225,9 +225,12 @@ test('lifecycle: OpenCode 插件同名异内容 → 拒绝安装（P0-3）', () 
     const r = rg(['install', '--agent', 'oc'], home);
     // G1：同名异内容 → 拒绝安装（abort）= 失败 → 非零退出码（v0.3.0 起；此前恒为 0）
     assert.equal(r.status, 1);
-    assert.match(r.stdout, /plugin installation aborted/);
+    assert.match(r.stdout, /installation aborted/);
     assert.match(r.stdout, /not owned by this RiskGuard installation/);
     assert.match(r.stdout, /No files were overwritten/);
+    // 2026-09-27：文案去掉了 opencode 专属的 "plugin" 字样（installOne 的 artifact 逻辑已推广到
+    // 任何带 copyArtifacts 的 installer）——但**目标路径必须仍然点出来**，否则用户不知道该动哪个文件。
+    assert.match(r.stdout, /agent-risk-guard\.ts/);
     // 文件未被覆盖，opencode.json 未被修改（config 引用不会加入）
     const after = readFileSync(join(plugDir, 'agent-risk-guard.ts'), 'utf8');
     assert.equal(after, before);

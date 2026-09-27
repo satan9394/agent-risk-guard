@@ -105,6 +105,7 @@ All commands, options, the **exit-code contract** and the transactional installe
 | **Claude Code** | `PreToolUse` hook | machine hard gate | ✅ verified in a real session |
 | **OpenCode** | `tool.execute.before` plugin | machine hard gate | ✅ verified in a real session |
 | **Antigravity CLI** | `PreToolUse` hook | machine hard gate | ✅ verified in a real session |
+| **WorkBuddy (CodeBuddy)** | `PreToolUse` hook (Claude Code compatible) | machine hard gate — deletion is **delegated** to the platform's own safe-delete (routed to the recycle bin), while irrecoverable operations stay blocked | 🟡 automated tests (D2; D3 pending a real session) |
 | **Codex** | hook + app policy/sandbox layer | **mixed** — in its app form the block comes from Codex's own policy layer; the CLI-side hook was tested separately | 🟡 partial |
 | **DeepSeek Harness** | rule patch injected into the profile | **rule (regex) layer** — the `@riskguard/dsh` plugin is implemented and tested but **not wired into any profile** | 🟡 verified (not the plugin) |
 | **Cursor / Windsurf / Grok** | adapter | no real-session verification | ⚪ implemented only |
