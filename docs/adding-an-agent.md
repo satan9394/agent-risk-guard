@@ -72,6 +72,30 @@ the entire point of this project is to not create false confidence. 中文要点
 Some agents already have a sandbox or an approval policy. Knowing this tells us whether RiskGuard is the right
 layer or a redundant one. Use the *Agent security mechanism / environment report* issue template for this part.
 
+### 2.4 Claude-Code 兼容 ≠ 同一种接线（2026-09-27 新增；WorkBuddy 是活例子）
+
+有些 Agent 直接用 Claude Code 的 `PreToolUse` 协议（同样的 `{"tool_name","tool_input":{"command"}}` 输入、
+同样的 `hookSpecificOutput.permissionDecision` 输出）。**协议一样不代表接线一样** —— 至少还要问三个问题，
+否则照抄 [`references/claude-code.md`](../../skills/agent-risk-guard/references/claude-code.md) 会装出一个
+「看起来接上了、实际有害」的门禁：
+
+1. **删除语义是同向还是反向？** WorkBuddy（CodeBuddy Code 桌面版）自带 safe-delete shim
+   （bash `safe-bin/*`、Node shim、Python `sitecustomize.py`、覆写 `Remove-Item`），会把删除**改道回收站**。
+   门禁若照默认模式**拦下**删除：命令不执行 → shim 没机会改道 → 死锁；而 deny 文案建议的 VB 回收站路径
+   又被平台硬编码黑名单拦住（`Add-Type` / `New-Object -ComObject` / `Reflection`）。这类平台的正确姿势是
+   **委派**：注册命令带 `RG_ALLOW_DELETE=1`，门禁只拦不可逆操作（`rm -rf /`、系统目录、`shred`、
+   `wmic shadowcopy`、回收站清空族）。完整例子见 [`references/workbuddy.md`](../../skills/agent-risk-guard/references/workbuddy.md)。
+2. **hook 脚本从哪来、靠谁保持新鲜？** CC 系走 node hook + portable runtime；WorkBuddy 走 ps1 单源
+   （`assets/hooks/dangerous-commands.ps1`），由安装器落到 `~/.workbuddy/hooks/`，并由
+   `scripts/riskguard-wiring-check.ps1` 巡检刷新。两条路径的 freshness 判据不同，别混用。
+3. **注册命令要不要带环境变量前缀？** 目前只有 WorkBuddy 需要（`RG_ALLOW_DELETE=1`），而 `buildInjection`
+   直到 2026-09-27 才支持（新增 `home` 参数以写绝对落点）。目标若是「删除委派」型平台，直接复用
+   `mergeCcCompatibleSettings()` + `copyArtifacts`，不要另起一套。
+
+> 另注：`installOne` 的 artifact 处理在 2026-09-27 之前**硬编码 `inst.id === 'opencode'`** —— 任何其它带
+> `copyArtifacts` 的 installer 都会「写了 config、artifact 没落盘」。现在已按**能力**分派；新增这类 Agent 时
+> 请务必跑一次**端到端冒烟**（`install --home <fake>` → `doctor --home <fake>`），只跑 `merge` 单测看不出这个问题。
+
 ---
 
 ## 3. Checklist: from zero to a merged adapter
