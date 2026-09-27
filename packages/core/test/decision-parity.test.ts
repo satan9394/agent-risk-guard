@@ -510,6 +510,22 @@ export const DECISION_CORPUS: DecisionCase[] = [
   { id: 'N19 branch -m old new（反向守卫）', payload: J('git branch -m old new'), expect: 'allow', note: '★重命名：`-m` 不含 d/D。⚠️ 与本段无关的既存事实：`isReadOnlyCommand` 不把 `-m/-M` 当只读，只要求「不被 classify 判成破坏」——本条只钉判定结果' },
   { id: 'N20 branch --contains feat-d（反向守卫）', payload: J('git branch --contains feat-d'), expect: 'allow', note: '★关键误伤守卫：引用名里的 `-d` **前面没有空白**，不属于 flag token → 必须 allow（防修法「吃掉任意 token」）' },
   { id: 'N21 branch -a --format（反向守卫）', payload: J("git branch -a --format='%(refname)'"), expect: 'allow', note: '★同上（长选项带 `=` 值，且值里含括号与百分号）' },
+  // ── R18 / F18（2026-09-27）：动态调用·间接构造 + 回收站清空。跨端一致性 ──────────────
+  // 本轮实测教训：R18 在 ps1 端全拦、sh 端曾漏「拼接命令名」（片段 join 时未去掉换行）；
+  // F18 则是 **sh 端完全缺失**（`Clear-RecycleBin` 在 ps1 deny / sh allow）——四处 sh 套件都没抓到，
+  // 因为语料里根本没有回收站用例。故本段同时钉这两类，防再次单端漂移。
+  { id: 'R18 变量持有删除动词 + call 调用', payload: J(`$v='Remove-Item'; & $v -LiteralPath C:\\tmp\\a.txt -Force`), expect: 'deny', note: '★分段会拆散赋值与调用：必须按完整命令判定' },
+  { id: 'R18 拼接命令名 + call 调用', payload: J(`$c='Remo'+'ve-Item'; & $c -Force C:\\tmp\\a.txt`), expect: 'deny', note: '★本轮 sh 曾漏：片段 join 未去换行' },
+  { id: 'R18 iex 延迟执行（无删除词）', payload: J('iex (Get-Content .\\cmd.txt)'), expect: 'deny', note: '★旧规则要求同行出现删除词，故漏' },
+  { id: 'R18 scriptblock 动态构造', payload: J(`& ([scriptblock]::Create('Remove-'+'Item C:\\tmp\\a.txt'))`), expect: 'deny' },
+  { id: 'R18 Add-Type 动态类型', payload: J('Add-Type -TypeDefinition $src'), expect: 'deny' },
+  { id: 'R18 python getattr 动态属性', payload: J(`python -c "import os;getattr(os,'rem'+'ove')('C:/tmp/a.txt')"`), expect: 'deny' },
+  { id: 'R18 反向：grep 检索 iex 单词', payload: J('grep -rin iex docs/'), expect: 'allow', note: '命令位锚定的误伤守卫' },
+  { id: 'R18 反向：rg 检索 getattr 源码', payload: J('rg "getattr\\(" src/'), expect: 'allow', note: '需 python 解释器在场才判' },
+  { id: 'R18 反向：数组字面量非拼接', payload: J(`@('a.txt','b.txt') | ForEach-Object { Get-Item $_ }`), expect: 'allow', note: '★拼接判定只认 `+`：否则误伤数组字面量' },
+  { id: 'R18 反向：正常变量拼接', payload: J(`$p='C:\\tmp\\'; $f=$p+'a.txt'; Get-Item $f`), expect: 'allow' },
+  { id: 'F18 清空回收站 -Force', payload: J('Clear-RecycleBin -Force'), expect: 'deny', note: '★改前 sh 端 allow（既存发散）' },
+  { id: 'F18 cleanmgr /sagerun', payload: J('cleanmgr /sagerun:1'), expect: 'deny', note: '★同上' },
 ];
 
 /**

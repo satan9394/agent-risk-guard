@@ -53,5 +53,17 @@ test('FP: git status', () => assert.equal(blocked('git status'), false));
 test('FP: npm test', () => assert.equal(blocked('npm test'), false));
 test('FP: ls -la', () => assert.equal(blocked('ls -la'), false));
 test('FP: rm --help', () => assert.equal(blocked('rm --help'), false));
+// ---- R18（2026-09-27 用户实测）：动态调用/间接构造 ----
+test('R18 变量持有删除动词 + & 调用', () => assert.equal(blocked("$v='Remove-Item'; & $v -LiteralPath C:\\tmp\\a.txt -Force"), true));
+test('R18 字符串拼接命令名 + & 调用', () => assert.equal(blocked("$c='Remo'+'ve-Item'; & $c -Force C:\\tmp\\a.txt"), true));
+test('R18 iex 延迟执行（无删除词）', () => assert.equal(blocked('iex (Get-Content .\\cmd.txt)'), true));
+test('R18 scriptblock 动态构造', () => assert.equal(blocked("& ([scriptblock]::Create('Remove-'+'Item C:\\tmp\\a.txt'))"), true));
+test('R18 Add-Type 动态类型', () => assert.equal(blocked('Add-Type -TypeDefinition $src'), true));
+test('R18 call 运算符 + 引号删除动词', () => assert.equal(blocked("& 'Remove-Item' C:\\tmp\\a.txt"), true));
+test('R18 Python getattr 动态属性名', () => assert.equal(blocked('python -c "import os;getattr(os,\'rem\'+\'ove\')(\'C:/tmp/a.txt\')"'), true));
+test('FP-R18 grep 检索 iex 单词', () => assert.equal(blocked('grep -rin iex docs/'), false));
+test('FP-R18 rg 检索 getattr 源码', () => assert.equal(blocked('rg "getattr\\(" src/'), false));
+test('FP-R18 正常变量拼接（无删除动词）', () => assert.equal(blocked("$p='C:\\tmp\\'; $f=$p+'a.txt'; Get-Item $f"), false));
+test('FP-R18 npm uninstall', () => assert.equal(blocked('npm uninstall lodash'), false));
 
 void readFileSync; // 保持导入有效（extract 由 extract.ts 使用）
