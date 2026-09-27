@@ -101,6 +101,7 @@ node bin/riskguard.mjs install --dry-run
 | **Claude Code** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
 | **OpenCode** | `tool.execute.before` 插件 | 机器硬门禁 | ✅ 真实会话已验证 |
 | **Antigravity CLI** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
+| **WorkBuddy (CodeBuddy)** | `PreToolUse` hook（Claude Code 兼容） | 机器硬门禁——**删除委派**给平台自带 safe-delete（改道回收站），不可逆操作仍拦 | 🟡 自动化实测（D2；D3 待真实会话） |
 | **Codex** | hook + 应用策略/沙箱层 | **混合**——应用形态下拦住命令的是 Codex 自身的策略层，CLI 侧 hook 另有实测 | 🟡 部分验证 |
 | **DeepSeek Harness** | profile 注入的规则补丁 | **规则（正则）层**——`@riskguard/dsh` 插件已实现且有测试，但**未接入任何 profile** | 🟡 已验证（非插件） |
 | **Cursor / Windsurf / Grok** | adapter | 无真实会话验证 | ⚪ 仅实现 |

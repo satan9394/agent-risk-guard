@@ -19,7 +19,8 @@ import { loadCompatibility } from '../../installer/src/compatibility.ts';
 import { evaluateAcsToolCall, evaluateAcsEnvelope, acsGatewayInfo } from '../../acs/src/gateway.ts';
 import { auditLineFromEvent } from '../../acs/src/audit.ts';
 import {
-  mergeClaudeSettings, mergeCodexHooks, mergeOpencodePlugins, isRiskGuardPluginRef,
+  mergeClaudeSettings, mergeCodexHooks, mergeOpencodePlugins, mergeWorkbuddySettings, isRiskGuardPluginRef,
+  WORKBUDDY_HOOK_ID,
   CLAUDE_HOOK_ID, CODEX_HOOK_ID, OPENCODE_PLUGIN_ID, OPENCODE_PLUGIN_LEGACY_ID,
 } from '../../installer/src/merge.ts';
 import { backupRoot } from '../../installer/src/backup.ts';
@@ -67,7 +68,7 @@ const HOMES = {
 // ============================================================================
 
 /** canonical id → 展示名（CLI 帮助/输出用；与 AGENT_REGISTRY 一致） */
-const CANONICAL_AGENTS = ['claude-code', 'opencode', 'codex', 'dsh'] as const;
+const CANONICAL_AGENTS = ['claude-code', 'opencode', 'codex', 'dsh', 'workbuddy'] as const;
 
 /** alias 表：任何写法 → canonical id */
 const AGENT_ALIASES: Record<string, string> = {
@@ -75,6 +76,8 @@ const AGENT_ALIASES: Record<string, string> = {
   'opencode': 'opencode', 'open-code': 'opencode', 'oc': 'opencode', 'open_code': 'opencode',
   'codex': 'codex', 'codex-cli': 'codex',
   'dsh': 'dsh', 'deepseek-harness': 'dsh',
+  // WorkBuddy = CodeBuddy Code 桌面版（CC 兼容 hook）；`wb`/`codebuddy` 都是常见写法
+  'workbuddy': 'workbuddy', 'wb': 'workbuddy', 'codebuddy': 'workbuddy', 'codebuddy-code': 'workbuddy',
 };
 
 /** 统一 alias 解析：未知返回 null（调用方报「unknown agent」而非抛错） */
@@ -137,6 +140,9 @@ function doctorFixHint(id: string, kind: 'config' | 'wiring' | 'dsh' | 'runtime'
   // agy 与 dsh 一样不在 CLI install 覆盖范围内（由 skill / 文档手工接线）——
   // 把它指到 `install --agent agy` 是误导：那条命令根本不会去动 ~/.gemini/config/hooks.json。
   if (id === 'agy') return '重新注册 agy 适配器（见 docs/adding-an-agent.md 与 skills/agent-risk-guard/SKILL.md）：~/.gemini/config/hooks.json 的 PreToolUse.matcher=run_command 需指向 assets/hooks/agy-dangerous-commands.ps1，再重跑: node bin/riskguard.mjs doctor';
+  // WorkBuddy：可 CLI 安装，但**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（平台自带 safe-delete shim）。
+  // 手工把前缀去掉会退回「hook 拦删除 → 命令不执行 → shim 无机会改道」的死锁，所以这里显式说清。
+  if (id === 'workbuddy') return '重跑: node bin/riskguard.mjs install --agent workbuddy（生成的接线已带 RG_ALLOW_DELETE=1 前缀；请勿手工改成裸 powershell —— WorkBuddy 自带 safe-delete shim，去掉前缀会与它死锁），再重跑: node bin/riskguard.mjs doctor';
   return `重跑: node bin/riskguard.mjs install --agent ${id}`;
 }
 
@@ -176,7 +182,7 @@ interface AgentInstaller {
   id: string;
   display: string;
   planConfigPath: (home: string) => string;         // 目标配置路径
-  buildInjection: (repoRoot: string) => unknown;    // 注入条目
+  buildInjection: (repoRoot: string, home: string) => unknown;    // 注入条目（home 供需要写绝对落点的 Agent 使用）
   copyArtifacts?: (repoRoot: string, home: string) => Promise<{ files: string[]; notes?: string[] }>;
   pluginPathHint?: string;
 }
@@ -225,6 +231,40 @@ const installers: Record<string, AgentInstaller> = {
       return { files: [dst] };
     },
   },
+  // WorkBuddy（CodeBuddy Code 桌面版）：CC 兼容 PreToolUse，但**必须**以 RG_ALLOW_DELETE=1 运行。
+  // 平台自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），
+  // 会把删除改道进回收站；hook 若照常拦下「删除类」，命令就不执行、shim 没机会改道 → 死锁。
+  // 委派后仍拦不可逆操作：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/
+  // cleanmgr/$Recycle.Bin），Clear-Content 显式排除（见 assets/hooks/dangerous-commands.ps1 顶部说明）。
+  // hook 用 ps1 规则引擎（与 claude/codex/agy 同一单源），由 copyArtifacts 落到 ~/.workbuddy/hooks/。
+  workbuddy: {
+    id: 'workbuddy', display: 'WorkBuddy (CodeBuddy Code desktop)',
+    planConfigPath: (h) => join(h, '.workbuddy', 'settings.json'),
+    buildInjection: (_root, home) => {
+      const hookPath = join(HOMES.get(home), '.workbuddy', 'hooks', 'dangerous-commands.ps1');
+      return {
+        _riskguard: true, id: WORKBUDDY_HOOK_ID,
+        matcher: 'Bash|PowerShell',
+        hooks: [{
+          type: 'command',
+          // 形态对齐本机**实测在用**的那条：env 前缀 + 带引号的绝对解释器 + 带引号的 -File 路径。
+          // 不加引号会在部分 spawn 路径下静默失效（同 agy 2026-09-13 的教训）。
+          command: `RG_ALLOW_DELETE=1 "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "${hookPath}"`,
+          statusMessage: 'RiskGuard: checking dangerous commands',
+          timeout: 15,
+        }],
+      };
+    },
+    pluginPathHint: join(REPO_ROOT, 'assets', 'hooks', 'dangerous-commands.ps1'),
+    copyArtifacts: async (_repoRoot, home) => {
+      const src = join(REPO_ROOT, 'assets', 'hooks', 'dangerous-commands.ps1');
+      const dstDir = join(HOMES.get(home), '.workbuddy', 'hooks');
+      const dst = join(dstDir, 'dangerous-commands.ps1');
+      await mkdir(dstDir, { recursive: true });
+      await copyFile(src, dst);
+      return { files: [dst], notes: ['WorkBuddy delegates deletion to its platform safe-delete shim; the generated hook command already carries RG_ALLOW_DELETE=1.'] };
+    },
+  },
 };
 
 /**
@@ -243,7 +283,8 @@ async function resolveActiveRoot(home: string): Promise<{ root: string; source: 
 export function mergeForAgent(id: string, repoRoot: string, existing: Record<string, unknown> | null | undefined, home: string): { config: Record<string, unknown>; changed: boolean } {
   if (id === 'claude-code') return mergeClaudeSettings(existing, installers['claude-code'].buildInjection(repoRoot));
   if (id === 'codex') return mergeCodexHooks(existing, installers.codex.buildInjection(repoRoot));
-  if (id === 'opencode') return mergeOpencodePlugins(existing, installers.opencode.buildInjection(repoRoot), { home });
+  if (id === 'opencode') return mergeOpencodePlugins(existing, installers.opencode.buildInjection(repoRoot, home), { home });
+  if (id === 'workbuddy') return mergeWorkbuddySettings(existing, installers.workbuddy.buildInjection(repoRoot, home));
   return { config: (existing ?? {}), changed: false };
 }
 
@@ -490,25 +531,33 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   const merged = (() => {
     if (inst.id === 'claude-code') return mergeClaudeSettings(existingRaw, inst.buildInjection(activeRoot));
     if (inst.id === 'codex') return mergeCodexHooks(existingRaw, inst.buildInjection(activeRoot));
-    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(activeRoot), { home });
+    if (inst.id === 'opencode') return mergeOpencodePlugins(existingRaw, inst.buildInjection(activeRoot, home), { home });
+    if (inst.id === 'workbuddy') return mergeWorkbuddySettings(existingRaw, inst.buildInjection(activeRoot, home));
     return { config: (existingRaw ?? {}), changed: false };
   })();
 
-  // —— PRECHECK：OpenCode artifact 预检（目标存在且非我方文件 → ABORT，绝不覆盖） ——
+  // —— PRECHECK：artifact 预检（目标存在且非我方文件 → ABORT，绝不覆盖） ——
+  // 2026-09-27：从「只服务 opencode」推广为「任何带 copyArtifacts 的 installer」——
+  //   WorkBuddy 的 hook 是 ps1 单源，同样需要落盘，也需要同样的「不覆盖非我方文件」保护。
   let artifactDst: string | null = null;
   let artifactSrc: string | null = null;
-  const artifactExistsBefore = inst.copyArtifacts && inst.id === 'opencode' && (() => {
-    artifactSrc = join(activeRoot, 'assets', 'opencode', `${OPENCODE_PLUGIN_ID}.ts`);
-    artifactDst = join(home, '.config', 'opencode', 'plugins', `${OPENCODE_PLUGIN_ID}.ts`);
-    return existsSync(artifactDst);
-  })();
-  if (inst.copyArtifacts && inst.id === 'opencode' && artifactExistsBefore) {
+  if (inst.copyArtifacts) {
+    if (inst.id === 'opencode') {
+      artifactSrc = join(activeRoot, 'assets', 'opencode', `${OPENCODE_PLUGIN_ID}.ts`);
+      artifactDst = join(home, '.config', 'opencode', 'plugins', `${OPENCODE_PLUGIN_ID}.ts`);
+    } else if (inst.id === 'workbuddy') {
+      artifactSrc = join(activeRoot, 'assets', 'hooks', 'dangerous-commands.ps1');
+      artifactDst = join(home, '.workbuddy', 'hooks', 'dangerous-commands.ps1');
+    }
+  }
+  const artifactExistsBefore = artifactDst !== null && existsSync(artifactDst);
+  if (artifactExistsBefore) {
     const dstHash = await sha256File(artifactDst!);
-    const srcHash = await sha256File(artifactSrc!);
+    const srcHash = artifactSrc ? await sha256File(artifactSrc) : null;
     if (dstHash !== srcHash) {
       return {
         agent: inst.id, display: inst.display, state: 'aborted', dryRun: dry,
-        message: `${inst.display} plugin installation aborted.\n\nTarget already exists:\n${artifactDst}\n\nThe existing file is not owned by this RiskGuard installation (SHA256 mismatch).\nNo files were overwritten.\nPlease inspect or remove it, then retry.`,
+        message: `${inst.display} installation aborted.\n\nTarget already exists:\n${artifactDst}\n\nThe existing file is not owned by this RiskGuard installation (SHA256 mismatch).\nNo files were overwritten.\nRefresh it with scripts/riskguard-wiring-check.ps1 -Fix, or remove it, then retry.`,
       };
     }
   }
@@ -540,7 +589,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
   try {
     // —— SNAPSHOT + BACKUP：记录每个目标的本轮状态（已存在文件必须备份成功） ——
     const snapshotPaths = [configPath];
-    if (inst.copyArtifacts && inst.id === 'opencode' && artifactDst && existsSync(artifactDst)) snapshotPaths.push(artifactDst);
+    if (artifactDst && existsSync(artifactDst)) snapshotPaths.push(artifactDst);
     await tx.snapshot(snapshotPaths);
 
     // —— WRITE：config + artifact（原子写） ——
@@ -549,12 +598,12 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
     }
     if (opts._test?.failAt === 'config-write') throw new Error('INJECTED: config-write failure');
 
-    if (inst.copyArtifacts && inst.id === 'opencode' && artifactSrc && artifactDst && !artifactExistsBefore) {
+    if (artifactSrc && artifactDst && !artifactExistsBefore) {
       await tx.writeArtifactAtomic(artifactSrc, artifactDst);
       createdFiles.push(artifactDst);
       const h = await sha256File(artifactDst);
       if (h) artifactRecords.push({ path: artifactDst, sha256: h, createdByInstall: true });
-    } else if (inst.copyArtifacts && inst.id === 'opencode' && artifactDst && artifactExistsBefore) {
+    } else if (artifactDst && artifactExistsBefore) {
       const h = await sha256File(artifactDst);
       if (h) artifactRecords.push({ path: artifactDst, sha256: h, createdByInstall: false });
     }
@@ -569,7 +618,7 @@ async function installOne(inst: AgentInstaller, home: string, opts: InstallAgent
       transactionId: tx.id, installedAt: new Date().toISOString(),
       installedFiles: createdFiles,
       modifiedConfig: merged.changed ? [configPath] : [],
-      riskguardEntryId: inst.id === 'claude-code' ? CLAUDE_HOOK_ID : inst.id === 'codex' ? CODEX_HOOK_ID : OPENCODE_PLUGIN_ID,
+      riskguardEntryId: inst.id === 'claude-code' ? CLAUDE_HOOK_ID : inst.id === 'codex' ? CODEX_HOOK_ID : inst.id === 'workbuddy' ? WORKBUDDY_HOOK_ID : OPENCODE_PLUGIN_ID,
       backupDir: join(backupRoot(home), inst.id),
       artifacts: artifactRecords,
       runtimeVerification: { verifiedAt: new Date().toISOString(), result: 'FAIL', detail: 'pending verification' },
@@ -622,7 +671,7 @@ export async function cmdStatus(opts: { home?: string }): Promise<string> {
   const home = HOMES.get(opts.home);
   const lines = ['Agent RiskGuard Status', '',
     'Runtime state  — 这台机器上 RiskGuard 当前实际状态（非产品能力等级）', 'Capability     —  RiskGuard 对该 Agent 理论/实测支持等级（D0–D4）', ''];
-  const order = ['claude-code', 'opencode', 'codex', 'dsh'];
+  const order = ['claude-code', 'opencode', 'codex', 'dsh', 'workbuddy'];
   for (const id of order) {
     const c = compat.agents[id];
     // ACTIVE 必须经完整 runtime self-test（deep）
@@ -673,7 +722,7 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
   // 2026-09-21：加入 agy —— 此前它既不在 order 里、也没有 runtime-probe 分支，
   //   于是「已安装的 agy」在 doctor 输出里**一行都没有**（SKIP 只在未安装时才打），
   //   新鲜度校验永远走不到。凡是能接线的 Agent 都必须在 order 里出现。
-  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy'];
+  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy', 'workbuddy'];
   const counts = { pass: 0, warn: 0, fail: 0, skip: 0 };
 
   /** 记一条 FAIL：行尾追加可执行修复提示（原 FAIL 行文本保持原样，仅追加） */
@@ -738,6 +787,20 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
         lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
         checks.push({ level: 'WARN', agent: id, message: msg });
       } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + adapter self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + adapter self-test' }); }
+    } else if (id === 'workbuddy') {
+      // WorkBuddy：与 claude/codex 同形（CC 兼容 PreToolUse + 可真实 spawn 的 ps1 hook），
+      // 但注册命令必须带 RG_ALLOW_DELETE=1（平台自带 safe-delete shim，删除委派而不是拦下）。
+      if (!probe.configValid) { fail(id, '配置损坏', 'config'); }
+      else if (!probe.wired) { fail(id, 'RiskGuard hook 未注册（settings.json 的 PreToolUse）', 'wiring'); }
+      else if (!probe.hookTargetExists) { fail(id, 'hook 目标文件缺失', 'wiring'); }
+      else if (!probe.runtimeAvailable) { fail(id, 'node 运行时不可用', 'runtime'); }
+      else if (!probe.selfTestPassed) { fail(id, 'runtime self-test 未通过（委派模式下仍须拦不可逆操作）', 'wiring'); }
+      else if (probe.hookScriptFreshness === false) {
+        counts.warn++;
+        const msg = 'hook 脚本与仓库单源不一致（可能陈旧，详情见 --verbose）';
+        lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
+        checks.push({ level: 'WARN', agent: id, message: msg });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + safe-delete delegation self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + safe-delete delegation self-test' }); }
     }
     lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
@@ -886,11 +949,11 @@ async function uninstallOne(id: string, display: string, home: string): Promise<
 
 /** 精确移除 RiskGuard 注入条目（claude/codex：按 _riskguard/id marker；opencode：plugin 引用新旧名都认） */
 function removeInjection(id: string, cfg: Record<string, unknown>): { config: Record<string, unknown>; changed: boolean } {
-  const entryId = id === 'claude-code' ? CLAUDE_HOOK_ID : id === 'codex' ? CODEX_HOOK_ID : OPENCODE_PLUGIN_ID;
+  const entryId = id === 'claude-code' ? CLAUDE_HOOK_ID : id === 'codex' ? CODEX_HOOK_ID : id === 'workbuddy' ? WORKBUDDY_HOOK_ID : OPENCODE_PLUGIN_ID;
   let config = { ...cfg };
   let changed = false;
 
-  if (id === 'claude-code' || id === 'codex') {
+  if (id === 'claude-code' || id === 'codex' || id === 'workbuddy') {
     const hooks = (config['hooks'] as Record<string, unknown>) ?? {};
     const pretool = Array.isArray(hooks['PreToolUse']) ? hooks['PreToolUse'] : [];
     const isMine = (x: unknown): boolean =>

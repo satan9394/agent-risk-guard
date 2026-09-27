@@ -666,6 +666,69 @@
         "policy": "default-policy"
       }
     },
+    "workbuddy": {
+      "display": "WorkBuddy (CodeBuddy Code desktop)",
+      "integration": "PreToolUse hook (settings.json, Claude Code compatible)",
+      "enforcement": "soft",
+      "verification": {
+        "windows": "D2",
+        "macos": "D0",
+        "linux": "D0"
+      },
+      "notes": "CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎，与 claude/codex/agy 同一单源）。**与其余 Agent 的关键差别**：WorkBuddy 自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），把删除强制改道回收站；所以接线**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（把「永久删除」类拦截委派给下游 shim），否则会出现「hook 拦下 → 命令不执行 → shim 没机会改道」的死锁；且 hook 文案建议的 VB 回收站路径又被平台硬编码黑名单（Add-Type / New-Object -ComObject / Reflection）拦住。委派后仍拦：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/cleanmgr/$Recycle.Bin）；Clear-Content 显式排除。D2 = 自动化判定实测（tests/adapter/workbuddy-injection.test.ts 钉住注入形状与委派矩阵）；**D3 未取**——需要一个真实 WorkBuddy 会话，2026-09-21 那次真实会话早于 R18，不作 D3 依据。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "sandbox": {
+        "available": "supported",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [
+        "RG_ALLOW_DELETE=1 changes what is denied: file/directory deletion is delegated to the platform safe-delete shim (which routes to the recycle bin), while irrecoverable operations (rm -rf /, system directories, shred, wmic shadowcopy, recycle-bin emptying) stay denied"
+      ],
+      "securityBoundaries": [
+        "L2"
+      ],
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "supported",
+          "verification": {
+            "windows": "D2"
+          }
+        }
+      },
+      "componentInventory": {
+        "agent": "workbuddy",
+        "version": "unknown",
+        "adapter": "packages/adapters/claude (CC-compatible payload; no per-vendor adapter needed)",
+        "hook": "PreToolUse hook (settings.json)",
+        "runtime": "powershell hook (shared ps1 rules engine)",
+        "policy": "default-policy"
+      }
+    },
     "grok": {
       "display": "Grok CLI",
       "integration": "PreToolUse hook",

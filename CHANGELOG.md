@@ -15,6 +15,18 @@
 
 ### Added
 
+- **WorkBuddy（CodeBuddy Code 桌面版）升为一等支持面（2026-09-27）**：此前它的拦截能力只存在于**维护脚本**
+  `scripts/riskguard-wiring-check.ps1`（本机在用）与 ps1 引擎注释里，`packages/` **零引用** —— 即
+  「能拦，但装不了、也检测不到」。本次按 `docs/adding-an-agent.md` 的契约补齐：① `discovery.ts` 注册表条目
+  （home 相对探针，保证 `--home <fake>` 密闭）；② `compatibility.json` 条目（windows **D2** / macos/linux D0，
+  逐项 EvidenceState）；③ CLI 安装器 `install --agent workbuddy`（写 `~/.workbuddy/settings.json` 的
+  PreToolUse + 把 ps1 单源复制到 `~/.workbuddy/hooks/`）；④ runtime-probe / doctor / status 分支；
+  ⑤ `tests/adapter/workbuddy-injection.test.ts`（注入形状 + **委派模式判定矩阵** = D2 证据）；
+  ⑥ README（中英）+ `references/workbuddy.md` + 机制矩阵。
+  **关键设计**：WorkBuddy 自带 safe-delete shim，注册命令**必须**带 `RG_ALLOW_DELETE=1` 前缀，把删除
+  **委派**给平台（否则「hook 拦下 → 命令不执行 → shim 没机会改道」死锁）；委派后仍拦不可逆操作
+  （`rm -rf /`、系统目录、`shred`、`wmic shadowcopy`、回收站清空族）。**D3 未取** —— 需要真实会话，
+  2026-09-21 那次早于 R18，不作依据。
 - **R18 动态调用/间接构造拦截（2026-09-27）**：用户实测「门禁只挡字面命令」，五种间接写法在 OpenCode V2 上
   完全绕过（且真把文件永久删掉，不经回收站）：`$v='Remove-Item'; & $v`、`$c='Remo'+'ve-Item'; & $c`、
   `iex (Get-Content .\cmd.txt)`、`& ([scriptblock]::Create('Remove-'+'Item ...'))`、

@@ -114,6 +114,14 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
     probePaths: ['.gemini/config/hooks.json'], probeAbs: ['%LOCALAPPDATA%/agy/bin/agy.exe'],
     notes: '~/.gemini/config/hooks.json PreToolUse(run_command) → agy-dangerous-commands.ps1；D3(2026-09-06)',
   },
+  {
+    id: 'workbuddy', display: 'WorkBuddy (CodeBuddy Code desktop)', mechanisms: ['hooks'],
+    // 2026-09-27：探针一律用 **home 相对**路径（同 agy 2026-09-21 的教训：绝对探针会让
+    // `--home <fake>` 密闭失效，并在 macOS/Linux 上永远判「未安装」）。
+    // settings.json 只要装了 WorkBuddy 就在，hooks 目录作为第二证据（我方 hook 落点）。
+    configRel: ['.workbuddy/settings.json'], probePaths: ['.workbuddy/settings.json', '.workbuddy/hooks'],
+    notes: 'CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎）；平台自带 safe-delete，必须以 RG_ALLOW_DELETE=1 委派删除；D2(2026-09-27 自动判定实测)',
+  },
 ];
 
 /** 去掉结尾的分隔符（线性扫描；不要用 `/[\\/]+$/` —— CodeQL 会判 polynomial-redos） */

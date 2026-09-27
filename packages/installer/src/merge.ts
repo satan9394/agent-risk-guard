@@ -26,22 +26,32 @@ export const OPENCODE_PLUGIN_ID = 'agent-risk-guard';
 /** 旧插件名（1.0.0 时代部署）；识别用兼容，不再作为新部署名 */
 export const OPENCODE_PLUGIN_LEGACY_ID = 'destructive-operation-guard';
 
+/** WorkBuddy hook entry marker（CC 兼容 settings.json，但 id 独立，便于识别与精确卸载） */
+export const WORKBUDDY_HOOK_ID = 'riskguard-workbuddy-hook';
+
 export interface MergeResult<T> {
   config: T;        // merge 后的配置
   changed: boolean; // 是否发生了改动（幂等时 false）
 }
 
-/** 判定 Claude hook 对象是否被我方注入（按 matcher + id marker） */
-function isClaudeRiskGuardHook(h: unknown): boolean {
+/** 判定 CC 兼容 hook 对象是否被我方注入（按 `_riskguard` marker 或指定 id） */
+function isCcCompatRiskGuardHook(h: unknown, id: string): boolean {
   if (typeof h !== 'object' || h === null) return false;
   const obj = h as Record<string, unknown>;
-  return obj['_riskguard'] === true || obj['id'] === CLAUDE_HOOK_ID;
+  return obj['_riskguard'] === true || obj['id'] === id;
 }
 
-/** Claude Code settings.json merge：追加 PreToolUse hook（保留用户全部字段与既有 hook） */
-export function mergeClaudeSettings(
+/**
+ * CC 兼容 settings.json 的 merge：追加 PreToolUse hook（保留用户全部字段与既有 hook）。
+ *
+ * 2026-09-27：抽出来供 **Claude Code** 与 **WorkBuddy** 共用 —— 两者的 hook 协议与配置形状
+ * 完全相同（`hooks.PreToolUse[] → hooks[] → {type:'command',command}`），差别只在 marker id
+ * （卸载要按各自 id 精确识别，不能串）。抽公共实现而不是复制一份，避免两处将来各自漂移。
+ */
+export function mergeCcCompatibleSettings(
   existing: Record<string, unknown> | null | undefined,
   hookEntry: unknown,
+  id: string,
 ): MergeResult<Record<string, unknown>> {
   const cfg = existing && typeof existing === 'object' && !Array.isArray(existing)
     ? { ...existing }
@@ -50,9 +60,25 @@ export function mergeClaudeSettings(
   const pretool = Array.isArray(hooks['PreToolUse']) ? [...hooks['PreToolUse']] : hooks['PreToolUse'] !== undefined && typeof hooks['PreToolUse'] === 'object' && hooks['PreToolUse'] !== null
     ? [hooks['PreToolUse']]
     : [];
-  if (pretool.some(isClaudeRiskGuardHook)) return { config: cfg, changed: false };
+  if (pretool.some((h) => isCcCompatRiskGuardHook(h, id))) return { config: cfg, changed: false };
   pretool.push(hookEntry);
   return { config: { ...cfg, hooks: { ...hooks, PreToolUse: pretool } }, changed: true };
+}
+
+/** Claude Code settings.json merge：追加 PreToolUse hook（保留用户全部字段与既有 hook） */
+export function mergeClaudeSettings(
+  existing: Record<string, unknown> | null | undefined,
+  hookEntry: unknown,
+): MergeResult<Record<string, unknown>> {
+  return mergeCcCompatibleSettings(existing, hookEntry, CLAUDE_HOOK_ID);
+}
+
+/** WorkBuddy settings.json merge（CC 兼容形状；独立 marker id） */
+export function mergeWorkbuddySettings(
+  existing: Record<string, unknown> | null | undefined,
+  hookEntry: unknown,
+): MergeResult<Record<string, unknown>> {
+  return mergeCcCompatibleSettings(existing, hookEntry, WORKBUDDY_HOOK_ID);
 }
 
 /** Codex hooks.json PreToolUse Bash 条目是否已存在（按 id marker） */
