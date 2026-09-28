@@ -25,6 +25,10 @@ Fixes #
 - [ ] 本地全量通过（Local full run green）：`& .\test-all.ps1`（或等价 / or equivalent）
 - [ ] 如有规则变更：`rule-alignment` 测试通过（skill 侧与 monorepo 侧同步 / rule change: alignment test passes）
 - [ ] 如改了 hook 或规则：证明**回退本修复会让某个测试变红**（reverting this fix turns a test red）
+- [ ] **如改了引擎（hook / 规则 / 语料）：跨端闸门真跑过** —— `node --test packages/core/test/decision-parity.test.ts`
+      在能同时跑两端的环境（Windows+WSL 或 Windows+Git Bash）出绿，并把结果贴进本 PR。
+      只看 Linux/macOS 作业的绿**不算**：那里会显式打印 `CROSS-END GATE NOT RUN`（SKIP 与 PASS 在摘要里同色）
+      (engine changes: the cross-end gate really ran — Linux-only green does not count)
 
 ## 安全自查 / Security self-check
 

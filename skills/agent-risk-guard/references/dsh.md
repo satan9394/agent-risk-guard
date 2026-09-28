@@ -18,7 +18,7 @@
           # ... 完整规则见下
 ```
 
-## 完整规则清单（47 条，2026-08 实测 + R2 扩充 + R3 生态融合）
+## 完整规则清单（**条数以单源为准** —— `assets/dsh/deny-risk-commands.patch.yml` 即真相源，与 monorepo `defaultDenyRules()` 的逐条一致由 `rule-alignment` 测试守住；`riskguard-wiring-check.ps1` 每次巡检打印实际条数。2026-08 实测 + R2 扩充 + R3 生态融合 + R18 动态调用）
 
 ```text
 删除类（铁律：必须进回收站）：

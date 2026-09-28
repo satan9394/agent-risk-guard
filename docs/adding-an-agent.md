@@ -135,6 +135,15 @@ If you touch a shell hook, the hook suites live in `skills/agent-risk-guard/test
 five PowerShell suites (under both Windows PowerShell 5.1 and `pwsh`) and four `sh` suites. 中文要点：
 **套件全绿 ≠ 判据有效** —— 改了规则或 hook，请同时证明"回退你的修复会让某个套件变红"，否则那条测试拦不住回归。
 
+> **跨端闸门在哪"真跑"（2026-09-27 新增）**：`decision-parity` / `cross-end identity` 需要**两端同时在场**
+> （ps1 引擎 + POSIX sh 引擎）。CI 上由 **`ps1-hook`（windows-latest）作业**执行：ps1 端 = `powershell.exe`，
+> sh 端按 `wsl.exe` → **Git Bash** → `bash` 顺序解析（Windows runner 不保证有 WSL 发行版；Git Bash 是镜像
+> 自带的真 POSIX shell，已实测 `python3` 缺失时引擎仍有 grep 兜底）。
+> **Linux/macOS 作业上它只会显式打印 `CROSS-END GATE NOT RUN` 并跳过 —— 那种绿不算跨端已验证**
+> （SKIP 与 PASS 在 CI 摘要里同色，这正是 sh 端 join bug 曾经溜过去的原因）。
+> 改引擎的 PR 请以 Windows 作业的绿为准，或在本机（Windows+WSL / Windows+Git Bash）跑一次
+> `node --test packages/core/test/decision-parity.test.ts` 并把结果贴进 PR。
+
 ---
 
 ## 5. Rules we will not bend
