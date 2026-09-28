@@ -4,6 +4,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# 包管理器：本仓统一 npm（package-lock.json 是唯一锁文件，CI 用 npm ci）；pnpm-lock.yaml 属本地偶发产物
+pnpm-lock.yaml
+
 # 本地运行/日志
 *.log
 .tmp/
