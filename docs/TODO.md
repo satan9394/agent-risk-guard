@@ -50,6 +50,16 @@
   同批还发现并修掉两处**同型漂移**：skill 内 dsh patch 停在 R7b（缺 R7c 收紧）、
   agy 适配器此前完全不在比对范围。见 `docs/decisions.md` 2026-09-23 行。
 
+## 运维脚本欠账（wiring-check 等）
+
+- [ ] **`riskguard-wiring-check.ps1 -Fix` 不支持全新机器**（2026-09-28 密封测试发现，登记不修）：
+  目标 home 缺 `~/.claude/hooks` 等父目录时，ps1 段 `Restore-Single-Source` 的
+  `Copy-Item $source $dest -Force` 直接抛 `DirectoryNotFoundException`，撞脚本级 `EAP=Stop`
+  **终止整个巡检**（dsh 段都跑不到）；`settings.json` 段同病（node 读不到缺失文件，只报失败、
+  不自愈）。影响面仅限「从没装过对应 Agent 的机器上跑 `-Fix`」，本机无感。修法方向：restore 前
+  `New-Item -Force` 建父目录 + `settings.json` 缺失时从模板新建；要做就开独立一轮，密封测试基线
+  用 `tasks/orchestrator/rg-wiring-check-sealed-test.ps1` 扩用例。
+
 ## agy（Antigravity CLI）相关欠账
 
 > 2026-09-21 C 批已闭环：agy 纳入 `doctor`（此前「已安装却在 doctor 里一行都没有」）、
