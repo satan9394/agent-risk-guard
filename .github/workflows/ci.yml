@@ -125,12 +125,20 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0   # 跨端闸门那一步要 diff base…HEAD 判断是否碰了引擎
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
 
       - name: Show environment
         shell: pwsh
         run: |
           Write-Host "pwsh       : $($PSVersionTable.PSVersion)"
           & powershell -NoProfile -Command '"powershell : " + $PSVersionTable.PSVersion.ToString()'
+          Write-Host "node       : $(node --version)"
+          Write-Host "git bash   : $(Test-Path (Join-Path $env:ProgramFiles 'Git\bin\bash.exe'))"
 
       - name: Run ps1 hook + agy adapter suites (both engines, counts must agree)
         shell: pwsh
@@ -156,6 +164,38 @@ jobs:
           }
           if ($failed.Count -gt 0) { Write-Host "FAILED: $($failed -join '; ')"; exit 1 }
           Write-Host "ps1 + agy suites: 6/6 green on both engines, counts identical"
+
+      # 跨端一致性闸门（2026-09-27 新增）：它需要**两端同时在场**，所以必须挂在有 ps1 端的作业上。
+      # 背景：此前它只在开发者的 Windows 机器上跑过；Linux/macOS 作业里会 SKIP，而 SKIP 与 PASS 在
+      # CI 摘要里同色 → 「跨端一致性从未验证」被一片绿色掩盖（正是 sh 端 join bug 能溜过去的原因）。
+      # 本作业是 windows-latest：ps1 端 = powershell.exe，sh 端 = 测试内按 wsl → **Git Bash** → bash
+      # 顺序解析（WSL 在这类 runner 上不保证有发行版；Git Bash 是镜像自带的真 POSIX shell，
+      # 已实测 python3 缺失时引擎仍有 grep 兜底）。解析结果会写进诊断，便于事后核对用的哪两端。
+      #
+      # ⚠️ 它很贵：全量语料 = 602 次**真实进程 spawn**。本机实测 ps1+Git Bash 42.5 分钟（WSL 端 11 分钟）
+      # —— 所以只在**引擎文件变更**时才强制跑；纯文档/UI 的 PR 不必付这个代价。
+      - name: Detect engine changes (does the cross-end gate have to run?)
+        id: engines
+        shell: pwsh
+        run: |
+          $base = '${{ github.event.pull_request.base.sha }}'
+          if (-not $base) { $base = 'HEAD~1' }
+          $changed = @(git diff --name-only $base HEAD 2>$null)
+          Write-Host "changed files: $($changed.Count)"
+          # 引擎 = 能改变判定的文件：两个 hook 脚本、单一规则源与语料、rule 源。
+          $engine = @($changed | Where-Object { $_ -match '^(assets/hooks/.*\.ps1$|packages/installer/src/deploy\.ts$|packages/core/test/decision-parity\.test\.ts$|packages/core/src/rules/|skills/agent-risk-guard/scripts/.*\.(ps1|sh)$)' })
+          if ($engine.Count -gt 0) {
+            Write-Host "engine files changed:`n  $($engine -join "`n  ")"
+            "run=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            Write-Host "no engine file changed — cross-end gate skipped (it costs ~40 min of real spawns)"
+            "run=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Cross-end parity gate (ps1 x sh — must really run here, not SKIP)
+        if: steps.engines.outputs.run == 'true'
+        shell: pwsh
+        run: node --test packages/core/test/decision-parity.test.ts
 
   # 决策账本：代码变更必须同时更新 docs/decisions.md。
   # check-decisions-log.ts 只管 A 表（已发布版本），管不到未发布的切片 —— PR #4 就是这么漏掉的。

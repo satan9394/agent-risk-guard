@@ -622,6 +622,99 @@ function decisionOf(stdout: string, code: number | null): string {
   return d === 'deny' ? 'deny' : d === 'allow' ? 'allow' : 'NO-DECISION';
 }
 
+/**
+ * ── 两端解析（2026-09-27）────────────────────────────────────────────────────────────
+ * 本测试**必须两端同时在场**（ps1 引擎 + POSIX sh 引擎）。此前硬编码 `powershell.exe` +
+ * `wsl.exe -e bash`，于是 Linux/macOS runner 上永远 SKIP —— 而 `node --test` 的 SKIP 与 PASS
+ * 在 CI 摘要里**同样是绿的**，结果是「跨端一致性从未被验证」被一片绿色掩盖。
+ *
+ * 现在按平台解析，并把「谁在跑」写进诊断；解析不到时给**显式** `CROSS-END GATE NOT RUN` 行
+ * （而不是一句普通 SKIP），让人一眼看出这条红线这次没有执行。
+ *
+ * **ps1 端只在 Windows 上解析**：该引擎面向 Windows，跑在 pwsh-on-Linux 上得到的是环境差异而非规则
+ * 分歧（2026-09-27 实测：GitHub 的 ubuntu runner 预装 pwsh，一旦默认启用，Linux 作业会真跑全量语料
+ * 并因环境差异变红）。要做跨 OS 语义研究时用 `RG_PARITY_ALLOW_POSIX_PS1=1` 显式开启。
+ *
+ * sh 端为什么要**显式**找 Git Bash：Windows 上 PATH 里的 `bash` 指向 WSL 的 stub
+ * （`C:\Windows\System32\bash.exe`），在没有发行版的 Windows runner 上必然失败；而 Git Bash
+ * 是 Windows runner 自带的真 POSIX shell。2026-09-27 实测：Git Bash 5.2 下该引擎判定正确，
+ * **且 `python3` 缺失时仍有 grep 兜底**（两条危险载荷照样 deny）——所以这条路是可信的。
+ *
+ * 覆盖用环境变量：`RG_PARITY_PS1_BIN` / `RG_PARITY_SH_BIN`（直接指定解释器可执行文件）。
+ */
+interface ParityEnd { bin: string; args: string[]; label: string }
+
+function gitBashCandidates(): string[] {
+  const pf = process.env['ProgramFiles'] ?? 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
+  const local = process.env['LOCALAPPDATA'];
+  const cands = [resolve(pf, 'Git', 'bin', 'bash.exe'), resolve(pf86, 'Git', 'bin', 'bash.exe')];
+  if (local) cands.push(resolve(local, 'Programs', 'Git', 'bin', 'bash.exe'));
+  return cands.filter((p) => existsSync(p));
+}
+
+/** `E:\a\b.sh` → `E:/a/b.sh`：Git Bash 认这种「盘符 + 正斜杠」形式（实测可用） */
+function toGitBashPath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+function resolveEnds(): { ps1: ParityEnd | null; sh: ParityEnd | null; missing: string[] } {
+  const ps1Hook = process.env.RG_PARITY_PS1 || DEFAULT_PS1;
+  const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
+  const missing: string[] = [];
+  const ps1Args = (hook: string) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', hook];
+
+  let ps1: ParityEnd | null = null;
+  const ps1Bin = process.env.RG_PARITY_PS1_BIN;
+  if (ps1Bin) {
+    ps1 = { bin: ps1Bin, args: ps1Args(ps1Hook), label: `ps1 via ${ps1Bin} (RG_PARITY_PS1_BIN)` };
+  } else if (process.platform === 'win32') {
+    if (which('powershell.exe', ['-NoProfile', '-Command', 'exit 0'])) ps1 = { bin: 'powershell.exe', args: ps1Args(ps1Hook), label: 'ps1 via powershell.exe' };
+    else if (which('pwsh', ['-NoProfile', '-Command', 'exit 0'])) ps1 = { bin: 'pwsh', args: ps1Args(ps1Hook), label: 'ps1 via pwsh' };
+  } else if (process.env.RG_PARITY_ALLOW_POSIX_PS1 === '1') {
+    // POSIX 上**默认不跑** ps1 端：该引擎面向 Windows（控制台编码、%TEMP% 日志、PowerShell 5.1 行为），
+    // 在 pwsh-on-Linux 下比对得到的是**环境差异**而不是**规则分歧**。2026-09-27 实测代价：GitHub 的
+    // ubuntu runner **预装 pwsh**，一旦默认启用，Linux 作业就会真跑全量语料（该次 6 分 3 秒）并因环境
+    // 差异变红 —— 那是噪声，会逼人给闸门加豁免。要做跨 OS 语义研究时显式开这个开关。
+    const interp = which('pwsh', ['-NoProfile', '-Command', 'exit 0']) ? 'pwsh'
+      : which('powershell', ['-NoProfile', '-Command', 'exit 0']) ? 'powershell' : null;
+    if (interp) ps1 = { bin: interp, args: ps1Args(ps1Hook), label: `ps1 via ${interp} (POSIX, opt-in)` };
+  }
+  if (!ps1) {
+    missing.push(process.platform === 'win32'
+      ? 'ps1 端：本机无 powershell.exe / pwsh'
+      : 'ps1 端：POSIX 上默认不跑（ps1 引擎面向 Windows，跑在 Linux 上只会得到环境差异；需要时显式设 RG_PARITY_ALLOW_POSIX_PS1=1）');
+  }
+
+  let sh: ParityEnd | null = null;
+  const shBin = process.env.RG_PARITY_SH_BIN;
+  if (shBin) {
+    sh = { bin: shBin, args: [toGitBashPath(shHook)], label: `sh via ${shBin} (RG_PARITY_SH_BIN)` };
+  } else if (process.platform === 'win32') {
+    if (which('wsl.exe', ['-e', 'bash', '-lc', 'exit 0'])) {
+      sh = { bin: 'wsl.exe', args: ['-e', 'bash', toWslPath(shHook)], label: 'sh via wsl.exe -e bash' };
+    } else {
+      const gb = gitBashCandidates()[0];
+      if (gb) sh = { bin: gb, args: [toGitBashPath(shHook)], label: `sh via Git Bash (${gb})` };
+      else if (which('bash', ['-lc', 'exit 0'])) sh = { bin: 'bash', args: [toGitBashPath(shHook)], label: 'sh via bash' };
+    }
+  } else if (which('bash', ['-lc', 'exit 0'])) {
+    sh = { bin: 'bash', args: [shHook], label: 'sh via bash' };
+  }
+  if (!sh) missing.push('sh 端：本机无 wsl.exe / Git Bash / bash');
+  return { ps1, sh, missing };
+}
+
+/** 两端不齐时的**显式**跳过：不留"看起来通过"的灰色地带 */
+function skipCrossEnd(t: { diagnostic: (s: string) => void; skip: (s?: string) => unknown }, missing: string[]): unknown {
+  for (const m of missing) t.diagnostic(`SKIP ${m}`);
+  const reason = `CROSS-END GATE NOT RUN（${missing.join('；')}）—— 这条红线本次**没有执行**。`
+    + '改引擎（hook / 规则 / 语料）的 PR 必须在能同时跑两端的环境（Windows+WSL，或 Windows+Git Bash）'
+    + '跑一次本测试，并把结果贴进 PR；CI 上由 windows-latest 的 ps1-hook 作业负责真跑。';
+  t.diagnostic(reason);
+  return t.skip(reason);
+}
+
 test('decision parity: ps1 与 sh 对同一语料的 permissionDecision 必须逐条一致且等于应然', { timeout: 1800000 }, (t) => {
   const ps1Hook = process.env.RG_PARITY_PS1 || DEFAULT_PS1;
   const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
@@ -629,19 +722,14 @@ test('decision parity: ps1 与 sh 对同一语料的 permissionDecision 必须�
   assert.ok(existsSync(ps1Hook), `ps1 hook 不存在: ${ps1Hook}`);
   assert.ok(existsSync(shHook), `sh hook 不存在: ${shHook}`);
 
-  const hasPs1 = which('powershell.exe', ['-NoProfile', '-Command', 'exit 0']);
-  const hasSh = which('wsl.exe', ['-e', 'bash', '-lc', 'exit 0']);
-  if (!hasPs1) t.diagnostic('SKIP ps1 端：本机无 powershell.exe');
-  if (!hasSh) t.diagnostic('SKIP sh 端：本机无 wsl/bash');
-  if (!hasPs1 || !hasSh) return t.skip('两端之一不可用，无法做判定 parity（本机 Windows+WSL 两端均可用）');
-
-  const ps1Args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Hook];
-  const shArgs = ['-e', 'bash', toWslPath(shHook)];
+  const { ps1, sh, missing } = resolveEnds();
+  if (!ps1 || !sh) return skipCrossEnd(t, missing);
+  t.diagnostic(`ends: ${ps1.label} + ${sh.label}`);
 
   const rows: string[] = [];
   for (const c of DECISION_CORPUS) {
-    const p = runEnd('powershell.exe', ps1Args, c.payload);
-    const s = runEnd('wsl.exe', shArgs, c.payload);
+    const p = runEnd(ps1.bin, ps1.args, c.payload);
+    const s = runEnd(sh.bin, sh.args, c.payload);
     if (p === s && p === c.expect) continue;
     const why = p !== s ? '两端分歧' : p !== c.expect ? '两端同判但不符合应然语义' : '输出不可判读（非法 JSON / 非 0 退出）';
     rows.push(row(c, p, s, why));
@@ -665,17 +753,13 @@ test('cross-end identity: 命令位/非命令位语料两端 decision 必须逐�
   const shHook = process.env.RG_PARITY_SH || DEFAULT_SH;
   assert.ok(existsSync(ps1Hook), `ps1 hook 不存在: ${ps1Hook}`);
   assert.ok(existsSync(shHook), `sh hook 不存在: ${shHook}`);
-  const hasPs1 = which('powershell.exe', ['-NoProfile', '-Command', 'exit 0']);
-  const hasSh = which('wsl.exe', ['-e', 'bash', '-lc', 'exit 0']);
-  if (!hasPs1 || !hasSh) return t.skip('两端之一不可用，无法做身份断言');
-
-  const ps1Args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Hook];
-  const shArgs = ['-e', 'bash', toWslPath(shHook)];
+  const { ps1, sh, missing } = resolveEnds();
+  if (!ps1 || !sh) return skipCrossEnd(t, missing);
 
   const rows: string[] = [];
   for (const c of IDENTITY_CORPUS) {
-    const p = runEnd('powershell.exe', ps1Args, c.payload);
-    const s = runEnd('wsl.exe', shArgs, c.payload);
+    const p = runEnd(ps1.bin, ps1.args, c.payload);
+    const s = runEnd(sh.bin, sh.args, c.payload);
     if (p === s) continue;
     rows.push(row(c, p, s, '两端分歧（身份断言失败：某一端的前缀漂移了）'));
   }

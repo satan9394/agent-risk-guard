@@ -15,6 +15,21 @@
 
 ### Added
 
+- **跨端闸门不再"只在开发者机器上跑"（2026-09-27）**：`decision-parity` / `cross-end identity` 需要**两端同时在场**
+  （ps1 引擎 + POSIX sh 引擎），此前硬编码 `powershell.exe` + `wsl.exe -e bash` → **Linux/macOS CI 上永远 SKIP**，
+  而 `node --test` 的 SKIP 与 PASS 在 CI 摘要里**同色** ⇒「跨端一致性从未被验证」被一片绿色掩盖（R18 那轮的
+  **sh 端 join bug** 正是这样溜过去的：四套 sh 用例与 `rule-alignment` 全绿，只有本机手工跑批才抓到）。
+  修法：① 两端解析**平台化**（ps1 端**只在 Windows 上解析**：`powershell.exe` → `pwsh`；POSIX 默认**不跑**、
+  需 `RG_PARITY_ALLOW_POSIX_PS1=1` 显式开启；sh 端：`wsl.exe` → **Git Bash**（**显式绝对路径**——
+  Windows 上 PATH 里的 `bash` 是 WSL 的 stub）→ `bash`），并把"谁在跑"写进诊断；② 解析不到时打印**显式**
+  `CROSS-END GATE NOT RUN`（不再是一句与 PASS 同色的 SKIP）；③ 在 CI 的 `ps1-hook`（windows-latest）作业里
+  **真的跑**它（并补 `actions/setup-node`：该作业此前不需要 Node，而 runner 自带的版本跑不了原生 TS）；
+  ④ PR 模板与 `docs/adding-an-agent.md` 写明「**只看 Linux 作业的绿不算跨端已验证**」。
+  **同一轮被 CI 抓到的坑**：GitHub 的 **ubuntu runner 预装 pwsh**，所以「POSIX 上也解析 ps1 端」会让
+  Linux 作业**真跑**全量语料（该次 **6 分 3 秒**）并因**环境差异**变红 —— 那是噪声不是规则分歧，
+  已改为 **POSIX 上默认不跑**（ps1 引擎面向 Windows：控制台编码、`%TEMP%` 日志等）。
+  **顺带**：删掉 `SKILL.md` / `references/dsh.md` 里**会腐蚀的硬编码规则条数**（写 47、实际已 74；写 66/401 行、
+  实际 761 行）——改为指向单一事实源，巡线每次会打印实际值，这类漂移从此不再可能。
 - **WorkBuddy（CodeBuddy Code 桌面版）升为一等支持面（2026-09-27）**：此前它的拦截能力只存在于**维护脚本**
   `scripts/riskguard-wiring-check.ps1`（本机在用）与 ps1 引擎注释里，`packages/` **零引用** —— 即
   「能拦，但装不了、也检测不到」。本次按 `docs/adding-an-agent.md` 的契约补齐：① `discovery.ts` 注册表条目

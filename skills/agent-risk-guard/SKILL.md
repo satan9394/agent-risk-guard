@@ -188,11 +188,11 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 
 | Agent | 输出格式 | 验证状态 | 说明 |
 | --- | --- | --- | --- |
-| Claude Code | `hookSpecificOutput.permissionDecision` | ✅ 已实测 | hook 规则集 66 条命令模式规则（脚本 401 行，共 72 处 deny 分支含 6 条 fail-closed 防守卫），89 条 ps1 验证用例全通过；⚠️ 本机 settings.json 未注册 PreToolUse（需接线） |
+| Claude Code | `hookSpecificOutput.permissionDecision` | ✅ 已实测 | hook 规则集：**条数以单源为准**（`assets/hooks/dangerous-commands.ps1`；`riskguard-wiring-check.ps1` 每次巡检会打印实际条数），ps1 六套用例全绿；⚠️ 本机 settings.json 未注册 PreToolUse（需接线） |
 | Codex | `hookSpecificOutput.permissionDecision` | ✅ 已实测 | 同上；`hook-calls.log` 有真实 deny 记录（2026-08-23 rm -rf） |
 | Antigravity CLI (agy) | PreToolUse run_command → agy 适配器 `{decision:allow\|deny}` | ✅ 已实测（Windows，agy **1.2.7**；此前 1.1.27） | `scripts/agy-dangerous-commands.ps1`（BOM+fail-closed）翻译 hook 协议并复用同目录规则引擎；真实会话两次：2026-09-06（1.1.27）与 **2026-09-21（1.2.7）** `git reset --hard` 均被拦、未提交修改保留、deny 文案中文可读；规则引擎缺失时 fail-closed deny |
 | OpenCode | 插件自有格式（`tool.execute.before`） | ✅ 已实测（完整） | 520 行插件（R16 四轮修复后），真实会话验证：模型拒绝 rm/Remove-Item、调用 trash 工具进 Windows 回收站确认收到；⚠️ 需 `opencode.json` plugin 声明才加载（见 `references/opencode-wiring.md`） |
-| DeepSeek Harness | pre-execute 门禁规则 | ✅ 已实测 | patch 47 条热加载生效（R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper）；`@riskguard/dsh` 插件（pre-execute+单调 guard）经 dsh-tools 源码实证 |
+| DeepSeek Harness | pre-execute 门禁规则 | ✅ 已实测 | patch 热加载生效（**条数以单源为准**：`assets/dsh/deny-risk-commands.patch.yml`，与 `defaultDenyRules()` 逐条一致由 `rule-alignment` 守住；巡线每次打印实际条数）（R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper）；`@riskguard/dsh` 插件（pre-execute+单调 guard）经 dsh-tools 源码实证 |
 | Cursor | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | hooks 文档显示兼容 CC 格式，需真实会话确认 |
 | Goose | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | 需真实会话确认 |
 | Grok | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | 需真实会话确认 |
@@ -220,7 +220,7 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 
 ### 脚本类（自动配置）
 
-- `scripts/dangerous-commands.ps1` — Claude Code / Codex 共用 PreToolUse hook 脚本（Windows 版，规则含 rm 全家桶/PowerShell 删除类/git 破坏整类（含 push -f/switch -C/worktree）/管道到 shell/子展开/docker/truncate/wmic 等 **66 条命令模式规则**（脚本 401 行，共 72 处 deny 分支含 6 条 fail-closed 防守卫），GAN 修复覆盖大小写/fail-closed/落盘链/插词/包装变体，四轮 GAN 审查加固至 8/10，ps1 89 条验证用例 + sh 侧 122 条全绿）
+- `scripts/dangerous-commands.ps1` — Claude Code / Codex 共用 PreToolUse hook 脚本（Windows 版，规则含 rm 全家桶/PowerShell 删除类/git 破坏整类（含 push -f/switch -C/worktree）/管道到 shell/子展开/docker/truncate/wmic 等 **规则集见单一事实源**（**条数不在此处硬编码** —— 巡线每次打印实际值；硬编码的数字已经飘过一次，见 2026-09-27 记录），GAN 修复覆盖大小写/fail-closed/落盘链/插词/包装变体，四轮 GAN 审查加固至 8/10，ps1 89 条验证用例 + sh 侧 122 条全绿）
 - `scripts/agy-dangerous-commands.ps1` — Antigravity CLI (agy) PreToolUse hook 适配器（BOM + fail-closed + **UTF-8 输出**，4522B→含 BOM 4525B），把 agy 的 run_command 协议翻译成规则引擎能识别的格式；2026-09-06 真实会话验证。2026-09-20 补 `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)`：Windows 下 `Write-Output` 按控制台代码页（chcp=936/GBK）写 stdout、而 agy 按 UTF-8 解析，导致中文 reason 乱码（**判定逻辑零改动**，只修文案）。2026-09-21 规则引擎改为**按优先级探测**（`RISKGUARD_AGY_ENGINE` → 同目录 `dangerous-commands.ps1` → `~/.codex/hooks/`），不再硬编码 codex 路径：此前「装了 agy 没装 codex」的机器上引擎必然缺失 → 适配器对任何命令都回 fail-closed deny（把 agy 整个锁死），且测试无法密闭
 - `scripts/dangerous-commands-universal.ps1` — 跨 7 家 Agent 通用 hook（规则集与 dangerous-commands.ps1 完全同步，单一事实源，BOM 编码）
 - `scripts/opencode/agent-risk-guard.ts` — OpenCode 完整插件（735 行，**V1+V2 双入口**：V2 接 `ctx.shell.hook("create.before")` / `ctx.tool.hook("execute.before")` / `ctx.permission.hook("evaluate")`，V1 走 `server(ctx)`；含检测器 + wrapper 解包 + 受保护路径 + trash 工具 + 日志。与单源 `assets/opencode/agent-risk-guard.ts` 逐字节一致，文件名为 `agent-risk-guard.ts`——**旧名 `destructive-operation-guard.ts` 是 v0.1 快照，在 V2 上注册不上任何 hook，已删除**）
@@ -229,7 +229,7 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 ### 配置模板类（合并到现有配置）
 
 - `assets/claude-code/settings.hooks.json` — Claude Code hooks 接线示例（合并进 settings.json 的 hooks 段）
-- `assets/dsh/deny-risk-commands.patch.yml` — DSH pre-execute 门禁规则段（47 条，含 R2 向量 + R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper，直接合并进 cordis.patch.yml 即生效）
+- `assets/dsh/deny-risk-commands.patch.yml` — DSH pre-execute 门禁规则段（**条数以单源为准**，见 `defaultDenyRules()`；含 R2 向量 + R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper，直接合并进 cordis.patch.yml 即生效）
 - `assets/cline/vscode-settings.json` — Cline VS Code 安全配置段（关闭 YOLO + 收紧 auto-approve + hooks 注册）
 
 ## References
