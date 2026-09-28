@@ -631,6 +631,10 @@ function decisionOf(stdout: string, code: number | null): string {
  * 现在按平台解析，并把「谁在跑」写进诊断；解析不到时给**显式** `CROSS-END GATE NOT RUN` 行
  * （而不是一句普通 SKIP），让人一眼看出这条红线这次没有执行。
  *
+ * **ps1 端只在 Windows 上解析**：该引擎面向 Windows，跑在 pwsh-on-Linux 上得到的是环境差异而非规则
+ * 分歧（2026-09-27 实测：GitHub 的 ubuntu runner 预装 pwsh，一旦默认启用，Linux 作业会真跑全量语料
+ * 并因环境差异变红）。要做跨 OS 语义研究时用 `RG_PARITY_ALLOW_POSIX_PS1=1` 显式开启。
+ *
  * sh 端为什么要**显式**找 Git Bash：Windows 上 PATH 里的 `bash` 指向 WSL 的 stub
  * （`C:\Windows\System32\bash.exe`），在没有发行版的 Windows runner 上必然失败；而 Git Bash
  * 是 Windows runner 自带的真 POSIX shell。2026-09-27 实测：Git Bash 5.2 下该引擎判定正确，
@@ -667,12 +671,20 @@ function resolveEnds(): { ps1: ParityEnd | null; sh: ParityEnd | null; missing: 
   } else if (process.platform === 'win32') {
     if (which('powershell.exe', ['-NoProfile', '-Command', 'exit 0'])) ps1 = { bin: 'powershell.exe', args: ps1Args(ps1Hook), label: 'ps1 via powershell.exe' };
     else if (which('pwsh', ['-NoProfile', '-Command', 'exit 0'])) ps1 = { bin: 'pwsh', args: ps1Args(ps1Hook), label: 'ps1 via pwsh' };
-  } else {
+  } else if (process.env.RG_PARITY_ALLOW_POSIX_PS1 === '1') {
+    // POSIX 上**默认不跑** ps1 端：该引擎面向 Windows（控制台编码、%TEMP% 日志、PowerShell 5.1 行为），
+    // 在 pwsh-on-Linux 下比对得到的是**环境差异**而不是**规则分歧**。2026-09-27 实测代价：GitHub 的
+    // ubuntu runner **预装 pwsh**，一旦默认启用，Linux 作业就会真跑全量语料（该次 6 分 3 秒）并因环境
+    // 差异变红 —— 那是噪声，会逼人给闸门加豁免。要做跨 OS 语义研究时显式开这个开关。
     const interp = which('pwsh', ['-NoProfile', '-Command', 'exit 0']) ? 'pwsh'
       : which('powershell', ['-NoProfile', '-Command', 'exit 0']) ? 'powershell' : null;
-    if (interp) ps1 = { bin: interp, args: ps1Args(ps1Hook), label: `ps1 via ${interp}` };
+    if (interp) ps1 = { bin: interp, args: ps1Args(ps1Hook), label: `ps1 via ${interp} (POSIX, opt-in)` };
   }
-  if (!ps1) missing.push('ps1 端：本机无 powershell.exe / pwsh（Linux/macOS runner 上属预期）');
+  if (!ps1) {
+    missing.push(process.platform === 'win32'
+      ? 'ps1 端：本机无 powershell.exe / pwsh'
+      : 'ps1 端：POSIX 上默认不跑（ps1 引擎面向 Windows，跑在 Linux 上只会得到环境差异；需要时显式设 RG_PARITY_ALLOW_POSIX_PS1=1）');
+  }
 
   let sh: ParityEnd | null = null;
   const shBin = process.env.RG_PARITY_SH_BIN;
