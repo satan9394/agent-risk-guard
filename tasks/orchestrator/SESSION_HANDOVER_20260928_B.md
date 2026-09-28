@@ -12,10 +12,10 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard`（remote `satan9394/agent-risk-guard`） |
-| 分支 / HEAD | `main` = **`9e4884f`**（与 `origin/main` 一致）；工作区**干净**（`git status` 无输出） |
+| 分支 / HEAD | `main`，**本段末次合并为 `8b734dc`**（PR #38）；**HEAD 实际值以 `git log --oneline -1` 为准**（本表定稿早于它自己的合并，不钉死） |
 | 版本 / Release | 产品版本 `0.3.2`；**最新 Release 仍是 `v0.3.2`（2026-09-19）**——本段全部改动**未发版、未打 tag** |
 | 本机接线 | `riskguard-wiring-check.ps1`（只读）**exit 0**；dsh headless / web 两 profile 逐条一致（单源 **74** 条） |
-| 本次会话合并的 PR | **#34 / #35 / #36 / #37**（四条，均 CI 全绿后 squash 合并，分支已删） |
+| 本次会话合并的 PR | **#34 / #35 / #36 / #37 / #38**（五条，均 CI 全绿后 squash 合并，分支已删） |
 | 本机 goal 插件 | `@prevalentware/opencode-goal-plugin` **0.1.53**，`opencode plugin list` 可见 `local.goal-mode.server`——**重启后已确认加载** |
 
 **支持面 D 级（`packages/installer/compatibility.json` 为准）**：
@@ -68,10 +68,13 @@
 证据三件套入仓：`WORKBUDDY_D3_SESSION_20260928.md`（会话自产报告）+ `wb-d3-20260928-repro-cmd.txt`
 + `wb-d3-20260928-analyze.py`。
 
-### 2.4 PR #37 — 本交接单 + 规则文件引用方式（`9e4884f`）
+### 2.4 PR #37 / #38 — 本交接单 + 规则文件引用方式（`9e4884f` / `8b734dc`）
 
 - 新增本文件；`AGENTS.md` 的「新会话先读」由**写死文件名**改为**取最新一份** `SESSION_HANDOVER_*.md`
   （同日多份取后缀最大的，如 `_B` 接续上一份）——规则文件只做引用，日后新增交接不必再改规则文件。
+- **#38 是本文件自身的收尾修正**：交接单记在它自己被合并之前，故「现状」行必然落后一拍
+  （HEAD、PR 条数）。**教训**：交接文档里**不要钉死 HEAD 这类"写下去就过时"的值**——
+  改为「以 `git log` 为准 + 记末次合并的 PR 号」。下一次再补交接时沿用这个写法。
 
 ---
 
@@ -161,7 +164,7 @@
 cd E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard
 
 # 0) 现状
-git log --oneline -4 ; git status --short          # 期望 HEAD=9e4884f，工作区干净
+git log --oneline -4 ; git status --short          # 期望工作区干净（HEAD 以实际输出为准）
 
 # 1) 巡线（只读）：五端 + skill 副本是否仍与单源一致
 & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\riskguard-wiring-check.ps1   # 期望 exit 0
