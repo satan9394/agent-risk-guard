@@ -42,6 +42,15 @@
   **委派**给平台（否则「hook 拦下 → 命令不执行 → shim 没机会改道」死锁）；委派后仍拦不可逆操作
   （`rm -rf /`、系统目录、`shred`、`wmic shadowcopy`、回收站清空族）。**D3 未取** —— 需要真实会话，
   2026-09-21 那次早于 R18，不作依据。
+- **WorkBuddy windows 验证等级 D2 → D3（2026-09-28）**：真实 WorkBuddy 会话
+  （`conversationId a051ea4d-f94d-4eb8-847a-431e8a3bb9b6`）取得硬证据——hook 日志 `decision=deny`
+  两条（`shred`、`Clear-Content`，均为委派后仍拦的不可逆操作）+ `decision=allow` 多条
+  （python 分析 / `ls` / 回收站只读盘点）；委派链路**端到端实证**：3 个 `rm` 经
+  `[delete-exempted:RG_ALLOW_DELETE]` 放行，7 个测试文件全部落进回收站（`$I*` 元数据的原路径/
+  大小/删除时间逐一吻合），**永久删除实际发生 0 起**。会话自产报告与复现材料入仓
+  `tasks/orchestrator/WORKBUDDY_D3_SESSION_20260928.md` 等三件。该会话顺带发现一例**已知过拦**
+  （`r'…'` 前缀 + 盘符在去引号后拼成 `rD` 伪词撞 `rd` 动词边界，只读盘点被误判为回收站清空族）
+  ——按政策登记 `docs/TODO.md` 延后，不在本批修。
 - **R18 动态调用/间接构造拦截（2026-09-27）**：用户实测「门禁只挡字面命令」，五种间接写法在 OpenCode V2 上
   完全绕过（且真把文件永久删掉，不经回收站）：`$v='Remove-Item'; & $v`、`$c='Remo'+'ve-Item'; & $c`、
   `iex (Get-Content .\cmd.txt)`、`& ([scriptblock]::Create('Remove-'+'Item ...'))`、

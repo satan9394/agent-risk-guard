@@ -1,0 +1,15 @@
+cd "D:/System_components/Documents/测试/perm_delete_test_v2" && "C:/Users/Satanchen/.workbuddy/binaries/python/versions/3.13.12/python.exe" -c "
+import glob,struct,os,datetime
+d=r'D:\\\$Recycle.Bin\\S-1-5-21-1866984205-3748508198-824681690-1002'
+for f in sorted(glob.glob(os.path.join(d,'\$I*'))):
+    b=open(f,'rb').read()
+    try:
+        ver=struct.unpack('<Q',b[0:8])[0]
+        sz=struct.unpack('<Q',b[8:16])[0]
+        ts=struct.unpack('<Q',b[16:24])[0]
+        path=b[28:].decode('utf-16-le').rstrip('\x00')
+        dt=datetime.datetime(1601,1,1)+datetime.timedelta(microseconds=ts/10)
+        print(f'{os.path.basename(f)}  size={sz:>6}  del_at={dt.strftime(\"%Y-%m-%d %H:%M:%S\")}  orig={path}')
+    except Exception as e:
+        print(os.path.basename(f),'ERR',e)
+"
