@@ -39,6 +39,15 @@
 - [ ] **`git branch -m/-M/-c/-C`（重命名/复制分支）不被判为破坏**：`-M` 会覆盖同名分支，
   理论上可丢引用；当前五端放行，与 `isReadOnlyCommand` 不把它们当只读的事实并不矛盾
   （既不只读、也不判破坏 → 走默认路径）。未实测是否值得收紧，登记。
+- [ ] **只读盘点回收站的 Python 命令被误判为「回收站清空族」deny**（2026-09-28 WorkBuddy 真实
+  会话发现，登记延后）：一条只 `open().read()` + `struct.unpack` 解析 `$I*` 元数据的只读命令被拦。
+  根因链：① 引擎的去引号副本把 `d=r'D:\$Recycle.Bin\…'` 变成 `rD:\…`；② 前缀 `r` + 盘符 `D`
+  拼成伪词 **`rD`**，撞删除动词词边界里的 `rd`（Windows `rmdir` 简写）；③ 同条命令又含
+  `$Recycle.Bin` 路径 → 命中「直删回收站存储」判定。复现材料（已入仓）：
+  `tasks/orchestrator/wb-d3-20260928-repro-cmd.txt`（最小复现）、`wb-d3-20260928-analyze.py`。
+  ps1 引擎实测命中；其余端同规则但去引号实现各异，未逐端复测。**修法方向**（届时独立一轮）：
+  `rd`/`ri` 这类双字母动词的词边界要求前导字符**非字母**（排除 `rD` 这类拼接产物），或动词匹配
+  改在去引号前的原文上做。
 - [x] **`skills/agent-risk-guard/scripts/opencode/destructive-operation-guard.ts` 是旧代次副本**
   （27.5KB / v0.1 时代）而现网加载的是 `assets/opencode/agent-risk-guard.ts`（32.4KB）；
   `SKILL.md` 与 `references/opencode-wiring.md` 仍把它写成部署取源，照做会装回旧插件。
