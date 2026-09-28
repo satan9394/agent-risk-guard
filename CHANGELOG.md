@@ -117,6 +117,14 @@
 
 ### Fixed
 
+- **`scripts/riskguard-wiring-check.ps1` 的 DSH 段自愈三坑**（2026-09-28，合并用户增强时修复）：
+  重组/替换写盘后**未复验 YAML** 就宣布成功 → 抽 `Repair-DshPatchFromSource`，写完必过
+  `Test-YamlSyntax` 复验，失败明打「需人工处理」不谎称修复；python 缺失时 YAML 校验**静默跳过**
+  → 打一次 `[Warn]`；**PS 5.1 下坏 YAML 会终止整个巡检**（python traceback 写 stderr，被
+  `2>$null` 重定向包装成 ErrorRecord 后撞脚本级 `EAP=Stop`）→ python 侧 `sys.excepthook`
+  零 stderr 输出 + 函数内局部 `EAP=Continue` 双保险。密封测试（假 `USERPROFILE`）20/20，
+  生产只读 `powershell`/`pwsh` 双 exit 0；测试脚本沉淀为
+  `tasks/orchestrator/rg-wiring-check-sealed-test.ps1`。
 - **agy（Antigravity CLI）在 `doctor` 里完全隐形**：`HOOK_SINGLE_SOURCE_MAP` 早有
   `agy-dangerous-commands.ps1` 条目，但 `probeAgentRuntime` **没有 agy 分支**、`cmdDoctor` 的
   `order` 里也没有 agy —— 而 cmdDoctor 对「不在 order 里的 registry agent」只在**未安装**时打

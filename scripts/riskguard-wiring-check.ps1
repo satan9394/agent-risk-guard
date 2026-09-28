@@ -154,6 +154,44 @@ function Get-RuleTexts([string]$path) {
   return ,$out
 }
 
+# YAML 语法校验（PyYAML）。返回 $true/$false；python 缺失时返回 $null = 未校验（打一次警告，不静默跳过）
+$script:YamlCheckWarned = $false
+$script:YamlPy = 'D:\Technology_application\Anconda_All\Anaconda3\envs\claude\python.exe'
+function Test-YamlSyntax([string]$path) {
+  if (-not (Test-Path $script:YamlPy)) {
+    if (-not $script:YamlCheckWarned) {
+      Write-Host ("  [Warn] 未找到 python（{0}），DSH patch 的 YAML 语法校验本次跳过" -f $script:YamlPy) -ForegroundColor Yellow
+      $script:YamlCheckWarned = $true
+    }
+    return $null
+  }
+  # 双保险防 PS 5.1 的 NativeCommandError 陷阱（stderr 重定向会把 python traceback 包成
+  # ErrorRecord，撞上脚本级 EAP=Stop 直接把整个巡检打死，而不是优雅报 [!!]）：
+  # 1) python 侧 excepthook 吞掉 traceback，stderr 一个字都不写；
+  # 2) 函数内局部放宽 EAP（偏好变量函数作用域，不影响脚本其余部分）。
+  $ErrorActionPreference = 'Continue'
+  & $script:YamlPy -c "import yaml, sys; sys.excepthook = lambda *a: sys.exit(3); yaml.safe_load(open(sys.argv[1], 'r', encoding='utf-8'))" $path 2>$null
+  return ($LASTEXITCODE -eq 0)
+}
+
+# 用「单源全文 + 生产文件 '# N3 预算闸门' 标记以下的用户尾部」重组 patch。
+# 返回 $true = 已写入且 YAML 复验通过；$false = 无 N3 标记或复验仍失败（需人工处理，不谎称已修复）。
+function Repair-DshPatchFromSource([string]$dest, [string]$source, [string]$curText) {
+  $n3Idx = $curText.IndexOf('# N3 预算闸门')
+  if ($n3Idx -lt 0) {
+    Write-Host "  [Fix] 未找到 '# N3 预算闸门' 标记，无法保留用户尾部，放弃重组（需人工处理）" -ForegroundColor Yellow
+    return $false
+  }
+  $srcText = [System.IO.File]::ReadAllText($source, [System.Text.Encoding]::UTF8)
+  $recovered = $srcText.Trim() + "`r`n`r`n" + $curText.Substring($n3Idx)
+  [System.IO.File]::WriteAllText($dest, $recovered, [System.Text.UTF8Encoding]::new($false))
+  if ((Test-YamlSyntax $dest) -eq $false) {
+    Write-Host "  [Fix] 重组后 YAML 复验仍失败（N3 尾部自身可能损坏），需人工处理" -ForegroundColor Yellow
+    return $false
+  }
+  return $true
+}
+
 $srcRules = Get-RuleTexts $srcDsh
 $srcSet = @($srcRules | ForEach-Object { $_.Text })
 
@@ -175,6 +213,26 @@ foreach ($prof in $dshProfiles) {
   # 整文件 hash 不一致属预期 —— 所以**逐条比对规则正则文本**。
   # 2026-09-19 教训：旧实现只比「规则条数」，规则被等量替换（1 条旧换 1 条新）时静默漏报，
   # 导致 R7 的 `--delete` 收紧长期没落到 DSH 生产面（见 tasks/orchestrator/EVALUATION_RESULT_R7.md §5）。
+  # 先验证 YAML 语法有效性（防止破损语法隐蔽失效）；$null = python 缺失未校验（视同通过，已警告）
+  $yamlValid = (Test-YamlSyntax $patch) -ne $false
+
+  if (-not $yamlValid) {
+    Write-Check ("dsh {0} YAML 语法解析" -f $prof.Name) $false ("YAMLException 语法格式损坏: " + $patch)
+    if ($Fix) {
+      Backup-File $patch
+      try {
+        $curText = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
+        if (Repair-DshPatchFromSource $patch $srcDsh $curText) {
+          Write-Host ("  [Fix] 已按单源重组 dsh {0} patch 并通过 YAML 复验" -f $prof.Name) -ForegroundColor Cyan
+          $yamlValid = $true
+        }
+      } catch {
+        Write-Host ("  [Fix] 恢复失败: " + $_.Exception.Message) -ForegroundColor Yellow
+      }
+    }
+    if (-not $yamlValid) { continue }
+  }
+
   $liveRules = Get-RuleTexts $patch
   $liveSet = @($liveRules | ForEach-Object { $_.Text })
   $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
@@ -182,8 +240,6 @@ foreach ($prof in $dshProfiles) {
 
   # 先自愈（-Fix），再据最终状态判定
   if ($Fix -and $missing.Count -gt 0) {
-    # 索引对齐替换：单源第 k 条 ↔ 生产第 k 条；仅当生产第 k 条确属「多出来的」旧规则时才替换，
-    # 以免破坏用户自定义内容。只替换/不删除。
     Backup-File $patch
     $rawText = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
     $changed = 0
@@ -191,18 +247,28 @@ foreach ($prof in $dshProfiles) {
       $srcLine = $srcRules[$k].Text
       if ($liveSet -contains $srcLine) { continue }
       if ($k -lt $liveRules.Count -and ($extra -contains $liveRules[$k].Text)) {
-        $indent = [regex]::Match($liveRules[$k].Raw, '^\s*').Value
-        $rawText = $rawText.Replace($liveRules[$k].Raw, $indent + $srcLine)
-        $changed++
+        if ($liveRules[$k].Raw -match '^\s*-\s*\{') {
+          $indent = [regex]::Match($liveRules[$k].Raw, '^\s*').Value
+          $rawText = $rawText.Replace($liveRules[$k].Raw, $indent + $srcLine)
+          $changed++
+        }
       }
     }
     if ($changed -gt 0) {
       [System.IO.File]::WriteAllText($patch, $rawText, [System.Text.UTF8Encoding]::new($false))
+      if ((Test-YamlSyntax $patch) -eq $false) {
+        Write-Host ("  [Fix] 替换后触发 YAML 异常，正在从单源重组恢复..." ) -ForegroundColor Yellow
+        [void](Repair-DshPatchFromSource $patch $srcDsh $rawText)
+      }
       Write-Host ("  [Fix] 已按单源替换 {0} 条规则（备份到 ~/.risk-guard-backup/）" -f $changed) -ForegroundColor Cyan
       $liveSet = @(Get-RuleTexts $patch | ForEach-Object { $_.Text })
       $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
     } else {
-      Write-Host "  [Fix] 未能定位可替换的旧规则（需人工处理）" -ForegroundColor Yellow
+      if (Repair-DshPatchFromSource $patch $srcDsh $rawText) {
+        Write-Host ("  [Fix] 已按单源安全重组 dsh {0} rules（并通过 YAML 复验）" -f $prof.Name) -ForegroundColor Cyan
+        $liveSet = @(Get-RuleTexts $patch | ForEach-Object { $_.Text })
+        $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
+      }
     }
   }
 
