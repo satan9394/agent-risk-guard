@@ -61,7 +61,7 @@ hook / 插件机制**拒绝**危险命令。核心铁律是「删除必须进回
 
 | 要什么 | 去哪里 |
 |---|---|
-| **新会话先读** | `tasks/orchestrator/SESSION_HANDOVER_20260928.md`（会话交接：现状 / 已做 / 验证数字 / 未闭环） |
+| **新会话先读** | **最新一份**会话交接 `tasks/orchestrator/SESSION_HANDOVER_*.md`（现状 / 已做 / 未闭环；同日多份时取后缀最大的，如 `_B` 接续上一份） |
 | 为什么是这样（裁决） | `docs/decisions.md`（B 表；近期 R18 / WorkBuddy / 跨端闸门几行） |
 | 交付了什么 | `CHANGELOG.md`（`[Unreleased]` 段） |
 | 新增一个 Agent 的契约 | `docs/adding-an-agent.md`（含 §2.4「同协议 ≠ 同接线」） |
