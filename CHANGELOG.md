@@ -273,6 +273,23 @@
   没有的文件即报出，`-Fix` 时按铁律**移入回收站**（非永久删除）。
 - **`docs/TODO.md`** 第 42–45 行「skill 内 opencode 是旧代次副本」登记项随之划线闭环。
 
+- **Codex hooks 双注册：同一个 `dangerous-commands.ps1` 每次 Bash 跑两遍**（2026-09-30）：
+  巡检里的 `codex config.toml [hooks]` 是一条**文本检查**（要求 `~/.codex/config.toml` 出现 `hooks` 与
+  `dangerous-commands`），而 `~/.codex/hooks.json` 本来就是这个 ps1 的注册面 —— 于是「为让检查变绿」
+  而补进 config.toml 的那段内联 `[[hooks.PreToolUse]]`，与 `hooks.json` 第 1 条**逐字重复**。
+  Codex 官方明确：同一层同时存在 `hooks.json` 与内联 `[hooks]` 时**会被合并并在启动时告警，推荐每层只用一种表示**，
+  且多个匹配 hook **并发启动、互不阻止** —— 实际后果是每次 Bash 调用把同一个脚本跑两遍，外加启动多一条告警
+  （实测 `codex exec` 每次都会打印 `warning: loading hooks from both …`）。**这是「倒因为果」型缺陷**：
+  检查在要求一个本不该存在的表示，而补上它又制造了重复执行。
+  修法：把该检查**反转为「不得再内联注册」** —— 只匹配内联表形状（`^\s*\[\[?\s*hooks`），
+  不用裸词 `hooks`（否则会误伤 `[features] hooks = false` 这类合法设置与说明性注释）；`hooks.json`
+  那条检查继续守住真正的注册面。已核对该检查**原本没有 `-Fix` 自愈分支**，所以删除不会被
+  每 5 分钟的计划任务 `RiskGuard_WiringCheck` 补回来（自愈只会把它们再次变成重复执行）。
+  本机同步删除 `~/.codex/config.toml` 的内联段。
+  复验：巡检 **exit 0**（该行变为 `[OK] codex config.toml 无内联 hooks 重复注册`）、`-Fix` 复跑
+  **0 条 `[Fix]` 动作**、`codex doctor --json` → `config.load = ok`、`codex exec` 的**双注册告警消失**、
+  `~/.codex/hooks.json` 未改动（两条 hook 均在）；ps1 侧字节级核对：BOM 前置、CRLF 保留、`git diff` 仅 4 处。
+
 
 ### Removed
 

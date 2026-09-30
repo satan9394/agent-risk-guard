@@ -20,7 +20,7 @@
 #               scripts/opencode/agent-risk-guard.ts、assets/dsh/deny-risk-commands.patch.yml
 #               —— 分别 == assets/ 下各自的单源；否则「repo skill ↔ 安装 skill」这对镜像
 #               可以一起旧着，照 skill 部署即装回旧版）
-#   接线     : cc settings.json PreToolUse 在位 / codex hooks.json+config.toml / agy hooks.json / dsh patch 注入
+#   接线     : cc settings.json PreToolUse 在位 / codex hooks.json（唯一表示；config.toml 内联已于 2026-09-30 去重） / agy hooks.json / dsh patch 注入
 #
 # 退出码：0 = 全部 OK；1 = 发现缺失或漂移（-Fix 后仍残留）；2 = 本机无法定位仓库单源
 
@@ -409,7 +409,7 @@ if (-not (Test-Path $liveSkill)) {
   }
 }
 
-# ---- 5. 接线在位（settings.json / hooks.json / config.toml）----
+# ---- 5. 接线在位（settings.json / hooks.json / config.toml 去重断言）----
 Write-Host "`n[接线在位]"
 $ccSettings = Join-Path $userHome '.claude\settings.json'
 $ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw } else { '' }
@@ -450,8 +450,14 @@ $codexOk = (Test-Path $codexHooks) -and ((Get-Content $codexHooks -Raw) -match '
 Write-Check 'codex hooks.json PreToolUse' $codexOk $codexHooks
 
 $codexToml = Join-Path $userHome '.codex\config.toml'
-$tomlOk = (Test-Path $codexToml) -and ((Get-Content $codexToml -Raw) -match 'hooks') -and ((Get-Content $codexToml -Raw) -match 'dangerous-commands')
-Write-Check 'codex config.toml [hooks]' $tomlOk $codexToml
+$tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw } else { '' }
+# 2026-09-30 去重：官方要求「同一层只用一种表示」（hooks.json 与内联 [hooks] 并存会被合并 + 启动告警）。
+# 本检查由「config.toml 必须含 hooks」**反转为「不得再内联注册」**：原先为满足旧检查而补进去的那段，
+# 让同一个 dangerous-commands.ps1 每次 Bash 并发跑两遍（实测见 Notes/2026/09/NOTES_20260930.md）。
+# 只匹配内联 hooks 表形状（[hooks] / [hooks.*] / [[hooks.*]]），不用裸词 'hooks'：裸词会误伤
+# 合法设置（如 [features] hooks = false）与说明性注释。hooks.json 那条检查仍守住真正的注册面。
+$tomlOk = (Test-Path $codexToml) -and ($tomlRaw -notmatch '(?im)^\s*\[\[?\s*hooks')
+Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'
 $agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw) -match 'dangerous-commands')
