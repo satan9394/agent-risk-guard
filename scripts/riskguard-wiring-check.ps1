@@ -454,9 +454,13 @@ $tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw } else { '' }
 # 2026-09-30 去重：官方要求「同一层只用一种表示」（hooks.json 与内联 [hooks] 并存会被合并 + 启动告警）。
 # 本检查由「config.toml 必须含 hooks」**反转为「不得再内联注册」**：原先为满足旧检查而补进去的那段，
 # 让同一个 dangerous-commands.ps1 每次 Bash 并发跑两遍（实测见 Notes/2026/09/NOTES_20260930.md）。
-# 只匹配内联 hooks 表形状（[hooks] / [hooks.*] / [[hooks.*]]），不用裸词 'hooks'：裸词会误伤
-# 合法设置（如 [features] hooks = false）与说明性注释。hooks.json 那条检查仍守住真正的注册面。
-$tomlOk = (Test-Path $codexToml) -and ($tomlRaw -notmatch '(?im)^\s*\[\[?\s*hooks')
+# 只匹配内联 hooks 表形状（裸 [hooks]、[hooks.<事件>]、[[hooks.<事件>]]），不用裸词 'hooks'：
+# 裸词会误伤合法设置（如 [features] hooks = false）与说明性注释。
+# ⚠ 必须排除 `hooks.state`：`[hooks.state.'<hooks.json>:pre_tool_use:N:M']` 是 **Codex 自己在用户于
+#   `/hooks` 里勾选信任后写下的信任账本**（内含 trusted_hash），不是内联注册。首版没排除它 ——
+#   2026-09-30 23:55 起实测假阳性（用户一信任钩子，本检查每次跑都报 [!!]、计划任务 exit 1）。
+#   故判据收紧为「`hooks` 之后要么直接收尾（`]`），要么跟一个**非 state** 的 `.子表`」。
+$tomlOk = (Test-Path $codexToml) -and ($tomlRaw -notmatch '(?im)^\s*\[\[?\s*hooks\s*(?:\]|\.(?!state\b))')
 Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'

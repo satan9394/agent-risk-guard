@@ -101,5 +101,26 @@ $warnCount = ([regex]::Matches($o4, [regex]::Escape('D:\nonexistent\sealed-test\
 Assert 'T4a warn line with missing-python path appears exactly once' ($warnCount -eq 1)
 Assert 'T4b rule comparison still ran and consistent' ($o4 -match '\[OK\][^\n]*dsh headless')
 
+# ---------- T5: config.toml 的 hooks.state（Codex 信任账本）不得被当成内联注册误报 ----------
+# 回归来源（2026-09-30 23:55 实测）：首版反转检查用 `^\s*\[\[?\s*hooks` 直接匹配，把 Codex 在 /hooks
+# 勾选信任后写入的 `[hooks.state.'...']` 也算进去 → 用户一信任钩子，巡线就每 5 分钟假阳性 exit 1。
+# 断言用 ASCII 锚点（输出行含 `.codex\config.toml` 路径），避开 PS 5.1 对中文的 GBK 误读。
+Write-Host "`n== T5: [hooks.state] trust ledger must not be flagged; inline [[hooks.PreToolUse]] must be ==" -ForegroundColor Cyan
+($h5, $p5) = New-FakeHome 'fake-t5'
+$cfg5 = Join-Path $h5 '.codex\config.toml'
+$stateOnly = "[hooks.state.'" + 'C:\fake\.codex\hooks.json:pre_tool_use:0:0' + "']`r`n" +
+             'trusted_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"' + "`r`n"
+[IO.File]::WriteAllText($cfg5, $stateOnly, [Text.UTF8Encoding]::new($false))
+$o5 = Invoke-WC $h5 'powershell'
+Assert 'T5a trust-ledger-only config.toml is NOT [!!]' (-not ($o5 -match '\[!!\][^\n]*\.codex\\config\.toml'))
+Assert 'T5b trust-ledger-only config.toml IS [OK]' ($o5 -match '\[OK\][^\n]*\.codex\\config\.toml')
+
+$inline5 = $stateOnly + "`r`n" + '[[hooks.PreToolUse]]' + "`r`n" + 'matcher = "^Bash$"' + "`r`n"
+[IO.File]::WriteAllText($cfg5, $inline5, [Text.UTF8Encoding]::new($false))
+$o5b = Invoke-WC $h5 'powershell'
+Assert 'T5c inline [[hooks.PreToolUse]] IS still [!!]' ($o5b -match '\[!!\][^\n]*\.codex\\config\.toml')
+$o5c = Invoke-WC $h5 'pwsh'
+Assert 'T5d same verdict under pwsh 7' ($o5c -match '\[!!\][^\n]*\.codex\\config\.toml')
+
 Write-Host "`n===== sealed test total: $($script:pass) pass / $($script:fail) fail =====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 }

@@ -290,6 +290,19 @@
   **0 条 `[Fix]` 动作**、`codex doctor --json` → `config.load = ok`、`codex exec` 的**双注册告警消失**、
   `~/.codex/hooks.json` 未改动（两条 hook 均在）；ps1 侧字节级核对：BOM 前置、CRLF 保留、`git diff` 仅 4 处。
 
+- **上一条的反转检查引入假阳性：把 Codex 自己的钩子信任账本 `[hooks.state.*]` 当成了「内联 hooks 注册」**
+  （2026-09-30 当晚实测触发）：检查首版用 `^\s*\[\[?\s*hooks` 直接匹配，而用户在 Codex `/hooks` 里勾选
+  信任后，**Codex 会自己往 `~/.codex/config.toml` 写** `[hooks.state.'<hooks.json>:pre_tool_use:N:M']` +
+  `trusted_hash = "sha256:…"` —— 那是**信任账本，不是注册**。后果：**用户一信任钩子，巡线就每 5 分钟报
+  `[!!]`、计划任务 `RiskGuard_WiringCheck` 随之 `exit 1`**（日志实测两笔：`2026-09-30 23:55:02` / `23:55:37`）。
+  「护栏天天喊狼来了」比不检查更糟：真漂移会被淹掉。
+  修法：判据收紧为「`hooks` 之后要么**直接收尾**（`[hooks]`），要么跟一个**非 `state`** 的 `.子表`」——
+  `^\s*\[\[?\s*hooks\s*(?:\]|\.(?!state\b))`；仍不用裸词 `hooks`（那会误伤 `[features] hooks = false`）。
+  **密封测试补 T5**（`tasks/orchestrator/rg-wiring-check-sealed-test.ps1`）：只含信任账本 → 必须 `[OK]`；
+  含内联 `[[hooks.PreToolUse]]` → 必须 `[!!]`；powershell 5.1 与 pwsh 7 同判 —— 即本仓 `AGENTS.md` 第 7 条
+  要的「回退本修复会让某个测试变红」。复验：密封测试 **24 pass / 0 fail**（原 20 + T5 四例）、
+  本机巡线 **exit 0**、`-Fix` 复跑 0 条动作。
+
 
 ### Removed
 
