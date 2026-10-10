@@ -93,21 +93,21 @@
   `DENY tool: write_to_file`、且证明 hook deny 压得过 `always-proceed`；非 plan 会话全放行）。
   **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 59/59 测试台
   收进 `skills/agent-risk-guard/tests/` 并进 CI；③ `compatibility.json` 增补对应能力面
-  （plan 模式下 `filesystem.write` = deny）；④ 处理下述三项**已登记的具体缺口**。建议独立开一轮。
-- [ ] **`/plan` 多轮注入：已从「未实证」升级为「已观察到一致的可疑模式」（2026-10-10 复核实证）**：
-  `plan-readonly-guard` 只读**最后一条** `USER_INPUT` 判「是不是 plan 模式」。复核本机 64 个
-  agy 会话 transcript（`~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl`）：
-  **11 个会话在第 1 轮带 `/plan`，其中 3 个「只第 1 轮带、后续多轮不带」**——
-  `fc867b6c`(P...，4 轮)、`83a69e7b`(P....，5 轮)、`f29e7d71`(P..，3 轮)。且这 3 例里
-  **至少两例的「未标记轮」就是写/更新请求**：`f29e7d71` 第 2 轮「可以更新吧」、第 3 轮「更新，然后我关闭当前对话」
-  （针对 opencode tui 的更新）；`83a69e7b` 第 2 轮「可不可以，你将当前目录下的那个 PDF 也放到 data 文件夹中」。
-  ⇒ 若用户**仍在 plan 模式**、只是没每轮重打 `/plan`，则从第 2 轮起 hook 判 `false` → **放行写入/执行**
-  （fail-open）。**置信度**：模式一致且可复现，但**仍差最后一条决定性实验**——需在**同一个** plan 会话内
-  确认「用户未切出 plan」且「未标记轮发生了写入」。**验证动作（下一次做）**：开一个 plan 会话，
-  第 1 轮打 `/plan`，第 2 轮直接让它写文件（不打 `/plan`），看 ① transcript 新 `USER_INPUT` 是否带标记、
-  ② 写入是否被拦。**修法方向**（属上述「入仓」切片）：判据从「只看最后一条」改为**扫描全会话的 plan 模式状态**
-  （如：出现过 `/plan` 标记且此后未见明确的「退出 plan」信号 ⇒ 仍视为 plan），或改为跟踪 Shift+Tab 的模式切换。
-  ⚠️ 本次复核未改动任何文件；transcript 含明文 api key，**未摘录、不入仓**。
+  （plan 模式下 `filesystem.write` = deny）；④ 处理下述**已登记的具体缺口**（`/plan` 多轮那条已于
+  2026-10-10 判定「非漏洞」并关闭；余下为解释器全禁体感、钩子成本两项）。建议独立开一轮。
+- [x] **`/plan` 多轮注入：已闭环 —— 判定「非漏洞」（2026-10-10 定论）**。此前担心：
+  `plan-readonly-guard` 只读**最后一条** `USER_INPUT` 判是否 plan 模式，而若 agy 只在第 1 轮注 `/plan`、
+  后续不注，则多轮 plan 会话会漏判放行。本轮两步取证**否掉了这个担心**：
+  ① **官方文档**（`antigravity.google/docs/cli/modes`）：*When `plan` mode is active through `Shift+Tab`
+  cycling or the `--mode` flag, the CLI **automatically prepends the `/plan` instruction prefix to your
+  prompts*** —— 即 plan 模式生效期间**每轮 prompt 都自动补**；
+  ② **本机探针实证**：新开会话 `f9ff8ce3`，第 1 轮 `Shift+Tab` 进 plan 后**不打 `/plan`** 直接发文字、
+  第 2 轮直接发「执行」，两轮 transcript 的 `USER_INPUT` **都自动带了 `/plan`**，两轮均未写出文件；
+  ③ 复核旧会话 `f29e7d71`（3 轮、仅首轮带标记）：其第 2 轮**前缀缺失且 agent 直接执行 `npm install` 成功**
+  —— 而 plan 模式本身禁止写代码 ⇒ 该轮 plan 模式实际已关（用户已 `Shift+Tab` 切出）。
+  **⇒ 前缀在 ⟺ plan 模式开，两边自洽；hook 判据成立**。「只带首轮标记」的会话一律是之后切出了 plan 模式。
+  **残留（保留不删，供日后对照）**：若 agy 将来出现「plan 生效却不补前缀」的回归，hook 会退回 fail-open；
+  届时判据是「agent 是否仍在拒绝写入」。⚠ 复核涉及含明文 api key 的 transcript，**未摘录、不入仓**。
 - [ ] **plan 模式下解释器全禁的体感代价**：`python -c "…"` 被 deny（第一 token 是绝对路径 python、
   `-c` 可任意执行），研究只能降级到 `view_file`/`grep_search`；数据类项目的 plan 研究体感变差，
   若要改善需另开一个窄口子（需权衡：开了就是可执行面）。
