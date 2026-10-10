@@ -15,6 +15,7 @@
 - [x] **Codex D3 实测**：2026-09-07 CLI 真实会话 git reset 拦截 PASS；2026-09-10 用户语音会话实测 Remove-Item 永久删除被 PreToolUse hook 明确拦截（文件保留），删除类 D3 证据链闭合（已补录 compatibility.json）
 - [x] **WSL + Git Bash 跨平台测试与修复（2026-09-10）**：sh Linux hook 在 WSL Ubuntu（真 Linux，299/299）与 Git Bash（MINGW64，修复后 299/299）全量验证；发现并修复 P0 全角 NFKC 编码绕过（PYTHONUTF8）、git checkout--/restore/git rm/perl-ruby 规则缺口、grep 回退死代码 fail-open；ps1/opencode 同步补齐，deploy/dsh patch 原本已覆盖；回归用例已进三套件。报告：tasks/t1-wsl-report.md、tasks/t2-gitbash-report.md（含修复记录）。
 - [ ] **hook 性能优化（Git Bash 4-5s/次）**：合并 hook 内多次 python3 spawn 为单次调用（Git Bash 下实测单次 4.0-5.6s vs WSL 0.2s，慢 20-28 倍）；已文档标注延迟预算，待接入方确认是否优化。
+- [ ] **WorkBuddy 是否升 D4**：**不升（保持 windows=D3）**。D4 =「重复 / 生产验证」，硬约束 5 要求「不止一次真实会话 + 行为对照」；当前只有 2026-09-28 这一次真实会话（D3）。本机 WorkBuddy 不是常用工具、无第二次会话的自然时机，**不为凑等级脚本化重放**（其删除语义已由平台 safe-delete shim 委派，重放价值低、风险高）。若日后用户恰好在 WorkBuddy 里再触发一次真实拦截，可顺手补第二次证据升 D4。
 
 ## v0.2.0 遗留（下一阶段，见 docs/devlog-2026-09-05-v0.2.0.md）
 
