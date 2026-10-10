@@ -94,18 +94,35 @@
   **入仓需做的四件事**：① 定义单源并纳入 `HOOK_SINGLE_SOURCE_MAP` + 巡检；② 把 59/59 测试台
   收进 `skills/agent-risk-guard/tests/` 并进 CI；③ `compatibility.json` 增补对应能力面
   （plan 模式下 `filesystem.write` = deny）；④ 处理下述三项**已登记的具体缺口**。建议独立开一轮。
-- [ ] **`/plan` 多轮注入未实证（agy 侧唯一真实缺口）**：`plan-readonly-guard` 判「是不是 plan 模式」
-  靠读 transcript 最后一条 `USER_INPUT` 里有没有 `/plan` 标记，而官方文档只说 plan 模式
-  "prepends `/plan` to your prompts"（**多轮**是否每轮都注）。若只有第一轮带标记，多轮 plan 会话
-  从第二条起会**漏判 → 重新放行写入**。09-19 那条 4 轮会话（`fc867b6c`）第 2–4 条都没带标记，
-  但无法区分"用户自己切出了 plan"与"agy 不重注"，不足为证。验证：同一 plan 会话里再发一条不带
-  `/plan` 的消息，看 `transcript_full.jsonl` 的新 `USER_INPUT` 是否带标记。
+- [ ] **`/plan` 多轮注入：已从「未实证」升级为「已观察到一致的可疑模式」（2026-10-10 复核实证）**：
+  `plan-readonly-guard` 只读**最后一条** `USER_INPUT` 判「是不是 plan 模式」。复核本机 64 个
+  agy 会话 transcript（`~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl`）：
+  **11 个会话在第 1 轮带 `/plan`，其中 3 个「只第 1 轮带、后续多轮不带」**——
+  `fc867b6c`(P...，4 轮)、`83a69e7b`(P....，5 轮)、`f29e7d71`(P..，3 轮)。且这 3 例里
+  **至少两例的「未标记轮」就是写/更新请求**：`f29e7d71` 第 2 轮「可以更新吧」、第 3 轮「更新，然后我关闭当前对话」
+  （针对 opencode tui 的更新）；`83a69e7b` 第 2 轮「可不可以，你将当前目录下的那个 PDF 也放到 data 文件夹中」。
+  ⇒ 若用户**仍在 plan 模式**、只是没每轮重打 `/plan`，则从第 2 轮起 hook 判 `false` → **放行写入/执行**
+  （fail-open）。**置信度**：模式一致且可复现，但**仍差最后一条决定性实验**——需在**同一个** plan 会话内
+  确认「用户未切出 plan」且「未标记轮发生了写入」。**验证动作（下一次做）**：开一个 plan 会话，
+  第 1 轮打 `/plan`，第 2 轮直接让它写文件（不打 `/plan`），看 ① transcript 新 `USER_INPUT` 是否带标记、
+  ② 写入是否被拦。**修法方向**（属上述「入仓」切片）：判据从「只看最后一条」改为**扫描全会话的 plan 模式状态**
+  （如：出现过 `/plan` 标记且此后未见明确的「退出 plan」信号 ⇒ 仍视为 plan），或改为跟踪 Shift+Tab 的模式切换。
+  ⚠️ 本次复核未改动任何文件；transcript 含明文 api key，**未摘录、不入仓**。
 - [ ] **plan 模式下解释器全禁的体感代价**：`python -c "…"` 被 deny（第一 token 是绝对路径 python、
   `-c` 可任意执行），研究只能降级到 `view_file`/`grep_search`；数据类项目的 plan 研究体感变差，
   若要改善需另开一个窄口子（需权衡：开了就是可执行面）。
 - [ ] **plan 钩子成本约 0.5s/工具调用**（几乎全是 PowerShell 进程启动；80 字节空脚本走 `-File`+stdin
   就要 560ms），而它 matcher 是 `"*"`。若体感太慢，可把 matcher 收窄到已知写工具集合，代价是
   未知新工具不再默认拦截。
+- [ ] **agy 版本漂移（2026-10-10 登记）**：`compatibility.json` 的 agy `componentInventory.version`
+  记 **1.3.2**，而本机实测已是 **1.3.3**；且 D3 证据仍停在 **1.1.27 / 1.2.7**。**未据此提级**（遵硬约束 5，
+  没拿到新会话就不改 D3）。→ 下次顺手把版本更新为实测值，或安排一次 1.3.x 真实会话复验（如做 D3
+  复验，方法与 2026-09-21 那条同：用模型不认为该拒绝的命令如 `git reset` 触发钩子）。
+- [ ] **建议：给发布产物加「不得含 `tests/`」的 CI 断言（2026-10-10 登记）**：Release 附件
+  `agent-risk-guard-v<ver>.tar.gz` 目前不含测试，但这是 `scripts/build-release.ts` +
+  `packages/cli/src/runtime-install.ts::collectRuntimeFiles()` 的**行为**，不是硬约束——谁改收集器都可能
+  把 `test*` 放进去而无人发现（2026-10-09 核实：`collectTs()` 显式跳过 `test`/`tests`/`node_modules`）。
+  建议在 CI 里对 build 出的 artifact 断言「无 `tests?/` 路径」。属独立小切片。
 - [x] ~~真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）~~ —— **已完成，2026-09-21**。
   agy **1.2.7** 真实会话里 `run_command` 执行 `git reset --hard HEAD` 被 hook 拒绝
   （`tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：…`），同会话 `Read` 与
