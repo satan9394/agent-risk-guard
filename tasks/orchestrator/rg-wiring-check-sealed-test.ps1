@@ -21,7 +21,8 @@ function Assert([string]$name, [bool]$cond) {
 }
 function New-FakeHome([string]$name) {
   $h = Join-Path $tmp $name
-  # 预建 -Fix 路径上 Copy-Item 需要的父目录（脚本对「全新机器无目录」会直接崩，已登记为独立问题，不在本测试范围）
+  # 预建 -Fix 路径上 Copy-Item 需要的父目录。**注意**：脚本自 2026-10-09 起已能自建父目录
+  # （fresh-machine 场景见 T7），这里预建只是让 T1–T6 聚焦各自断言、不掺入父目录缺失因素。
   foreach ($d in @('.dsh\profiles\headless', '.claude\hooks', '.codex\hooks', '.gemini\config\hooks', '.workbuddy\hooks', '.config\opencode\plugins')) {
     New-Item -ItemType Directory -Force (Join-Path $h $d) | Out-Null
   }
@@ -121,6 +122,72 @@ $o5b = Invoke-WC $h5 'powershell'
 Assert 'T5c inline [[hooks.PreToolUse]] IS still [!!]' ($o5b -match '\[!!\][^\n]*\.codex\\config\.toml')
 $o5c = Invoke-WC $h5 'pwsh'
 Assert 'T5d same verdict under pwsh 7' ($o5c -match '\[!!\][^\n]*\.codex\\config\.toml')
+
+# ---------- T6: 块式规则（re/reason 分行）不得被误判缺失；-Fix 需能整段原位替换 ----------
+# 回归来源（2026-10-09）：dsh desktop profile 的规则是块式写法（`- {` / `re:` / `reason:` / `}`），
+# 而旧检测器按「整行 Trim() 后文本」比对 → 恒报「规则缺失 43 条」，-Fix 也因只认单行而修不动，
+# 计划任务每 5 分钟假阳性 exit 1（09-29 起累计 300+ 条）。本用例把它钉死。
+function Convert-ToBlockForm([string[]]$lines) {
+  $out = [System.Collections.Generic.List[string]]::new()
+  foreach ($l in $lines) {
+    $m = [regex]::Match($l, "^(\s*)- \{ re: '((?:[^']|'')*)', reason: '((?:[^']|'')*)' \}\s*$")
+    if ($m.Success) {
+      $ind = $m.Groups[1].Value
+      $out.Add($ind + '- {')
+      $out.Add($ind + "    re: '" + $m.Groups[2].Value + "',")
+      $out.Add($ind + "    reason: '" + $m.Groups[3].Value + "'")
+      $out.Add($ind + '  }')
+    } else { $out.Add($l) }
+  }
+  return ,$out
+}
+Write-Host "`n== T6: block-form rules must be detected as consistent (and -Fix must replace in place) ==" -ForegroundColor Cyan
+($h6, $p6) = New-FakeHome 'fake-t6'
+$blockLines = Convert-ToBlockForm $srcLines
+[IO.File]::WriteAllText($p6, (($blockLines -join "`r`n") + $n3Tail), [Text.UTF8Encoding]::new($false))
+Assert 'T6 pre: block-form file is valid YAML' (Test-PyYaml $p6)
+$o6 = Invoke-WC $h6 'powershell'
+Assert 'T6a block-form detected CONSISTENT (no false missing)' ($o6 -match '\[OK\][^\n]*dsh headless')
+Assert 'T6b no "rule missing" false positive for block-form' (-not ($o6 -match '\[!!\][^\n]*dsh headless[^\n]*'))
+$o6b = Invoke-WC $h6 'pwsh'
+Assert 'T6c same verdict under pwsh 7' ($o6b -match '\[OK\][^\n]*dsh headless')
+
+# T6d: 块式文件里放一条陈旧块式规则 → -Fix 整段原位替换
+($h6d, $p6d) = New-FakeHome 'fake-t6d'
+$blockDrift = Convert-ToBlockForm $srcLines
+# 在块式数组里定位**第一条规则块**的起始行（Convert-ToBlockForm 会把每条 inline 规则变成 4 行）
+$bi = -1
+for ($i = 0; $i -lt $blockDrift.Count; $i++) { if ($blockDrift[$i].TrimStart() -match '^-\s*\{') { $bi = $i; break } }
+if ($bi -lt 0) { throw 'T6d: block-form 数组里没找到规则块起始行' }
+$driftIndent = [regex]::Match($blockDrift[$bi], '^\s*').Value
+$blkStale = @($driftIndent + '- {', $driftIndent + "    re: 'old-fake-rule-block-zzz',", $driftIndent + "    reason: 'sealed block drift'", $driftIndent + '  }')
+$blockDrift2 = @($blockDrift[0..($bi-1)]) + @($blkStale) + @($blockDrift[($bi+4)..($blockDrift.Count-1)])
+[IO.File]::WriteAllText($p6d, (($blockDrift2 -join "`r`n") + $n3Tail), [Text.UTF8Encoding]::new($false))
+Assert 'T6d pre: drifted block-form file is valid YAML' (Test-PyYaml $p6d)
+$o6d = Invoke-WC $h6d 'powershell' -Fix
+$t6dtext = [IO.File]::ReadAllText($p6d, [Text.Encoding]::UTF8)
+Assert 'T6e stale block rule removed' (-not $t6dtext.Contains('old-fake-rule-block-zzz'))
+Assert 'T6f source rule restored' $t6dtext.Contains([regex]::Unescape('Remove-Item'))
+Assert 'T6g user tail preserved' $t6dtext.Contains('sealed-test-tail')
+Assert 'T6h final dsh check OK after block -Fix' ($o6d -match '\[OK\][^\n]*dsh headless')
+Assert 'T6i healed block-form file still parses' (Test-PyYaml $p6d)
+
+# ---------- T7: 全新机器（只有 dsh profile，其余 Agent 目录与 settings.json 全缺）—— -Fix 不得崩 ----------
+# 回归来源（2026-09-28 密封测试发现，docs/TODO.md 已登记）：目标 home 缺 ~/.claude/hooks 等父目录时，
+# Restore-Single-Source 的 Copy-Item 抛 DirectoryNotFoundException 撞脚本级 EAP=Stop，**终止整个巡检**
+# （dsh 段都跑不到）；settings.json 段 node 读不到缺失文件也失败。本用例钉死「能跑到 dsh 段且建出父目录」。
+Write-Host "`n== T7: fresh machine (missing parent dirs + missing settings.json), -Fix must not abort ==" -ForegroundColor Cyan
+$h7 = Join-Path $tmp 'fake-t7-minimal'
+New-Item -ItemType Directory -Force (Join-Path $h7 '.dsh\profiles\headless') | Out-Null
+$p7 = Join-Path $h7 '.dsh\profiles\headless\cordis.patch.yml'
+[IO.File]::WriteAllText($p7, (($srcLines -join "`r`n") + $n3Tail), [Text.UTF8Encoding]::new($false))
+Assert 'T7 pre: no .claude dir yet' (-not (Test-Path (Join-Path $h7 '.claude')))
+$o7 = Invoke-WC $h7 'powershell' -Fix
+Assert 'T7a did NOT abort with DirectoryNotFound' (-not ($o7 -match 'DirectoryNotFoundException'))
+Assert 'T7b reached the dsh section (dsh headless judged)' ($o7 -match 'dsh headless')
+Assert 'T7c final dsh check OK on fresh machine' ($o7 -match '\[OK\][^\n]*dsh headless')
+Assert 'T7d claude hook parent dir auto-created + file restored' (Test-Path (Join-Path $h7 '.claude\hooks\dangerous-commands.ps1'))
+Assert 'T7e claude settings.json created (was missing)' (Test-Path (Join-Path $h7 '.claude\settings.json'))
 
 Write-Host "`n===== sealed test total: $($script:pass) pass / $($script:fail) fail =====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 }

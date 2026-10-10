@@ -16,6 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const REPO_PLUGIN = join(import.meta.dirname, '..', '..', 'assets', 'opencode', 'agent-risk-guard.ts');
@@ -57,6 +58,19 @@ const GUARD_FILE = join(
 test('v2: 默认导出是 { id, setup }，且 id 稳定（V2 存储/状态按 id 归属）', () => {
   assert.equal(plugin.id, 'agent-risk-guard');
   assert.equal(typeof plugin.setup, 'function');
+});
+
+// 2026-10-09 新增（OpenCode 2.0.26 适配回归）：
+// 插件文件**不得有顶层 `@opencode-ai/plugin` 导入** —— 该包只在 V1 的 `server()` 里惰性动态导入。
+// 宿主 OpenCode 2.0.26 配的是 `@opencode-ai/plugin` **1.14.28**，其类型面是「Hooks 对象式」
+// （`{ tool, auth, provider, "permission.ask", "tool.execute.before" … }`），而本插件 V2 入口是
+// `{ id, setup(ctx) }`。顶层导入会把 V2 加载路径绑死在**版本漂移的宿主类型包**上：一旦它解析/求值失败，
+// 整个插件即「加载失败 = 无拦截」（fail-open）。本断言把该包钉在惰性导入的 V1 分支。
+test('v2: 不得有顶层 @opencode-ai/plugin 导入（V2 入口不依赖版本漂移的宿主类型包）', () => {
+  const src = readFileSync(REPO_PLUGIN, 'utf8');
+  const topLevelImport = /^\s*import\b[^\n]*['"]@opencode-ai\/plugin['"]/m.test(src);
+  assert.equal(topLevelImport, false, 'the plugin must lazily import @opencode-ai/plugin inside the V1 server() entry only');
+  assert.ok(/await\s+import\(\s*['"]@opencode-ai\/plugin['"]\s*\)/.test(src), 'expected a lazy dynamic import of @opencode-ai/plugin');
 });
 
 test('v2: setup 注册 shell/tool/permission hook，并注册 trash 工具', async () => {

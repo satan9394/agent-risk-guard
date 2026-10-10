@@ -61,13 +61,19 @@
 
 ## 运维脚本欠账（wiring-check 等）
 
-- [ ] **`riskguard-wiring-check.ps1 -Fix` 不支持全新机器**（2026-09-28 密封测试发现，登记不修）：
+- [x] **`riskguard-wiring-check.ps1 -Fix` 不支持全新机器**（2026-09-28 密封测试发现，**2026-10-09 已修**）：
   目标 home 缺 `~/.claude/hooks` 等父目录时，ps1 段 `Restore-Single-Source` 的
   `Copy-Item $source $dest -Force` 直接抛 `DirectoryNotFoundException`，撞脚本级 `EAP=Stop`
   **终止整个巡检**（dsh 段都跑不到）；`settings.json` 段同病（node 读不到缺失文件，只报失败、
-  不自愈）。影响面仅限「从没装过对应 Agent 的机器上跑 `-Fix`」，本机无感。修法方向：restore 前
-  `New-Item -Force` 建父目录 + `settings.json` 缺失时从模板新建；要做就开独立一轮，密封测试基线
-  用 `tasks/orchestrator/rg-wiring-check-sealed-test.ps1` 扩用例。
+  不自愈）。**修法（已落地）**：restore 前 `New-Item -Force` 建父目录；`settings.json` 合并 helper
+  改为缺失时从空对象起步（等价新建）。密封测试扩 **T7**（无父目录 + 无 settings.json 的 fake home）
+  钉死；旧脚本在同场景复现 `Could not find a part of the path …\\.claude\\hooks\\…` 且未跑到 dsh 段。
+- [x] **dsh desktop profile 的块式规则被误判「缺失 43 条」**（2026-10-09 发现并修，此前未登记）：
+  规则比对原为「整行 `Trim()` 后文本」，块式写法（`re`/`reason` 分行）永远对不上 inline 单源 →
+  `~/.dsh/profiles/desktop` 恒报缺失、`-Fix` 修不动，计划任务每 5 分钟假阳性 exit 1
+  （`~/.risk-guard-backup/wiring-check-task.log` 09-29 起累计 300+ 条）。**修法（已落地）**：抽取改
+  格式无关的 `Get-RuleEntries`（`re|||reason` 规范化 + 正确解析 `''` 转义）+ `-Fix` 按字符偏移从后往前
+  原位替换整条。密封测试扩 **T6**；回退对比：块式文件旧逻辑缺 74 / 新逻辑缺 0。
 
 ## agy（Antigravity CLI）相关欠账
 

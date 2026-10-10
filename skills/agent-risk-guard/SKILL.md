@@ -5,6 +5,8 @@ version: 1.0.0
 displayName: Agent Risk Guard
 description: 审计并加固 AI 编码 Agent 的危险命令拦截。检查 Claude Code、OpenCode、Codex、Cline、Qwen Code、Cursor、Windsurf、Copilot CLI、Goose、Grok CLI、Hermes、Pi、Aider、DeepSeek Harness、Antigravity CLI (agy) 等工具的全局配置文件与 hooks/permissions/sandbox/插件机制，判断"删除必须进回收站"等铁律是否被机器级拦截（而非仅靠模型自觉），缺失则给出并落地对应配置，最后用模拟 payload 或真实会话实测验证。当用户提到高危命令拦截、危险操作防护、删除进回收站、hook 拦截、permission 审计、agent 安全加固、防误删、适配、一键配置、或想给多个 AI 工具统一加安全门禁时，务必使用本 skill，即使他们只提到其中一个工具。
 tags: [安全, 审计, agent, hook, 拦截, 加固]
+metadata:
+  opencode/autoinvoke: false
 ---
 
 # Agent 风险命令拦截审计（Agent Risk Guard Audit）

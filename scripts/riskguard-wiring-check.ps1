@@ -52,6 +52,13 @@ function Restore-Single-Source([string]$dest, [string]$source, [string]$label) {
   if (-not $Fix) { return }
   if (Test-Path $source) {
     Backup-File $dest
+    # 2026-10-09 修复「-Fix 不支持全新机器」：目标 home 缺父目录（如从没装过该 Agent 的机器上
+    # 没有 ~/.claude/hooks）时，Copy-Item 会抛 DirectoryNotFoundException，撞脚本级 EAP=Stop
+    # 直接终止整个巡检（dsh 段都跑不到）。restore 前先把父目录建出来。
+    try {
+      $parent = Split-Path -Parent $dest
+      if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    } catch { Write-Host ("  建父目录失败(继续尝试写入): " + $_.Exception.Message) -ForegroundColor Yellow }
     Copy-Item $source $dest -Force
     Write-Host ("  [Fix] 已从单源恢复 {0}" -f $label) -ForegroundColor Cyan
   } else {
@@ -145,11 +152,64 @@ if ($ocModeV2) {
 Write-Host "`n[dsh pre-execute 门禁]"
 $hashDsh = (Get-FileHash $srcDsh -Algorithm SHA256).Hash
 
-# 抽取文件里的规则行：Raw = 含缩进原文，Text = 去空白后的规范文本
-function Get-RuleTexts([string]$path) {
+# 抽取规则条目：**格式无关** —— inline 写法（`- { re: '…', reason: '…' }` 单行）
+# 与块式写法（`- {` / `re: '…'` / `reason: '…'` / `}` 各占一行）都识别为同一条规则。
+# 返回对象数组，每个含：Key = "<re>|||<reason>"（比对用）、Raw（整条原文含缩进）、
+#   Indent（条目起始行的前导空白）、Start/End（字符偏移，供 -Fix 做整条原位替换）。
+# 2026-10-09 修复：旧实现按「整行 Trim() 后的文本」比对，块式写法（re/reason 分行）永远
+#   对不上 inline 单源 → dsh desktop profile 恒报「规则缺失 43 条」且 -Fix 修不动，计划任务
+#   每 5 分钟假阳性 exit 1（实测 09-29 起累计 300+ 条日志）。见 docs/decisions.md。
+function Get-RuleEntries([string]$path) {
+  $text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+
+  # 行起始偏移 + 逐行文本（去尾部 CR/LF）
+  $lineStarts = [System.Collections.Generic.List[int]]::new()
+  $lineStarts.Add(0)
+  for ($i = 0; $i -lt $text.Length; $i++) { if ($text[$i] -eq [char]10) { $lineStarts.Add($i + 1) } }
+  $nLines = $lineStarts.Count
+  $lineTxts = [System.Collections.Generic.List[string]]::new()
+  for ($i = 0; $i -lt $nLines; $i++) {
+    $s = $lineStarts[$i]
+    $e = if ($i + 1 -lt $nLines) { $lineStarts[$i + 1] } else { $text.Length }
+    $lineTxts.Add($text.Substring($s, $e - $s).TrimEnd("`r", "`n"))
+  }
+
+  # 规则条目始于一行「trim 后以 '-' 开头」的行；条目跨度 = 该行 → 下一条目前
+  # （注释行以 # 开头、reason 续行不以 '-' 开头，故不会误切）
+  $entryLineIdx = [System.Collections.Generic.List[int]]::new()
+  for ($i = 0; $i -lt $nLines; $i++) { if ($lineTxts[$i].TrimStart() -match '^-\s') { $entryLineIdx.Add($i) } }
+
+  # YAML 单引号标量的正确捕获：内部 '' 为转义的单引号（不能按「遇 ' 即止」，否则含 '' 的
+  # 正则会被截断 —— 走查过 R4 的变量拼接规则确实含 ''）
+  $reRx     = [regex]"re:\s*'((?:[^']|'')*)'"
+  $reasonRx = [regex]"reason:\s*'((?:[^']|'')*)'"
+
   $out = [System.Collections.Generic.List[object]]::new()
-  foreach ($l in [System.IO.File]::ReadAllLines($path, [System.Text.Encoding]::UTF8)) {
-    if ($l -match "re:\s*'") { $out.Add([pscustomobject]@{ Raw = $l; Text = $l.Trim() }) }
+  for ($j = 0; $j -lt $entryLineIdx.Count; $j++) {
+    $esIdx = $entryLineIdx[$j]
+    $esOff = $lineStarts[$esIdx]
+    $endOff = if ($j + 1 -lt $entryLineIdx.Count) { $lineStarts[$entryLineIdx[$j + 1]] } else { $text.Length }
+    $seg = $text.Substring($esOff, $endOff - $esOff)
+    $mRe = $reRx.Match($seg)
+    if (-not $mRe.Success) { continue }            # 非规则条目（如 - id: / - insert:）跳过
+    $mReason = $reasonRx.Match($seg)
+    $re = $mRe.Groups[1].Value
+    $reason = if ($mReason.Success) { $mReason.Groups[1].Value } else { '' }
+    # End 收在「条目最后一个内容字符」之后（不含其后的行结束符），这样 -Fix 原位替换
+    # 不会破坏条目之间的换行结构。
+    $rawSeg = $seg.TrimEnd("`r", "`n")
+    # Inline：把该条规则渲染成单行 inline 形式（供 -Fix 原位替换写回；re/reason 里的单引号
+    # 按 YAML 单引号标量规则翻倍为 ''）。
+    $inlineRe = $re.Replace("'", "''")
+    $inlineReason = $reason.Replace("'", "''")
+    $out.Add([pscustomobject]@{
+      Key    = ($re + '|||' + $reason)
+      Raw    = $rawSeg
+      Indent = [regex]::Match($rawSeg, '^\s*').Value
+      Start  = $esOff
+      End    = ($esOff + $rawSeg.Length)
+      Inline = ("- { re: '" + $inlineRe + "', reason: '" + $inlineReason + "' }")
+    })
   }
   return ,$out
 }
@@ -192,8 +252,8 @@ function Repair-DshPatchFromSource([string]$dest, [string]$source, [string]$curT
   return $true
 }
 
-$srcRules = Get-RuleTexts $srcDsh
-$srcSet = @($srcRules | ForEach-Object { $_.Text })
+$srcRules = Get-RuleEntries $srcDsh
+$srcSet = @($srcRules | ForEach-Object { $_.Key })
 
 $dshProfiles = Get-ChildItem (Join-Path $userHome '.dsh\profiles') -Directory -ErrorAction SilentlyContinue
 foreach ($prof in $dshProfiles) {
@@ -233,40 +293,50 @@ foreach ($prof in $dshProfiles) {
     if (-not $yamlValid) { continue }
   }
 
-  $liveRules = Get-RuleTexts $patch
-  $liveSet = @($liveRules | ForEach-Object { $_.Text })
+  $liveRules = Get-RuleEntries $patch
+  $liveSet = @($liveRules | ForEach-Object { $_.Key })
   $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
   $extra   = @($liveSet | Where-Object { $srcSet -notcontains $_ })
 
-  # 先自愈（-Fix），再据最终状态判定
+  # 先自愈（-Fix），再据最终状态判定：
+  #   ① 源里缺的条目 → 优先「原位替换」（把生产侧那条 custom/陈旧规则整条换成源单行写法，
+  #      保持用户文件的顺序与其余内容；块式条目也能整段替换）；
+  #   ② 仍缺（生产侧没有对应槽位）→ 回退到「单源全文 + N3 尾部重组」兜底。
   if ($Fix -and $missing.Count -gt 0) {
     Backup-File $patch
     $rawText = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
-    $changed = 0
+    # 按字符偏移从后往前替换，避免前面的替换位移后面的偏移
+    $edits = @()
     for ($k = 0; $k -lt $srcRules.Count; $k++) {
-      $srcLine = $srcRules[$k].Text
-      if ($liveSet -contains $srcLine) { continue }
-      if ($k -lt $liveRules.Count -and ($extra -contains $liveRules[$k].Text)) {
-        if ($liveRules[$k].Raw -match '^\s*-\s*\{') {
-          $indent = [regex]::Match($liveRules[$k].Raw, '^\s*').Value
-          $rawText = $rawText.Replace($liveRules[$k].Raw, $indent + $srcLine)
-          $changed++
+      if ($liveSet -contains $srcRules[$k].Key) { continue }
+      if ($k -lt $liveRules.Count) {
+        $lk = $liveRules[$k]
+        # 同位次的生产条目是「源里没有的多余/陈旧规则」→ 用源条目整条原位替换
+        if (($extra -contains $lk.Key) -and $lk.Start -ge 0 -and $lk.End -le $rawText.Length) {
+          $edits += [pscustomobject]@{ Start = $lk.Start; End = $lk.End; New = ($lk.Indent + $srcRules[$k].Inline) }
         }
       }
     }
+    foreach ($e in ($edits | Sort-Object Start -Descending)) {
+      $rawText = $rawText.Substring(0, $e.Start) + $e.New + $rawText.Substring($e.End)
+    }
+    $changed = $edits.Count
     if ($changed -gt 0) {
       [System.IO.File]::WriteAllText($patch, $rawText, [System.Text.UTF8Encoding]::new($false))
       if ((Test-YamlSyntax $patch) -eq $false) {
-        Write-Host ("  [Fix] 替换后触发 YAML 异常，正在从单源重组恢复..." ) -ForegroundColor Yellow
+        Write-Host "  [Fix] 替换后触发 YAML 异常，正在从单源重组恢复..." -ForegroundColor Yellow
         [void](Repair-DshPatchFromSource $patch $srcDsh $rawText)
       }
       Write-Host ("  [Fix] 已按单源替换 {0} 条规则（备份到 ~/.risk-guard-backup/）" -f $changed) -ForegroundColor Cyan
-      $liveSet = @(Get-RuleTexts $patch | ForEach-Object { $_.Text })
+      $liveSet = @(Get-RuleEntries $patch | ForEach-Object { $_.Key })
       $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
-    } else {
-      if (Repair-DshPatchFromSource $patch $srcDsh $rawText) {
+    }
+    if ($missing.Count -gt 0) {
+      # 仍有缺失（生产侧无同位槽位）→ 单源全文 + N3 尾部重组兜底
+      $rawText2 = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
+      if (Repair-DshPatchFromSource $patch $srcDsh $rawText2) {
         Write-Host ("  [Fix] 已按单源安全重组 dsh {0} rules（并通过 YAML 复验）" -f $prof.Name) -ForegroundColor Cyan
-        $liveSet = @(Get-RuleTexts $patch | ForEach-Object { $_.Text })
+        $liveSet = @(Get-RuleEntries $patch | ForEach-Object { $_.Key })
         $missing = @($srcSet | Where-Object { $liveSet -notcontains $_ })
       }
     }
@@ -423,7 +493,9 @@ if (-not $ccOk -and $Fix) {
 const fs = require('fs');
 const p = process.argv[2];
 const hook = process.argv[3];
-const s = JSON.parse(fs.readFileSync(p, 'utf8'));
+// 2026-10-09：全新机器上 settings.json 可能根本不存在（此前 readFileSync 会抛错、-Fix 印失败）。
+// 缺失时从空对象起步，等价于「新建 settings.json」。
+const s = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
 s.hooks = s.hooks || {};
 if (!s.hooks.PreToolUse) {
   // 2026-09-13 修复（实测）：路径**无空白/引号时不加引号**。带引号写法在本机两种 spawn 机制

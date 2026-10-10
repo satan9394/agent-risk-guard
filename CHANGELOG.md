@@ -15,6 +15,11 @@
 
 ### Added
 
+- **技能 `agent-risk-guard` 在 OpenCode 下不再自动触发（2026-10-09）**：`skills/agent-risk-guard/SKILL.md`
+  的 frontmatter 增 `metadata: { opencode/autoinvoke: false }`。理由：本 skill 是**审计/加固**动作
+  （会检查并改写各 Agent 的全局 hooks/permissions），不应在用户随口提到「危险命令」「hook」时被
+  自动召起来改本机配置；改为**显式调用**。该字段仅影响 OpenCode 的自动调用，不影响其它运行时读取。
+
 - **跨端闸门不再"只在开发者机器上跑"（2026-09-27）**：`decision-parity` / `cross-end identity` 需要**两端同时在场**
   （ps1 引擎 + POSIX sh 引擎），此前硬编码 `powershell.exe` + `wsl.exe -e bash` → **Linux/macOS CI 上永远 SKIP**，
   而 `node --test` 的 SKIP 与 PASS 在 CI 摘要里**同色** ⇒「跨端一致性从未被验证」被一片绿色掩盖（R18 那轮的
@@ -126,6 +131,22 @@
 
 ### Fixed
 
+- **`scripts/riskguard-wiring-check.ps1` 的 DSH 段把块式规则误判为"缺失"（2026-10-09）**：规则比对原为
+  「整行 `Trim()` 后的文本」，而部分 profile（实测 `~/.dsh/profiles/desktop`）的规则是 **YAML 块式写法**
+  （`- {` / `re: '…'` / `reason: '…'` / `}` 各占一行），整行文本永远对不上 inline 单源 → 该 profile
+  **恒报「规则缺失 43 条」**，且 `-Fix` 只认单行 `- { re: … }` 形态、修不动，计划任务 `RiskGuard_WiringCheck`
+  **每 5 分钟假阳性 `exit 1`**（`~/.risk-guard-backup/wiring-check-task.log` 实测 09-29 起累计 300+ 条）。
+  修法：抽取改为格式无关的 `Get-RuleEntries`——按 `re`/`reason` 规范化成 `re|||reason` 比对，且**正确解析
+  YAML 单引号标量的 `''` 转义**（旧按「遇 `'` 即止」会截断含 `''` 的正则 → 那几条**恒报缺失**）；
+  `-Fix` 改为**按字符偏移、从后往前原位替换整条**，块式/单行都能替换。密封测试新增 **T6**（块式检测 +
+  块试原位替换，10 断语）。**回退对比**（同一块式文件）：旧逻辑 `missing=74` / 新逻辑 `missing=0`。
+- **`scripts/riskguard-wiring-check.ps1 -Fix` 在全新机器上会崩（2026-10-09）**：目标 home 缺
+  `~/.claude/hooks` 等父目录时，`Restore-Single-Source` 的 `Copy-Item` 抛 `DirectoryNotFoundException`，
+  撞脚本级 `EAP=Stop` **终止整个巡检**（dsh 段都跑不到，`docs/TODO.md` 已登记）；`settings.json` 段同病
+  （node 读不到缺失文件只报失败、不自愈）。修法：restore 前 `New-Item -Force` 建父目录；`settings.json`
+  合并 helper 改为**文件不存在则从空对象起步**（等价新建）。密封测试新增 **T7**（无父目录 + 无 settings.json
+  的 fake home）：旧脚本复现 `Could not find a part of the path …\\.claude\\hooks\\…` 且未跑到 dsh 段，
+  新脚本全 PASS。
 - **`scripts/riskguard-wiring-check.ps1` 的 DSH 段自愈三坑**（2026-09-28，合并用户增强时修复）：
   重组/替换写盘后**未复验 YAML** 就宣布成功 → 抽 `Repair-DshPatchFromSource`，写完必过
   `Test-YamlSyntax` 复验，失败明打「需人工处理」不谎称修复；python 缺失时 YAML 校验**静默跳过**
