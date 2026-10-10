@@ -13,6 +13,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **开发/发版政策：先本地提交再推远程，日常只提交、不发版；发版节奏 ≈ 30 天一版（2026-10-09）**。
+  本仓为个人开发、属「时不时回来修一修」而非高频迭代，故：① 默认工作流是**本地提交 → 推远程**（改代码
+  仍按章程补 `docs/decisions.md` 行 + 本文件 `[Unreleased]`）；② **合并 ≠ 发版**，日常不打 tag、不发
+  Release；③ 到点（约 30 天）才打 tag + 写 `docs/release-notes/<version>.md` + 发 GitHub Release。
+  约定落在 `AGENTS.md`（规则入口）；此条本身是「为什么这样发版」的记录，见 `docs/decisions.md`。
+
 ### Added
 
 - **技能 `agent-risk-guard` 在 OpenCode 下不再自动触发（2026-10-09）**：`skills/agent-risk-guard/SKILL.md`

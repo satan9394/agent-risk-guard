@@ -43,8 +43,12 @@ hook / 插件机制**拒绝**危险命令。核心铁律是「删除必须进回
 - 三个廉价文档闸门：`node scripts/generate-agent-security-matrix.ts --check` ·
   `node scripts/check-compatibility-docs.ts` · `node scripts/check-decisions-log.ts`
 - **改了代码就要改 `docs/decisions.md`**：`scripts/check-decisions-row.mjs` 在 PR 上强制（改 `packages/ scripts/ bin/ assets/ skills/ tests/` 任一路径即触发）。
-- 提交流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)：分支 → PR → CI 绿 → 合并。
-  **合并 ≠ 发版**：本仓「发版」另有发行说明与 tag，不要顺手打 tag 或发 Release（除非被明确要求）。
+- 提交流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)：分支 → PR → CI 绿 → 合并；
+  **默认「先本地提交，再推远程」**。
+  **合并 ≠ 发版**：日常只提交、不打 tag 也不发 Release。**发版节奏 ≈ 30 天一个版本**
+  （本项目为个人开发、属「时不时回来修一修」而非高频迭代，故节奏放慢；到点发版时才打 tag +
+  写 `docs/release-notes/<version>.md` + 发 GitHub Release，且只按此约定发、不顺手发）。
+  任何「顺手打个 tag / 发个 Release」都不算数，除非明确要求。
 
 ## ⚠️ 三个会咬人的机制
 
