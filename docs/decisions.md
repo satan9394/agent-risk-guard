@@ -112,5 +112,7 @@ and why, is as valuable as knowing what shipped.
 
 | 2026-10-09 | @opencode | **开发/发版政策：先本地提交再推远程；日常只提交、不发版；发版节奏 ≈ 30 天一版**。本项目为个人开发、「时不时回来修一修」——不设高频迭代节奏，故把发版从「每次合并即可能发」明确为**按 30 天周期**：日常只做「本地提交 → 推远程」+ 补 `docs/decisions.md` 行 + `CHANGELOG [Unreleased]`；**合并 ≠ 发版**，不打 tag、不发 Release；到点才打 tag + 写 `docs/release-notes/<version>.md` + 发 GitHub Release。约定写进 `AGENTS.md`（规则入口），本行为其裁决记录。 | ✅ ACCEPT | 政策文档改动，无代码路径；`AGENTS.md` 引用 `CONTRIBUTING.md` 的提交流程不变，仅补「先本地后远程」与 30 天节奏；本地提交 → 推远程（不 tag、不 Release）即为执行。 | 未发布 |
 
+| 2026-10-13 | @opencode | **OpenCode 2.0.28 适配：登记 opencode 已安装版本 2.0.26 → 2.0.28**。背景：本机 OpenCode CLI/TUI 与桌面端均已升到 2.0.28（桌面端由 2.0.27 静默覆盖），而 `compatibility.json` 里的登记值仍停在 2.0.26（2026-10-09 随 #44 更新）。本次**只同步「已安装版本」这一元数据**，不改任何 D 级判定，不动规则面 / 适配器 / hook。 | ✅ ACCEPT | 真实 2.0.28 会话点检：`Remove-Item` 被 `BLOCKED_BY_GLOBAL_SAFETY_GUARD / PERMANENT_DELETE_POWERSHELL` **实际拒绝**（原始输出留档），同会话安全 shell 命令正常放行；`riskguard doctor` 本机 **6 PASS / 0 FAIL / 7 SKIP**；三廉价文档闸门 exit 0；`check-decisions-row`（BASE_REF=main）过；定向回归 `tests/compatibility` **7/7**、`tests/product` **19/19**、`packages/installer/test` **51/51**。D3 的原始依据仍是 2026-09-22 的真实 OpenCode 会话（2.0.13），本次只做 2.0.28 的 deny 点检，**不据此重宣布 D3**。 | 未发布 |
+
 > **未发布**的变更排在表末，等下一个版本发布时把「版本」列填上。
 > Changes not yet released sit at the bottom until the next release fills in the version column.

@@ -21,6 +21,10 @@
   Release；③ 到点（约 30 天）才打 tag + 写 `docs/release-notes/<version>.md` + 发 GitHub Release。
   约定落在 `AGENTS.md`（规则入口）；此条本身是「为什么这样发版」的记录，见 `docs/decisions.md`。
 
+- **登记 OpenCode 已安装版本 2.0.26 → 2.0.28（2026-10-13）**：本机 OpenCode CLI/TUI 与桌面端均已升至
+  2.0.28，`packages/installer/compatibility.json` 的 opencode `componentInventory.version` 同步为实测值。
+  纯元数据同步，不改任何 D 级判定与规则面；真实 2.0.28 会话点检 `Remove-Item` 仍被拒（详见 `docs/decisions.md`）。
+
 ### Added
 
 - **技能 `agent-risk-guard` 在 OpenCode 下不再自动触发（2026-10-09）**：`skills/agent-risk-guard/SKILL.md`

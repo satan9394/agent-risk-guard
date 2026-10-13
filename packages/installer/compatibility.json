@@ -189,7 +189,7 @@
       },
       "componentInventory": {
         "agent": "opencode",
-        "version": "2.0.26",
+        "version": "2.0.28",
         "adapter": "packages/adapters/opencode",
         "hook": "tool.before plugin",
         "runtime": "node",
