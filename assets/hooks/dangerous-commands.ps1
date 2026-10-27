@@ -286,7 +286,7 @@ $cmd = $cmd -replace '\u3000', ' '
 #   （旧 L222 $cmdNaked 仅 L374/L378 使用）→ 非删除族的空引号插词两端一起 allow = 24 条真实放松。
 # 修法：把「空引号对（'' / ""）归一」提升为**全部规则**读的检测文本（与 sh 侧 L389-396 的 cmd=cmdNoq 同形），
 #   于是 `g''it clean -f` / `c''hmod 777` / `R''MDIR /s /q` **两端一起 deny**，分歧与放松同时消失。
-# 回显/脱敏/日志仍读 $cmdOrig（= NFKC 后、归一前），故 Deny-Command 的 updatedInput/systemMessage 与
+# 回显/脱敏/日志仍读 $cmdOrig（= NFKC 后、归一前），故 Deny-Command 的 systemMessage 与
 #   core / sh 的逐字一致性不变（Deny-Command 走 $script:curCmd，见 L152）。
 # 方向恒为「多看见」：删空引号对只会让命令词与分隔符相邻，不会把危险词藏起来；`rm'' --help` 仍由
 #   rule 16 的 help/version 豁免放行。
