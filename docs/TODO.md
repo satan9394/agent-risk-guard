@@ -122,11 +122,11 @@
   `packages/cli/src/runtime-install.ts::collectRuntimeFiles()` 的**行为**，不是硬约束——谁改收集器都可能
   把 `test*` 放进去而无人发现（2026-10-09 核实：`collectTs()` 显式跳过 `test`/`tests`/`node_modules`）。
   建议在 CI 里对 build 出的 artifact 断言「无 `tests?/` 路径」。属独立小切片。
-- [ ] **Linux CI 回滚用例偶发假红（2026-10-27 登记）**：`tests/transaction`、`tests/e2e/cli-exit-codes`、
-  `tests/release-hardening` 里「回滚时移除本轮创建的 manifest/config」依赖 `packages/trash/src/linux.ts` 调 `gio trash`；
-  ubuntu-latest 上并发跑全套时偶发 `REMOVE-FAILED`（2026-10-27 PR #52 的 Node 22 作业 5 条红、**同 SHA 重跑即全绿**，
-  同次 Node 24 作业绿）。属测试稳定性而非安全方向。修法方向：Linux 分支在 `gio` 不可用/失败时回退到
-  「原子 rename 进 Trash 目录」，或让事务层直接 rename、不依赖外部命令。
+- [x] **Linux CI 回滚用例偶发假红（2026-10-27 登记并当日修掉）**：根因是 `packages/trash/src/linux.ts` 只调
+  `gio trash`，而 CI 的 ubuntu-latest 在镜像切换期并非每台都装 `gio`（同一天同一 SHA 出现「Node 22 红 / Node 24 绿」
+  又反过来），命令缺失时 `trash()` 返回 `ok:false` → 事务回滚判 `REMOVE-FAILED`。已改为
+  「外部命令 → 备用命令 → freedesktop 规范自实现」三级，并加 Linux-only 测试（清空 `PATH` 仍须进回收站）。
+  验收：WSL 里把 `PATH` 收窄到只剩 node（等价于 runner 无 `gio`）后，`tests/transaction` **10/10** 通过。
 - [x] ~~真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）~~ —— **已完成，2026-09-21**。
   agy **1.2.7** 真实会话里 `run_command` 执行 `git reset --hard HEAD` 被 hook 拒绝
   （`tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：…`），同会话 `Read` 与

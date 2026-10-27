@@ -1,6 +1,6 @@
 /**
  * trash/index.ts — 跨平台 trash 入口（文档 §6）
- * 按平台分发：Windows → 回收站 / macOS → trash / Linux → gio trash。
+ * 按平台分发：Windows → 回收站 / macOS → trash / Linux → gio trash（缺失时按 freedesktop 规范自实现兜底）。
  */
 
 export interface TrashResult {
