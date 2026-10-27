@@ -29,7 +29,7 @@
   ① matcher 未覆盖 Windows 新工具名 `PowerShell`；② hook 命令由 POSIX shell 派发，反斜杠路径被打碎导致 `exit 127`；
   ③ deny 输出里的 `updatedInput: null` 被 JSON 校验拒绝。修法：五处引擎实现统一省略 `updatedInput`；
   `riskguard-wiring-check.ps1` 的 claude 段新增「matcher 覆盖 PowerShell」「命令为正斜杠路径」两条断言，`-Fix` 按新形态生成。
-  同轮把 opencode 2.2.0 / agy 1.4.8 的真实会话复验补齐并更新 `compatibility.json`（版本 + D3 证据日期）。
+  同轮把 opencode 2.2.0 / agy 1.4.8 / dsh 0.2.1-rc.3 的真实会话复验补齐并更新 `compatibility.json`（版本 + D3 证据日期）。
 
 ### Fixed
 

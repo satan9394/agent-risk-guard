@@ -297,7 +297,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27：本机 0.2.1-rc.3。`dsh headless` 真实会话无法启动——凭据服务里的 DEEPSEEK_API_KEY 已失效（`AUTH: Authentication Fails，key ****1ac0 is invalid`），本机也没有其他可用 route，故本轮只做到契约层：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。D3 证据不据本轮重述。",
+      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27（0.2.1-rc.3 复验，D3 重取）：headless profile 默认 route 是 deepseek-official，其 DEEPSEEK_API_KEY 已失效（401），故真实会话用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` 并把 agent-default-model 指向 `command` provider（`deepseek/deepseek-v4.1-flash`）后完成：`git reset --hard` 被门禁拒绝（返回 `Error: 高危：git reset --hard 丢弃工作区改动`、命令未执行、未提交改动保留），同会话 `git status --short` 放行并真实回显。契约层同步复核：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。注：headless 默认组合不含 llm-pi-ai，这是本次需要 overlay 才能用 command 模型的原因。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
