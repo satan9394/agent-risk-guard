@@ -67,7 +67,7 @@ function Deny-Command($reason) {
             hookEventName = 'PreToolUse'
             permissionDecision = 'deny'
             permissionDecisionReason = "⛔ HOOK 已拦截危险命令：$reason"
-            updatedInput = $null
+            # 2026-10-27：省略 updatedInput（null 会被 Claude Code 2.1.311 判为 JSON 校验失败 → fail-open）
         }
         systemMessage = "⛔ HOOK 已拦截危险命令：$reason`n命令：$cmd`n如确需执行，请在 Claude Code 外部手动操作。"
     }

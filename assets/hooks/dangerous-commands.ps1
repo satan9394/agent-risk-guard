@@ -200,7 +200,9 @@ function Deny-Command($reason) {
             hookEventName = 'PreToolUse'
             permissionDecision = 'deny'
             permissionDecisionReason = "⛔ HOOK 已拦截危险命令：$safeReason"
-            updatedInput = $null
+            # 2026-10-27：不再输出 updatedInput。Claude Code 2.1.311 的 hook 输出校验要求
+            # 该字段「若出现必须是 record」，`null` 会让整条 hook 判定校验失败并被当作放行（fail-open）。
+            # 省略即为「不改写入参」，对所有版本等价且更安全。
         }
         systemMessage = "⛔ HOOK 已拦截危险命令：$safeReason`n命令：$safeCmd`n如确需执行，请在 Agent 外部手动操作。"
     }

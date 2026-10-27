@@ -178,6 +178,12 @@ Assert 'T6i healed block-form file still parses' (Test-PyYaml $p6d)
 # （dsh 段都跑不到）；settings.json 段 node 读不到缺失文件也失败。本用例钉死「能跑到 dsh 段且建出父目录」。
 Write-Host "`n== T7: fresh machine (missing parent dirs + missing settings.json), -Fix must not abort ==" -ForegroundColor Cyan
 $h7 = Join-Path $tmp 'fake-t7-minimal'
+# 2026-10-27：本段跑完会在夹具里留下 .claude/.codex 等目录；**复跑时** T7 pre 断言（要求全新机器）
+# 会因旧残留恒红。先清掉旧夹具（进回收站，遵守删除铁律），保证本用例可重复执行。
+if (Test-Path $h7) {
+  Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($h7, 'OnlyErrorDialogs', 'SendToRecycleBin')
+}
 New-Item -ItemType Directory -Force (Join-Path $h7 '.dsh\profiles\headless') | Out-Null
 $p7 = Join-Path $h7 '.dsh\profiles\headless\cordis.patch.yml'
 [IO.File]::WriteAllText($p7, (($srcLines -join "`r`n") + $n3Tail), [Text.UTF8Encoding]::new($false))
@@ -188,6 +194,11 @@ Assert 'T7b reached the dsh section (dsh headless judged)' ($o7 -match 'dsh head
 Assert 'T7c final dsh check OK on fresh machine' ($o7 -match '\[OK\][^\n]*dsh headless')
 Assert 'T7d claude hook parent dir auto-created + file restored' (Test-Path (Join-Path $h7 '.claude\hooks\dangerous-commands.ps1'))
 Assert 'T7e claude settings.json created (was missing)' (Test-Path (Join-Path $h7 '.claude\settings.json'))
+# 2026-10-27：CC 2.1.311 的两种「注册了但拦不住」形态必须在 -Fix 产物里就排除：
+#   matcher 不覆盖 PowerShell → PowerShell 工具调用不进 hook；命令里有反斜杠 → POSIX 派发下 exit 127。
+$t7settings = Get-Content (Join-Path $h7 '.claude\settings.json') -Raw
+Assert 'T7f generated hook matcher covers PowerShell' ($t7settings -match 'Bash\|PowerShell')
+Assert 'T7g generated hook command has no backslash path' (-not ($t7settings -match '\\\\'))
 
 Write-Host "`n===== sealed test total: $($script:pass) pass / $($script:fail) fail =====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 }

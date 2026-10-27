@@ -189,7 +189,7 @@ deny_command() {
     local safe
     safe=$(redact_cmd)
     cat <<EOF
-{"hookSpecificOutput":{"permissionDecision":"deny","updatedInput":null},"systemMessage":"HOOK BLOCKED: ${reason}\nCommand: ${safe}\nUse trash/recycle bin instead of permanent deletion."}
+{"hookSpecificOutput":{"permissionDecision":"deny"},"systemMessage":"HOOK BLOCKED: ${reason}\nCommand: ${safe}\nUse trash/recycle bin instead of permanent deletion."}
 EOF
     exit 0
 }

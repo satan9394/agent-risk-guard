@@ -108,5 +108,17 @@ run_case 'npm test' allow
 run_case 'node script.js' allow
 run_case 'python main.py' allow
 
+# 2026-10-27：deny 输出不得含 updatedInput —— Claude Code 2.1.311 起该字段若出现必须是 record，
+# `null` 会让整条判定校验失败并被当作放行（fail-open）。省略 = 不改写入参。
+schema_json='{"tool_name":"Bash","tool_input":{"command":"git reset --hard"}}'
+schema_out=$(printf '%s' "$schema_json" | "$HOOK" 2>/dev/null)
+total=$((total+1))
+if printf '%s' "$schema_out" | grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"' && ! printf '%s' "$schema_out" | grep -q 'updatedInput'; then
+    pass=$((pass+1))
+    echo "PASS [schema] deny output has no updatedInput"
+else
+    echo "FAIL [schema] deny output has no updatedInput"
+fi
+
 echo "PASS: $pass/$total"
 [ "$pass" = "$total" ] && exit 0 || exit 1
