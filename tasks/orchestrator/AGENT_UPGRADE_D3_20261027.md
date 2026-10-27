@@ -107,3 +107,5 @@ dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-o
 - `packages/installer/test` + `packages/dsh/test` + `packages/codex/test` **45/45**
 - 接线巡检只读 **exit 0**；密封测试 **42/42**（新增 T7f/T7g 锁住 -Fix 产物形态）
 - 文档三闸 exit 0
+- 跨端闸门（两端同时在场，非 `CROSS-END GATE NOT RUN`）：**5/5 pass**，`decision-parity` 461.2s、`cross-end identity` 24.8s、
+  `redact-parity` A/B/C 32.4 / 18.6 / 24.9s；`ends: ps1 via powershell.exe + sh via wsl.exe -e bash`
