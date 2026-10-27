@@ -15,11 +15,11 @@
 "hooks": {
   "PreToolUse": [
     {
-      "matcher": "Bash",
+      "matcher": "Bash|PowerShell",
       "hooks": [
         {
           "type": "command",
-          "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\<用户>\\.claude\\hooks\\dangerous-commands.ps1\"",
+          "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/Users/<用户>/.claude/hooks/dangerous-commands.ps1",
           "timeout": 10
         }
       ]
@@ -27,6 +27,14 @@
   ]
 }
 ```
+
+> ⚠️ 三条都是硬要求（2026-10-27 在 Claude Code 2.1.311 上实测，任一不满足都**静默 fail-open**）：
+> 1. **matcher 必须覆盖 `PowerShell`**：Windows 上 shell 工具已不止 `Bash`，`git reset --hard` 这类调用会走
+>    `PowerShell` 工具；只写 `Bash` 时它根本不进 hook（`--debug=hooks` 里一条 PreToolUse 都没有）。
+> 2. **命令必须用正斜杠绝对路径**：hook 命令由 POSIX shell 派发，`C:\Users\...` 的反斜杠会被吃掉，
+>    `-File` 收到 `C:UsersSatanchen...` → `exit 127`，判定被丢弃后命令照跑。
+> 3. **hook 输出不得含 `updatedInput: null`**：2.1.311 的 JSON 校验要求该字段「若出现必须是 record」，
+>    `null` 会让整条 deny 作废（debug 记 `Hook JSON output validation failed`）。省略即「不改写入参」。
 
 ## Hook 脚本要点（Windows PowerShell 版）
 
@@ -51,7 +59,15 @@
 # 期望输出含 permissionDecision: deny；白名单命令（git status）无输出
 ```
 
-**真实会话**：让 Claude 执行一条删除命令 → 应被 hook 拒绝并提示原因。
+**真实会话**（推荐带 debug，能直接看出 hook 有没有真的被调用）：
+
+```powershell
+claude -p "<让它执行 git reset --hard 的提示>" --permission-mode bypassPermissions `
+  --output-format json --debug=hooks --debug-file .\cc-debug.txt
+# 判读：cc-debug.txt 里必须出现 `PreToolUse:PowerShell [...] finished with status 0`；
+# 只有 `status 127` 或完全没有 PreToolUse 行，都是「注册了但拦不住」= fail-open。
+# 之后看 git status：脏改动仍在 → deny 生效。
+```
 
 ## 陷阱
 

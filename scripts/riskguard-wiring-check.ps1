@@ -427,8 +427,12 @@ if (Test-Path $skillOldOc) {
 # 「同名不同代」的隐患原样留在部署面上。现补**反向比对**（extras）：
 # 安装目录里有、仓库 skill 里没有的文件即报出；`-Fix` 时按铁律**移入回收站**（非永久删除）。
 Write-Host "`n[skill 副本]"
+# 2026-10-27：`~/.claude/skills/custom/agent-risk-guard-audit` 是 skills-manager 接管前的**旧安装位置**。
+# 2026-10-25 起技能目录只允许由 skills-manager 部署（agent 根里只放 junction，实体源在
+# `~/.skills-manager/skills`），该目录已不存在。此处不再把它当必检项，否则计划任务每天恒 exit 1；
+# 只有它**仍存在**时才做镜像比对（存在即说明有人手工放了一份未受管实体副本，需要收拢）。
 if (-not (Test-Path $liveSkill)) {
-  Write-Check 'skill 安装目录' $false $liveSkill
+  Write-Check 'skill 旧安装目录（已退役，本项应为空）' $true $liveSkill
 } else {
   $skillMissing = [System.Collections.Generic.List[string]]::new()
   $skillDrifted = [System.Collections.Generic.List[string]]::new()
@@ -485,9 +489,34 @@ $ccSettings = Join-Path $userHome '.claude\settings.json'
 $ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw } else { '' }
 $ccOk = ($ccRaw -match 'PreToolUse') -and ($ccRaw -match 'dangerous-commands')
 Write-Check 'claude-code settings.json PreToolUse' $ccOk $ccSettings
-if (-not $ccOk -and $Fix) {
+
+# 2026-10-27（Claude Code 2.1.311 实测）：两个「有注册但拦不住」的形态，都会静默 fail-open ——
+#   1) Windows 上 shell 工具新增 `PowerShell`（与 `Bash` 并存）。只写 matcher=Bash 时，
+#      PowerShell 工具调用根本不进 hook（debug 里一条 PreToolUse 都没有）。
+#   2) hook 命令改由 POSIX shell 派发：`C:\Users\...` 的反斜杠被吃掉 → `-File` 收不到真实路径
+#      → exit 127 → 判定被丢弃、命令照跑。
+# 故判据从「有 PreToolUse」升级为「matcher 覆盖 PowerShell + 命令用正斜杠绝对路径」。
+$ccMatcher = ''
+$ccCommand = ''
+try {
+  $ccCfg = Get-Content $ccSettings -Raw | ConvertFrom-Json
+  foreach ($entry in @($ccCfg.hooks.PreToolUse)) {
+    foreach ($h in @($entry.hooks)) {
+      if ($h.command -and ([string]$h.command -match 'dangerous-commands')) {
+        $ccMatcher = [string]$entry.matcher
+        $ccCommand = [string]$h.command
+      }
+    }
+  }
+} catch { }
+$ccMatcherOk = ($ccMatcher -match 'PowerShell')
+Write-Check 'claude-code hook matcher 覆盖 PowerShell' $ccMatcherOk $ccSettings
+$ccCmdOk = ($ccCommand -ne '') -and ($ccCommand -notmatch '\\')
+Write-Check 'claude-code hook 命令为正斜杠路径' $ccCmdOk $ccSettings
+
+if ((-not ($ccOk -and $ccMatcherOk -and $ccCmdOk)) -and $Fix) {
   Backup-File $ccSettings
-  # 合并式添加 PreToolUse（node 处理 JSON，保留其他字段；command 指向 ~/.claude/hooks 的危险命令脚本）
+  # 合并式添加/规范化 PreToolUse（node 处理 JSON，保留其他字段）
   $helper = Join-Path $env:TEMP 'riskguard-cc-pretooluse.js'
   @'
 const fs = require('fs');
@@ -497,13 +526,20 @@ const hook = process.argv[3];
 // 缺失时从空对象起步，等价于「新建 settings.json」。
 const s = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
 s.hooks = s.hooks || {};
-if (!s.hooks.PreToolUse) {
-  // 2026-09-13 修复（实测）：路径**无空白/引号时不加引号**。带引号写法在本机两种 spawn 机制
-  // （cmd /c 与直接 spawnArgs）下都会让 hook 静默失效——powershell 收到字面引号报
-  // `Illegal characters in path`、退出 4294770688、不产出 deny；去引号后同一批危险载荷能正常 deny。
-  // 该缺陷会让本脚本的 -Fix 动作**写回一个失效的注册**（即"自愈"其实制造裸奔）。含空白时才退回加引号。
-  const hookArg = /[\s"]/.test(hook) ? '"' + hook + '"' : hook;
-  s.hooks.PreToolUse = [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + hookArg, timeout: 10 }] }];
+if (!Array.isArray(s.hooks.PreToolUse)) s.hooks.PreToolUse = [];
+// 2026-10-27：三处实测修复（Claude Code 2.1.311）
+//   a) matcher 必含 PowerShell：Windows 上 shell 调用现在可能走 `PowerShell` 工具，只写 Bash 会漏。
+//   b) 命令用正斜杠：hook 命令由 POSIX shell 派发，反斜杠会被吞掉导致 exit 127（fail-open）。
+//   c) 显式绝对 powershell.exe：PATH 在 POSIX 派发下不保证含 System32。
+const ps = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+const scriptPosix = hook.split('\\').join('/');
+const command = ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (/[\s"]/.test(scriptPosix) ? '"' + scriptPosix + '"' : scriptPosix);
+const entry = s.hooks.PreToolUse.find(e => (e.hooks || []).some(h => h.command && /dangerous-commands/.test(h.command)));
+if (entry) {
+  if (!/PowerShell/.test(entry.matcher || '')) entry.matcher = ((entry.matcher || 'Bash') + '|PowerShell');
+  for (const h of entry.hooks) { if (h.command && /dangerous-commands/.test(h.command)) h.command = command; }
+} else {
+  s.hooks.PreToolUse.push({ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command, timeout: 10 }] });
 }
 fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
 '@ | Set-Content -Path $helper -Encoding UTF8
@@ -514,7 +550,7 @@ fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
   } else {
     Write-Host "  [Fix] settings.json 恢复失败（node 退出码 $LASTEXITCODE）" -ForegroundColor Red
   }
-  $issues = @($issues | Where-Object { $_ -ne 'claude-code settings.json PreToolUse' })
+  $issues = @($issues | Where-Object { $_ -ne 'claude-code settings.json PreToolUse' -and $_ -ne 'claude-code hook matcher 覆盖 PowerShell' -and $_ -ne 'claude-code hook 命令为正斜杠路径' })
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'

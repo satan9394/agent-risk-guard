@@ -71,4 +71,22 @@ foreach ($c in $cases) {
   Write-Output ("{0} [expect {1}] got {2}{3}  <- {4}" -f ($(if($ok){'PASS'}else{'FAIL'})), $c.expect, $decision, $(if(-not $ok){' raw=' + $raw.Substring(0,[Math]::Min(70,$raw.Length))}else{''}), $c.cmd)
 }
 Write-Output ("{0}/{1}" -f $pass, $cases.Count)
-exit $(if ($pass -eq $cases.Count) { 0 } else { 1 })
+
+# 2026-10-27（Claude Code 2.1.311 实测）：hook 输出里的 `updatedInput` 一旦出现**必须是 record**。
+# 旧引擎输出的 `updatedInput: null` 会让整条 deny 判定在 CC 侧 JSON 校验失败 → 判定被丢弃 → 命令照跑
+# （现场证据：hook 进程 exit 0 且吐出 deny，CC debug 记 "Hook JSON output validation failed"）。
+# 断言：deny 输出必须是合法 JSON、decision=deny、且**不含** updatedInput 键（省略=不改写入参）。
+$schemaOk = $false
+try {
+  $denyProbe = (& $script -Cmd 'git reset --hard' 2>&1 | Out-String).Trim()
+  $parsed = $denyProbe | ConvertFrom-Json
+  $schemaOk = ($parsed.hookSpecificOutput.permissionDecision -eq 'deny') -and
+              ($parsed.hookSpecificOutput.hookEventName -eq 'PreToolUse') -and
+              ($parsed.hookSpecificOutput.PSObject.Properties.Name -notcontains 'updatedInput')
+} catch { }
+if ($schemaOk) { $pass++ }
+Write-Output ("{0} [schema] deny 输出不含 updatedInput（CC 2.1.311 输出校验）" -f $(if ($schemaOk) { 'PASS' } else { 'FAIL' }))
+
+$total = $cases.Count + 1
+Write-Output ("{0}/{1}" -f $pass, $total)
+exit $(if ($pass -eq $total) { 0 } else { 1 })

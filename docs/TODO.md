@@ -114,15 +114,19 @@
 - [ ] **plan 钩子成本约 0.5s/工具调用**（几乎全是 PowerShell 进程启动；80 字节空脚本走 `-File`+stdin
   就要 560ms），而它 matcher 是 `"*"`。若体感太慢，可把 matcher 收窄到已知写工具集合，代价是
   未知新工具不再默认拦截。
-- [ ] **agy 版本漂移（2026-10-10 登记）**：`compatibility.json` 的 agy `componentInventory.version`
-  记 **1.3.2**，而本机实测已是 **1.3.3**；且 D3 证据仍停在 **1.1.27 / 1.2.7**。**未据此提级**（遵硬约束 5，
-  没拿到新会话就不改 D3）。→ 下次顺手把版本更新为实测值，或安排一次 1.3.x 真实会话复验（如做 D3
-  复验，方法与 2026-09-21 那条同：用模型不认为该拒绝的命令如 `git reset` 触发钩子）。
+- [x] **agy 版本漂移（2026-10-10 登记，2026-10-27 闭环）**：`compatibility.json` 的 agy `componentInventory.version`
+  原记 **1.3.2**、D3 证据停在 **1.1.27 / 1.2.7**。2026-10-27 在 **1.4.8** 上做真实会话复验（`agy -p`：`git reset --hard`
+  被 pre-tool hook deny、脏改动保留；`git status --short` 放行并真实执行），版本已更新为实测 1.4.8，D3 证据同步刷新。
 - [ ] **建议：给发布产物加「不得含 `tests/`」的 CI 断言（2026-10-10 登记）**：Release 附件
   `agent-risk-guard-v<ver>.tar.gz` 目前不含测试，但这是 `scripts/build-release.ts` +
   `packages/cli/src/runtime-install.ts::collectRuntimeFiles()` 的**行为**，不是硬约束——谁改收集器都可能
   把 `test*` 放进去而无人发现（2026-10-09 核实：`collectTs()` 显式跳过 `test`/`tests`/`node_modules`）。
   建议在 CI 里对 build 出的 artifact 断言「无 `tests?/` 路径」。属独立小切片。
+- [x] **Linux CI 回滚用例偶发假红（2026-10-27 登记并当日修掉）**：根因是 `packages/trash/src/linux.ts` 只调
+  `gio trash`，而 CI 的 ubuntu-latest 在镜像切换期并非每台都装 `gio`（同一天同一 SHA 出现「Node 22 红 / Node 24 绿」
+  又反过来），命令缺失时 `trash()` 返回 `ok:false` → 事务回滚判 `REMOVE-FAILED`。已改为
+  「外部命令 → 备用命令 → freedesktop 规范自实现」三级，并加 Linux-only 测试（清空 `PATH` 仍须进回收站）。
+  验收：WSL 里把 `PATH` 收窄到只剩 node（等价于 runner 无 `gio`）后，`tests/transaction` **10/10** 通过。
 - [x] ~~真实 agy 会话 D3 复验（当前 agy 1.2.7，D3 证据停在 1.1.27）~~ —— **已完成，2026-09-21**。
   agy **1.2.7** 真实会话里 `run_command` 执行 `git reset --hard HEAD` 被 hook 拒绝
   （`tool call denied by pre-tool hook: RiskGuard: ⛔ HOOK 已拦截危险命令：…`），同会话 `Read` 与

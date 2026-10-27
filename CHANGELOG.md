@@ -25,6 +25,29 @@
   2.0.28，`packages/installer/compatibility.json` 的 opencode `componentInventory.version` 同步为实测值。
   纯元数据同步，不改任何 D 级判定与规则面；真实 2.0.28 会话点检 `Remove-Item` 仍被拒（详见 `docs/decisions.md`）。
 
+- **Agent 升级适配：Claude Code 2.1.311 的三处 fail-open 已修（2026-10-27）**：升级后 hook「注册了但拦不住」——
+  ① matcher 未覆盖 Windows 新工具名 `PowerShell`；② hook 命令由 POSIX shell 派发，反斜杠路径被打碎导致 `exit 127`；
+  ③ deny 输出里的 `updatedInput: null` 被 JSON 校验拒绝。修法：五处引擎实现统一省略 `updatedInput`；
+  `riskguard-wiring-check.ps1` 的 claude 段新增「matcher 覆盖 PowerShell」「命令为正斜杠路径」两条断言，`-Fix` 按新形态生成。
+  同轮把 opencode 2.2.0 / agy 1.4.8 的真实会话复验补齐并更新 `compatibility.json`（版本 + D3 证据日期）。
+
+### Fixed
+
+- **Linux trash 不再依赖系统装没装 `gio`（2026-10-27）**：`packages/trash/src/linux.ts` 原先只调 `gio trash`，
+  命令缺失或失败时 `trash()` 直接返回 `ok:false`，安装事务回滚据此判 `REMOVE-FAILED`（回滚不完整）。
+  CI 的 ubuntu-latest 在镜像切换期**并非每台都带 `gio`**，于是 `transaction` / `e2e/cli-exit-codes` /
+  `release-hardening` 的回滚用例时红时绿。现改为三级：先按参数调外部命令 → 再试另一条（`gio` / `trash-cli`）→
+  最后按 freedesktop 规范自实现（`$XDG_DATA_HOME/Trash/{files,info}`，同名加后缀，跨设备复制后移除源）。
+  新增 `packages/trash/test/trash.linux.test.ts`（Linux only）：清空 `PATH` 后仍能进回收站并写出 `.trashinfo`。
+
+- **hook 输出去掉 `updatedInput: null`（2026-10-27）**：Claude Code 2.1.311 起该字段「若出现必须是 record」，
+  `null` 会让整条 deny 在 JSON 校验阶段失败并被当作放行（现场 debug 记 `Hook JSON output validation failed`）。
+  省略即为「不改写入参」，对旧版本等价。ps1 / sh 两端同步，并在两套 hook 测试里加「deny 输出不含 updatedInput」断言。
+
+- **wiring-check 不再把退役的 skill 旧安装目录当必检项（2026-10-27）**：skills-manager 接管后
+  `~/.claude/skills/custom/agent-risk-guard-audit` 已不存在，原判据让它每 5 分钟恒 `exit 1`；
+  现改为「不存在即通过，仅当它被人手工放回时报警并做镜像比对」。
+
 ### Added
 
 - **技能 `agent-risk-guard` 在 OpenCode 下不再自动触发（2026-10-09）**：`skills/agent-risk-guard/SKILL.md`
