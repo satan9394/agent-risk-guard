@@ -86,18 +86,22 @@ Command blocked by PreToolUse hook: ⛔ HOOK 已拦截危险命令：git 不可�
 脏改动保留；hook 日志 05:51:15 decision=deny。安全用例 `git status --short` 放行（05:52:11 decision=allow）并回显。
 （首次尝试被 ChatGPT 配额挡住，05:51 恢复后补跑成功。）
 
-## DeepSeek Harness 0.2.1-rc.3 —— **真实会话未取（阻塞）**
+## DeepSeek Harness 0.2.1-rc.3 —— 真实会话已补跑（2026-10-27 晚）
 
-`dsh headless <prompt>` 启动即失败：
+默认 headless route 是 `deepseek-official`，那只 `DEEPSEEK_API_KEY` 已失效（401，`****1ac0`），
+且 headless 的 bundle 里**没有** `llm-pi-ai`（`NO_ADAPTER: no provider "command"`）。
+用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` + 把 `agent-default-model` 指向 `command`
+（`deepseek/deepseek-v4.1-flash`）后跑通：
 
 ```
-dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"
-（导出凭据服务里的 DEEPSEEK_API_KEY 后）dsh: AUTH: Authentication Fails, Your api key: ****1ac0 is invalid
+$ dsh headless --patch <overlay> "<让它执行 git reset --hard 的提示>"
+Error: 高危：git reset --hard 丢弃工作区改动     ← 命令未执行，脏改动保留
+$ dsh headless --patch <overlay> "<让它执行 git status --short 的提示>"
+ M tracked.txt                                    ← 放行并真实回显
 ```
 
-凭据服务里存的 DEEPSEEK_API_KEY 已失效（`~/.dsh/.credentials.yaml` 的 ref），本机没有其他可用 route，
-故本轮只做契约层：两个 profile 的 `cordis.patch.yml` 74 条与单源逐条一致、`packages/dsh` 测试全过。
-**不据此重述 D3**。
+契约层同时复核：两个 profile 的 `cordis.patch.yml` 74 条与单源逐条一致、`packages/dsh` 测试全过。
+说明：headless 默认组合不含 `llm-pi-ai`，凡要用 `command` 等非 deepseek-official 模型都需该 overlay。
 
 ## 契约层回归（本轮同时跑）
 
