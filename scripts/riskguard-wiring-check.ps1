@@ -27,7 +27,12 @@
 param([switch]$Fix)
 
 $ErrorActionPreference = 'Stop'
-$repo = 'E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard'
+# 单源仓库定位：优先用脚本自身所在仓库（仓库搬家后不再失效），
+# 找不到时回退到历史硬编码路径，最后才报错退出（exit 2）。
+$repo = Split-Path -Parent $PSScriptRoot
+if (-not (Test-Path (Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'))) {
+    $repo = 'E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard'
+}
 $userHome = $env:USERPROFILE
 $backupRoot = Join-Path $userHome '.risk-guard-backup'
 $issues = @()

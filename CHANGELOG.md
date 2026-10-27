@@ -27,6 +27,14 @@
 
 ### Added
 
+- **新增 MiniMax Code（mcode）适配层（2026-10-27，D2）**：`packages/adapters/mcode` 只做形状转换（零规则），
+  处理 mcode 的**双形态工具名**（映射名 `Bash`/`PowerShell` vs 内部名 `bash`/`read`/`write`/`edit`）：
+  shell 工具取不到非空 `command` 时 **fail-closed**（照抄 claude adapter 的未知工具兜底会把 shell 调用当写入放行），
+  非 deny 一律输出 `{}`。接线走 mcode 的 Claude 兼容插件目录
+  `~/.minimax/plugins/riskguard/{.claude-plugin/plugin.json,hooks/hooks.json}`，
+  `matcher` 为 `Bash|PowerShell|bash`（大小写敏感正则，漏内部名等于该调用不进 hook），**不带** `RG_ALLOW_DELETE`。
+  附 `scripts/install-mcode-plugin.mjs`（幂等 + 备份）。**D3 未取**；installer 的 `install --agent mcode` / doctor 分支待补（见 `docs/TODO.md`）。
+
 - **技能 `agent-risk-guard` 在 OpenCode 下不再自动触发（2026-10-09）**：`skills/agent-risk-guard/SKILL.md`
   的 frontmatter 增 `metadata: { opencode/autoinvoke: false }`。理由：本 skill 是**审计/加固**动作
   （会检查并改写各 Agent 的全局 hooks/permissions），不应在用户随口提到「危险命令」「hook」时被

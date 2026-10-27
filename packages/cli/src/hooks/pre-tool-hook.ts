@@ -15,6 +15,7 @@
 
 import { readFileSync } from 'node:fs';
 import { parseClaudePayload, renderClaudeDecision, type ClaudePayload } from '../../../adapters/claude/src/index.ts';
+import { evaluateMcode, type McodePayload } from '../../../adapters/mcode/src/index.ts';
 import { selectPolicy } from '../cli.ts';
 import { evaluate } from '../../../core/src/policy-engine.ts';
 import { failClosed, type Decision } from '../../../core/src/decision.ts';
@@ -71,6 +72,13 @@ function main(): number {
 
   const policy = selectPolicy(undefined); // 默认策略（autonomy-safe）
   const decide = (e: RiskEvent) => evaluate(e, policy);
+
+  // mcode：工具名可能是映射名（Bash/PowerShell）或内部名（bash/read/write/edit），
+  // 且内部形状无法静态验证 → 由 adapter 负责 fail-closed。输出与 Claude 同形状（exit 0）。
+  if (agent === 'mcode') {
+    process.stdout.write(evaluateMcode(payload as McodePayload, decide));
+    return 0;
+  }
 
   // Claude adapter 覆盖 Bash/PowerShell/Write/Edit；Codex 的 PreToolUse 输入形状与其一致
   const rendered = renderClaudeDecision(decideFromPayload({ ...payload }, decide));

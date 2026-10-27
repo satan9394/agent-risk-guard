@@ -1,0 +1,7 @@
+{
+  "name": "riskguard",
+  "description": "RiskGuard pre-execution gate: denies destructive tool calls (deletion must go to the recycle bin). Rules live in the RiskGuard repo; this plugin only wires the PreToolUse hook.",
+  "author": {
+    "name": "RiskGuard"
+  }
+}

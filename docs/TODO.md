@@ -144,3 +144,11 @@
 - hash-chain 审计账本（防篡改日志链）
 - prompt injection 检测（工具输出 / 抓取内容扫描）
 - OS 级沙箱指引（Windows 可行方案：受限账号 / WSL 容器）
+
+## mcode 适配待补（2026-10-27，当前 D2）
+
+- [ ] `install --agent mcode`：插件目录型接线（`~/.minimax/plugins/riskguard/`），卸载单位是**目录**
+- [ ] `doctor` / `status` 分支 + `compatibility.json` 条目（windows **D2**，D3 未取）
+- [ ] `runtime-probe` 增加 matcher 覆盖检查（`Bash|PowerShell|bash`，缺内部名等于该调用不进 hook）
+- [ ] `collectRuntimeFiles()` 打入 `packages/adapters/mcode`，否则 bootstrap 后的 runtime hook 缺 mcode 分支
+- 过渡期安装手段：`scripts/install-mcode-plugin.mjs`（幂等 + 备份）

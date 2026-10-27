@@ -80,11 +80,18 @@ export async function collectRuntimeFiles(): Promise<string[]> {
   for (const pkg of ['cli', 'core', 'installer', 'trash', 'acs']) {
     files.push(...(await collectTs(join(REPO_ROOT, 'packages', pkg, 'src'))));
   }
-  // hook 链：claude adapter
-  files.push(...(await collectTs(join(REPO_ROOT, 'packages', 'adapters', 'claude', 'src'))));
+  // hook 链：claude adapter + mcode adapter
+  // ⚠ 2026-10-27：pre-tool-hook.ts 现在静态 import 了 adapters/mcode；漏打包会让 bootstrap 后的
+  //   runtime hook 直接 import 失败（claude/codex/mcode 三端同时哑火），故必须逐个 adapter 列出
+  for (const adapter of ['claude', 'mcode']) {
+    files.push(...(await collectTs(join(REPO_ROOT, 'packages', 'adapters', adapter, 'src'))));
+  }
   // opencode plugin asset（install 时复制给用户）
   const asset = join(REPO_ROOT, 'assets', 'opencode', 'agent-risk-guard.ts');
   if (existsSync(asset)) files.push(asset);
+  // mcode 插件清单单源（插件目录型接线，install 时复制）
+  const mcodeManifest = join(REPO_ROOT, 'assets', 'mcode', 'plugin.json');
+  if (existsSync(mcodeManifest)) files.push(mcodeManifest);
   return files;
 }
 
