@@ -116,8 +116,11 @@ headless 默认 route 是 `deepseek-official`，那只 `DEEPSEEK_API_KEY` 已失
    ⚠️ 另有一个**配置漂移**：`~/.dsh/profiles/headless/settings.yaml` 写的 `agent-default-model` 是
    `jiyuanlvdonf`，但 `--dump-config` 实际生效的是 bundle 写死的 `deepseek-official` —— 那段配置是死的，别再被它误导。
 3. **WorkBuddy**：本机未安装，D3 仍沿用 2026-09-28 的真实会话；不为了凑等级脚本化重放。
-4. **本地残留分支**：`pr51-review`、`merge-test`、`fix/agent-upgrade-20261027`、`docs/dsh-d3-20261027`
+4. **本地残留分支**：`pr51-review`、`merge-test`、`fix/agent-upgrade-20261027`、`docs/dsh-d3-20261027`、`docs/session-handover-20261027`
    （远端已随合并删除）。仓库 guard 会拦 `git branch -D` / `git update-ref`，故未在会话内清除；人工删即可。
+5. **Codex hooks.json 双注册（新发现，未处理）**：`matcher: "Bash"` 下同时挂着 legacy
+   `powershell.exe … dangerous-commands.ps1` 与 `_riskguard` 的 `node … pre-tool-hook.ts --agent codex` 两条，
+   每次 Bash 会跑两遍（安全但重复）。去掉任一条都要先确认真实会话仍拦，属独立切片。
 
 ---
 
@@ -131,6 +134,15 @@ headless 默认 route 是 `deepseek-official`，那只 `DEEPSEEK_API_KEY` 已失
 - 真实会话夹具：`C:\Users\Satanchen\AppData\Local\Temp\opencode\rg-d3-20261027\`（每个 Agent 一个 git 夹具 +
   prompt 文件 + debug 日志 + settings 备份）。属临时目录，可随时清理；证据已抄进本文与
   `tasks/orchestrator/AGENT_UPGRADE_D3_20261027.md`。
+- **个人技能分发链（收尾补做）**：本段先只同步了运行时接线，收尾核对时发现 `~/.agents_four_skills/agent-risk-guard`
+  （skill 真身）落后 8 个文件（ps1 / sh / universal、两套 hook 测试、`claude-code.md`、`agent-matrix.md`、`agy-hook-test.ps1`），
+  并经 skills-manager 的 4 个 junction（claude / opencode / dsh / antigravity）一路散发**旧引擎**——照 skill 部署会装回
+  带 `updatedInput:null` 的版本。已处理：旧文件备份到 `~/.risk-guard-backup/skill-sync-20261027-195622` → 用仓库
+  `skills/agent-risk-guard` 覆盖真身 → `skills update agent-risk-guard` → `skills deploy … --agent claude_code --agent opencode
+  --agent deepseek_harness --agent antigravity`。核验：manager 库与 4 个部署点的 `dangerous-commands.ps1` 哈希均与仓库一致。
+  判定命令：`& "$env:USERPROFILE\.skills-manager\bin\skills-manager-cli.exe" skills status agent-risk-guard`。
+- `~/.riskguard/runtime` 为**空**（本机未跑过 `riskguard bootstrap`），`~/.riskguard/manifests` 仍是 2026-09-07 的旧记录；
+  本机接线由巡检 `-Fix` 维护，不经过 install/bootstrap，故二者本轮未动。
 - 证据日志：`%TEMP%\riskguard-hook-calls.log`（本段关键条目：claude 05:28:49 deny / 05:29:25 allow；
   codex 05:51:15 deny / 05:52:11 allow）。
 
