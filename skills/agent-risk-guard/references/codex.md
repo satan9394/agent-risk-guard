@@ -68,6 +68,13 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
 ⚠️ **取证前提**：`codex exec` 默认 `sandbox: read-only`，写类命令会**先被沙箱拒绝**，那只能证明沙箱生效、不能证明 hook 生效；
 取 D3 证据必须显式 `-s danger-full-access`（或等价可写沙箱），判据仍是「hook 日志 decision=deny + 脏改动存活」。
 
+**2026-11-02 双注册复核（决定保留）**：两条注册用两套独立引擎，6 条样本判定完全一致
+（`git reset --hard` / `git branch -D` / `rm -rf` / `Remove-Item` / `curl|bash` 全 deny，`git status` allow）。
+成本实测：ps1 ≈563ms、node ≈131ms 每次 Bash。**关键**：人为插入一条指向不存在脚本的注册后，安全命令仍然放行
+——说明**注册项 spawn 失败时 Codex 会静默忽略（fail-open）**，单条 hook 即单点故障。
+故保留两条做「跨引擎 + 跨路径」冗余，不为省 0.13s 引入单点；若将来要收敛，先把 node hook 的脚本复制到
+`~/.codex/hooks/` 去掉仓库路径依赖，再单留 node 并实测 spawn 失败的 fail-closed 行为。
+
 ## 陷阱
 
 - 用户级 hooks 默认加载；托管环境可用 `requirements.toml` 的 `[features].hooks` 强制。

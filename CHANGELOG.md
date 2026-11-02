@@ -380,6 +380,9 @@
   - **巡检 python 探测**：YAML 校验原先硬编码已卸载的 Anaconda 路径，长期走「跳过」。改为
     `RISKGUARD_YAML_PY` → uv 全局环境 → `.venv` → PATH，并校验能 `import yaml`；T4 改用显式覆盖构造「缺失」。
   - `packages/installer/compatibility.json` 五端 `componentInventory.version` 与 D3 备注同步为本轮实测值。
+  - **Codex hooks 双注册复核后保留**：两条注册用两套独立引擎、6 条样本判定一致；实测注册项 spawn 失败会被宿主
+    静默忽略（fail-open），故保留双条作跨引擎冗余（ps1 ≈563 ms / node ≈131 ms 每次 Bash）。结论与复现方式见
+    `skills/agent-risk-guard/references/codex.md` 与 `docs/decisions.md`。
 
 ## [0.3.2] - 2026-09-19（`git branch` 删除的两条绕过：长选项 + 合并短选项）
 

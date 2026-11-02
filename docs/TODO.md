@@ -129,10 +129,18 @@
   `cordis.patch.yml` 整段丢了 `deny-risk-commands`（桌面端实际裸奔），已由巡检 `-Fix` 追加注入并复验 74 条一致。
   风险是应用侧以后重写该文件时可能再次丢掉，只能靠计划任务巡检兜底（现在 `-Fix` 已能整段补装，密封用例 T8）。
   若再次复发，应查 Desktop 的 profile 写入行为，而不是手补一次了事。
-- [ ] **本机 Claude Code 的默认模型指向已不可用的 provider（2026-11-02 登记，属本机配置非本仓）**：
-  `~/.claude/settings.json` 的 `model` 与 `ANTHROPIC_DEFAULT_*` 全是 `workbuddy/deepseek-v4.1-flash[1m]`，
-  0.2.x 后 `claude -p` 直接报 `unrecognized_model` 并要求 `--model`；本轮 D3 是用 `--model auto/deepseek-v4.1-flash` 取的证。
-  改默认模型属用户偏好，未擅自修改。
+- [x] **本机 Claude Code 默认模型已切换（2026-11-02 登记并当日闭环）**：原 `model` 与 `ANTHROPIC_DEFAULT_*`
+  全是 `workbuddy/deepseek-v4.1-flash[1m]`，2.1.316 直接判 `unrecognized_model` 拒绝运行。
+  经用户确认后改为 `auto/deepseek-v4.1-flash[1m]`（magpie 路由组），备份在 `~/.claude/settings.json.bak-model-20261102`。
+  复验（默认模型、不带 `--model`）：`git log --oneline -1` 放行并回显（05:36:23 allow）；
+  `git branch -D scratch` 被 PreToolUse deny（05:37:55）、分支保留。仍会打一行 `unrecognized_model` 提示，但可正常执行。
+- [x] **Codex hooks.json 双注册：复核后决定保留（2026-11-02 登记并当日闭环）**：`PreToolUse` 下同时有
+  自包含的 `~/.codex/hooks/dangerous-commands.ps1` 与 `_riskguard` 的 `node … pre-tool-hook.ts`，每条 Bash 跑两遍。
+  实测两个引擎在 6 条样本上判定一致（git reset / branch -D / rm -rf / Remove-Item / curl|bash 全 deny，git status allow），
+  且**注册项的命令 spawn 失败会被 Codex 静默忽略**（人为插入指向不存在脚本的第三条，安全命令仍放行）——
+  也就是说单条 hook 是单点故障、坏掉即 fail-open。成本实测 ps1 ≈563ms、node ≈131ms/次；删掉 node 只省 131ms。
+  结论：**保留两条**，作为「跨引擎 + 跨路径」的冗余；不为省 0.13s 引入单点。以后若要收敛，应先让 installer 把
+  node hook 的脚本复制到 `~/.codex/hooks/`（去掉仓库路径依赖），再单留 node 并实测 spawn 失败的 fail-closed 行为。
 - [ ] **建议：给发布产物加「不得含 `tests/`」的 CI 断言（2026-10-10 登记）**：Release 附件
   `agent-risk-guard-v<ver>.tar.gz` 目前不含测试，但这是 `scripts/build-release.ts` +
   `packages/cli/src/runtime-install.ts::collectRuntimeFiles()` 的**行为**，不是硬约束——谁改收集器都可能
