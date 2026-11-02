@@ -1,11 +1,13 @@
 /**
  * @riskguard/adapter-opencode — OpenCode TS 插件前置拦截（M4）
  *
- * OpenCode 插件模型（D1，官方 plugin.ts 类型）：
- *   export const MyPlugin = { name, setup() { return { 'tool.before': async (input, output) => {...} } } }
- * 'tool.before' 的 input: { sessionID, tool, input, ... }，output 可含 { error } → 阻止执行。
+ * OpenCode 插件模型（V2，`@opencode/cli` >= 2.0；2026-11-02 在 2.2.5 上复验）：
+ *   export default { id, async setup(ctx) { await ctx.tool.hook('execute.before', (event) => {…}) } }
+ * `execute.before` 的事件形如 { tool, input, sessionID, agent, messageID, id }，**抛错即拒绝该次调用**；
+ * 它是 V2 里唯一可以 fail 的钩子域（shell 域是 never，拦不住）。
+ * V1（1.18.x）仍用 `'tool.before'` + `{ error }` 返回。
  * 本模块是「纯决策函数」：不依赖 opencode 运行时，给出 RiskEvent 决策与
- * opencode 输出形状（{ error: string } 或 undefined = 放行）。接线样板见 README 注释。
+ * opencode 输出形状（`{ error: string }` 或 undefined = 放行）。接线样板见文件末尾。
  */
 
 import type { RiskEvent } from '../../../core/src/event.ts';
@@ -66,7 +68,7 @@ export function parseOpencodePayload(payload: OpencodePayload, home?: string): N
   });
 }
 
-/** Decision → opencode 'tool.before' 返回值（{ error } 阻止；undefined 放行） */
+/** Decision → V1 `'tool.before'` 返回值（{ error } 阻止；undefined 放行）。V2 直接抛错。 */
 export function renderOpencodeDecision(decision: Decision): { error?: string } | undefined {
   if (decision.decision === 'deny') {
     return { error: `RiskGuard: ${decision.reason ?? 'denied'}` + (decision.safeAlternative ? ` — 请改用 ${decision.safeAlternative.operation}` : '') };
@@ -82,20 +84,19 @@ export function evaluateOpencode(payload: OpencodePayload, decide: (e: RiskEvent
   return renderOpencodeDecision(decide(out.event));
 }
 
-/** opencode 插件接线样板（复制到 opencode 插件文件使用） */
+/** OpenCode V2 插件接线样板（复制到 `~/.config/opencode/plugins/` 使用） */
 export const OPENCODE_PLUGIN_SKELETON = `import { evaluateOpencode } from '@riskguard/adapter-opencode';
 
-export const riskguard = {
-  name: 'riskguard',
-  setup() {
-    return {
-      'tool.before': async (input: any, output: any) => {
-        const blocked = evaluateOpencode(
-          { tool: input.tool, input: input.input, cwd: process.cwd() },
-          (e) => /* RiskGuard policy */ ({ decision: 'allow' }),
-        );
-        if (blocked) output.error = blocked.error;
-      },
-    };
+export default {
+  id: 'riskguard',
+  async setup(ctx) {
+    await ctx.tool.hook('execute.before', (event) => {
+      if (event.tool !== 'shell' && event.tool !== 'bash') return;
+      const blocked = evaluateOpencode(
+        { tool: event.tool, input: event.input, cwd: process.cwd() },
+        (e) => /* RiskGuard policy */ ({ decision: 'allow' }),
+      );
+      if (blocked) throw new Error(blocked.error);
+    });
   },
 };`;

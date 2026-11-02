@@ -38,7 +38,11 @@ test('openCode: Delete 文件工具 → { error } 阻止并建议 trash', () => 
   assert.ok(out!.error!.includes('trash'), `应建议 trash：${out!.error}`);
 });
 
-test('openCode: 插件接线样板存在', () => {
-  assert.ok(OPENCODE_PLUGIN_SKELETON.includes('tool.before'));
+test('openCode: 插件接线样板存在且为 V2 形态', () => {
+  assert.ok(OPENCODE_PLUGIN_SKELETON.includes('execute.before'));
+  assert.ok(OPENCODE_PLUGIN_SKELETON.includes('async setup(ctx)'));
   assert.ok(OPENCODE_PLUGIN_SKELETON.includes('evaluateOpencode'));
+  // V2 里只有 tool 域可以 fail：样板必须抛错，而不是写 V1 的 output.error
+  assert.ok(OPENCODE_PLUGIN_SKELETON.includes('throw new Error'));
+  assert.ok(!OPENCODE_PLUGIN_SKELETON.includes('output.error'));
 });

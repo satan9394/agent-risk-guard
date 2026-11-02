@@ -4,8 +4,9 @@
  * 直接以 Node 原生 type-stripping 加载插件真身，注入伪 ctx
  * （shell.hook / tool.hook / tool.transform / permission.hook），验证 V2 外壳把
  * 同一套纯检测核心正确接线：
- *   - ctx.shell.hook("create.before")   拦截危险 shell 命令（硬闸门）
- *   - ctx.tool.hook("execute.before")   shell 工具第二层 + 保护 guard 插件自身
+ *   - ctx.tool.hook("execute.before")   **唯一硬闸门**（V2 只有 tool 域可 fail）+ 保护 guard 插件自身
+ *   - ctx.shell.hook("create.before")   辅助层；V2 契约里它拦不住（shell 域失败通道是 never），
+ *                                       保留只为日志分层，不要当安全保证
  *   - ctx.permission.hook("evaluate")   对匹配的 shell 权限置 deny
  *   - ctx.tool.transform                注册 trash 工具（JSON Schema）
  *
@@ -85,7 +86,7 @@ test('v2: setup 注册 shell/tool/permission hook，并注册 trash 工具', asy
   assert.deepEqual(tools[0].input.required, ['path']);
 });
 
-test('v2 shell.create.before: 危险删除抛 BLOCKED，无害命令放行', async () => {
+test('v2 shell.create.before: 危险删除同样会抛 BLOCKED（辅助层，非契约闸门）', async () => {
   const { ctx, regs } = fakeCtx('C:/work');
   await plugin.setup(ctx);
   const hook = regs.shell[0].cb;
@@ -98,12 +99,15 @@ test('v2 shell.create.before: 危险删除抛 BLOCKED，无害命令放行', asy
   assert.doesNotThrow(() => hook({ command: '' }));
 });
 
-test('v2 tool.execute.before: shell 工具是第二层闸门', async () => {
+test('v2 tool.execute.before: shell 工具是硬闸门，且 2.2.5 的 bash→shell 别名一并覆盖', async () => {
   const { ctx, regs } = fakeCtx('C:/work');
   await plugin.setup(ctx);
   const hook = regs.tool.find((r) => r.name === 'execute.before')!.cb;
   assert.throws(() => hook({ tool: 'shell', input: { command: 'del /f /q C:\\x' } }), /PERMANENT_DELETE_CMD/);
   assert.doesNotThrow(() => hook({ tool: 'shell', input: { command: 'dir' } }));
+  // OpenCode 2.2.5：名为 bash 的调用按 shell 执行；旧版/别名也可能以 bash 到达插件
+  assert.throws(() => hook({ tool: 'bash', input: { command: 'del /f /q C:\\x' } }), /PERMANENT_DELETE_CMD/);
+  assert.doesNotThrow(() => hook({ tool: 'bash', input: { command: 'dir' } }));
 });
 
 test('v2 tool.execute.before: 保护 guard 插件文件（edit / write / patch，含相对路径）', async () => {

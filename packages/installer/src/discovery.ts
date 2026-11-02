@@ -56,7 +56,7 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
   {
     id: 'opencode', display: 'OpenCode', mechanisms: ['plugin', 'rules'],
     configRel: ['.config/opencode', '.opencode'], probePaths: ['.config/opencode', '.opencode'],
-    notes: 'TS 插件（tool.before/after）+ AGENTS.md rules',
+    notes: 'TS 插件（V2: ctx.tool.hook execute.before；V1: tool.before/after）+ AGENTS.md rules',
   },
   {
     id: 'cursor', display: 'Cursor', mechanisms: ['hooks', 'rules'],

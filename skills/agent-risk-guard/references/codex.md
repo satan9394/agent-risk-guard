@@ -62,6 +62,12 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
 
 真实会话：让 Codex 执行 `git reset --hard` 或删除命令，观察是否被拦。
 
+**2026-11-02（codex-cli 0.166.0 复验）**：hook 协议未变，hooks.json 的两条注册（legacy ps1 + `_riskguard` 的 node hook）
+仍被宿主合并执行——宿主输出里会看到 `hook: PreToolUse` 出现两次，随后 `PreToolUse Blocked` 与 `PreToolUse Failed`。
+两个都有效：node hook 返回 `{"decision":"deny"}` + exit 2，ps1 hook exit 2 被宿主记为「Failed」但仍属阻断。
+⚠️ **取证前提**：`codex exec` 默认 `sandbox: read-only`，写类命令会**先被沙箱拒绝**，那只能证明沙箱生效、不能证明 hook 生效；
+取 D3 证据必须显式 `-s danger-full-access`（或等价可写沙箱），判据仍是「hook 日志 decision=deny + 脏改动存活」。
+
 ## 陷阱
 
 - 用户级 hooks 默认加载；托管环境可用 `requirements.toml` 的 `[features].hooks` 强制。

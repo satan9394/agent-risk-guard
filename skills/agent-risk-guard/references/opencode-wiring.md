@@ -15,7 +15,7 @@ opencode 1.18 要求插件在 `opencode.json` 的 `plugin` 数组里**显式声�
 
 ### 方式 A：全局注册（推荐，所有项目生效）
 
-1. 把 `scripts/opencode/agent-risk-guard.ts`（**38,925 B / 735 行，V1+V2 双入口**）复制到
+1. 把 `scripts/opencode/agent-risk-guard.ts`（**V1+V2 双入口**，具体大小以 `Get-Item`/`git ls-files -s` 为准，别照抄旧数字）复制到
    `~/.config/opencode/plugins/`。
    ⚠️ **文件名必须是 `agent-risk-guard.ts`**：`destructive-operation-guard.ts` 是 v0.1 旧快照，
    顶层 `import { tool } from "@opencode-ai/plugin"`、只导出 `{id, server}`、**没有 `setup`**，
@@ -56,6 +56,7 @@ opencode 1.18 要求插件在 `opencode.json` 的 `plugin` 数组里**显式声�
 | 模型调用 trash 工具移入回收站 | ✅ `⚙ trash {path}` 执行成功 |
 | Windows 回收站确认收到 | ✅ Shell.Application 0xA 列出该文件 |
 | V2 加载（`opencode plugin list`） | ✅ 2026-09-22 真机 OpenCode **2.0.13** 显示 `agent-risk-guard` 加载成功 |
+| V2 硬拦截 + trash 工具（2.2.5） | ✅ 2026-11-02：`git reset --hard` 被 `tool.hook` 拒；`trash` 经 Code Mode 把 `junk.log` 移入回收站 |
 
 V1/V2 双入口的加载判定，可对着单源直接核（无需真机）：
 
@@ -69,9 +70,14 @@ Select-String $p -Pattern 'async function v1Server', 'export default \{ \.\.\.pl
 
 ## 注意
 
-- 拦截钩子按形态分工：V2 的 `ctx.shell.hook("create.before")` 是**硬闸门**（抛错阻断），
-  `ctx.tool.hook("execute.before")` 是第二道（shell + guard 文件自保护）；V1 走
-  `tool.execute.before`。两者都对 bash/Remove-Item 命令拒绝，模型看到
+- **闸门分层（2026-11-02 在 OpenCode 2.2.5 上核实，旧文档写反过）**：V2 的失败通道里**只有 tool 域可以 fail**
+  （`packages/core/src/plugin/hooks.ts` 的 `Failures` 把 shell/permission/session/aisdk 全标成 `NoFailures`）。
+  所以真正拦得住的是 `ctx.tool.hook("execute.before")`（抛错 → 工具调用被拒），
+  `ctx.shell.hook("create.before")` **拦不住**（抛错无效），`ctx.permission.hook("evaluate")` 是权限层第二道。
+  日志里 `tool=tool.hook` 才是硬拦截证据。
+- 覆盖边界：tool 域只覆盖走 `Tool.execute` 的调用（agent 的工具调用）。TUI 里用户自己敲 `!` 起的 shell
+  不经这里，是已登记的残余风险。
+- V1 走 `tool.execute.before`，对 bash/Remove-Item 同样拒绝，模型看到
   `BLOCKED_BY_GLOBAL_SAFETY_GUARD` + 策略 + 原因。
 - **安全警示**：若全局 `opencode.json` 中含明文 API key（如 `sk-...`、tavily/exa），
   建议改用环境变量/密钥管理器（本项目不代为修改生产配置）。
