@@ -643,7 +643,10 @@ const plugin = {
       if (!cmd) return
       const d = shellDecision(cmd)
       if (d) {
-        logBlock({ tool: "shell", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: event?.cwd || baseDir })
+        // 2026-11-02：标签区分两层闸门。V2 契约里 shell 钩子的失败通道是 `never`
+        //（见 packages/core/src/plugin/hooks.ts：只有 tool execute.before 可以 fail），
+        // 所以真正拦得住的是下面的 tool.execute.before；这里保留只为在日志里看清是哪一层先命中。
+        logBlock({ tool: "shell.hook", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: event?.cwd || baseDir })
         throw blockError(d.policy, d.reason)
       }
     })
@@ -654,12 +657,12 @@ const plugin = {
       const toolName = String(event?.tool ?? "")
       const input = (event?.input ?? {}) as Record<string, unknown>
       try {
-        if (toolName === "shell") {
+        if (toolName === "shell" || toolName === "bash") {
           const cmd = typeof input.command === "string" ? input.command : ""
           if (cmd) {
             const d = shellDecision(cmd)
             if (d) {
-              logBlock({ tool: "shell", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: baseDir })
+              logBlock({ tool: "tool.hook", policy: d.policy, command: cmd, reason: d.reason, sid: event?.sessionID, wd: baseDir })
               throw blockError(d.policy, d.reason)
             }
           }

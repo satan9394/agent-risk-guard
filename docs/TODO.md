@@ -117,6 +117,30 @@
 - [x] **agy 版本漂移（2026-10-10 登记，2026-10-27 闭环）**：`compatibility.json` 的 agy `componentInventory.version`
   原记 **1.3.2**、D3 证据停在 **1.1.27 / 1.2.7**。2026-10-27 在 **1.4.8** 上做真实会话复验（`agy -p`：`git reset --hard`
   被 pre-tool hook deny、脏改动保留；`git status --short` 放行并真实执行），版本已更新为实测 1.4.8，D3 证据同步刷新。
+- [ ] **OpenCode V2 的「非工具 shell」不在拦截面内（2026-11-02 登记）**：V2 插件契约里只有 tool 域可以 fail
+  （`packages/core/src/plugin/hooks.ts` 的 `Failures`），`ctx.shell.hook("create.before")` 是 `never` 失败通道，
+  抛错拦不住。因此 **TUI 里用户自己敲 `!` 起的 shell、以及任何不经 `Tool.execute` 的 shell 端点**都没有硬闸门。
+  agent 的工具调用（含 2.2.5 里 `bash`→`shell` 的改名）由 `tool.execute.before` 正常覆盖，已实测。
+  顺带验过 Code Mode（`execute`）不构成绕过：2.2.5 的 `tools` 目录里**没有** `shell`（实测抛 `Unknown tool 'shell'`），
+  只能拿到 MCP 工具与插件工具（如 `trash`），所以无法在 JS 里间接调 shell。
+  若要处置，只能评估权限层能否拦到 shell 端点（当前 `permission.hook("evaluate")` 对 `action=shell` 已生效），
+  属独立切片，别在文档里把它写成「所有 shell 都被拦」。
+- [ ] **dsh desktop profile 由 Electron 应用独占管理（2026-11-02 登记）**：0.2.1-rc.5 期间该 profile 的
+  `cordis.patch.yml` 整段丢了 `deny-risk-commands`（桌面端实际裸奔），已由巡检 `-Fix` 追加注入并复验 74 条一致。
+  风险是应用侧以后重写该文件时可能再次丢掉，只能靠计划任务巡检兜底（现在 `-Fix` 已能整段补装，密封用例 T8）。
+  若再次复发，应查 Desktop 的 profile 写入行为，而不是手补一次了事。
+- [x] **本机 Claude Code 默认模型已切换（2026-11-02 登记并当日闭环）**：原 `model` 与 `ANTHROPIC_DEFAULT_*`
+  全是 `workbuddy/deepseek-v4.1-flash[1m]`，2.1.316 直接判 `unrecognized_model` 拒绝运行。
+  经用户确认后改为 `auto/deepseek-v4.1-flash[1m]`（magpie 路由组），备份在 `~/.claude/settings.json.bak-model-20261102`。
+  复验（默认模型、不带 `--model`）：`git log --oneline -1` 放行并回显（05:36:23 allow）；
+  `git branch -D scratch` 被 PreToolUse deny（05:37:55）、分支保留。仍会打一行 `unrecognized_model` 提示，但可正常执行。
+- [x] **Codex hooks.json 双注册：复核后决定保留（2026-11-02 登记并当日闭环）**：`PreToolUse` 下同时有
+  自包含的 `~/.codex/hooks/dangerous-commands.ps1` 与 `_riskguard` 的 `node … pre-tool-hook.ts`，每条 Bash 跑两遍。
+  实测两个引擎在 6 条样本上判定一致（git reset / branch -D / rm -rf / Remove-Item / curl|bash 全 deny，git status allow），
+  且**注册项的命令 spawn 失败会被 Codex 静默忽略**（人为插入指向不存在脚本的第三条，安全命令仍放行）——
+  也就是说单条 hook 是单点故障、坏掉即 fail-open。成本实测 ps1 ≈563ms、node ≈131ms/次；删掉 node 只省 131ms。
+  结论：**保留两条**，作为「跨引擎 + 跨路径」的冗余；不为省 0.13s 引入单点。以后若要收敛，应先让 installer 把
+  node hook 的脚本复制到 `~/.codex/hooks/`（去掉仓库路径依赖），再单留 node 并实测 spawn 失败的 fail-closed 行为。
 - [ ] **建议：给发布产物加「不得含 `tests/`」的 CI 断言（2026-10-10 登记）**：Release 附件
   `agent-risk-guard-v<ver>.tar.gz` 目前不含测试，但这是 `scripts/build-release.ts` +
   `packages/cli/src/runtime-install.ts::collectRuntimeFiles()` 的**行为**，不是硬约束——谁改收集器都可能

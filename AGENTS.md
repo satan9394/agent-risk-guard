@@ -14,7 +14,8 @@ hook / 插件机制**拒绝**危险命令。核心铁律是「删除必须进回
 - **各端只是适配层**（不自带规则）：
   - `assets/hooks/dangerous-commands.ps1` —— Claude Code / Codex / agy / WorkBuddy 共用（ps1 规则引擎）
   - `skills/agent-risk-guard/scripts/dangerous-commands.sh` —— Linux / macOS / WSL / Git Bash
-  - `assets/opencode/agent-risk-guard.ts` —— OpenCode 插件（**V1+V2 双入口**）
+  - `assets/opencode/agent-risk-guard.ts` —— OpenCode 插件（**V1+V2 双入口**；
+    V2 的硬闸门只有 `ctx.tool.hook("execute.before")` —— shell 域是 `never` 失败通道，`ctx.shell.hook` 拦不住）
   - `assets/dsh/deny-risk-commands.patch.yml` —— DeepSeek Harness 的 pre-execute 规则段
 - **支持面与 D 级**：`packages/installer/compatibility.json` 是唯一事实源（D0–D4）；
   `docs/generated/agent-security-matrix.md` 由 `scripts/generate-agent-security-matrix.ts` 生成，CI 用 `--check` 防漂移。

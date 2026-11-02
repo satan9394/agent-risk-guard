@@ -151,6 +151,14 @@ if ($ocModeV2) {
 # ---- 3. dsh patch 生产 vs 单源（逐条正则比对）----
 Write-Host "`n[dsh pre-execute 门禁]"
 $hashDsh = (Get-FileHash $srcDsh -Algorithm SHA256).Hash
+# 单源的「规则块」正文（从 `- insert:` 起，跳过文件头注释），供「profile 完全没有该注入」时追加。
+# 2026-11-02：dsh desktop profile 在 0.2.1-rc.5 期间的改写中丢了整个 deny-risk-commands 段，
+# 而本巡检此前对「整段缺失」只会报 [!!]（-Fix 也只修「有注入但规则漂移」）——
+# 结果是每次报告都红、自愈却修不动，桌面端实际裸奔。现在 -Fix 会把该段追加到文件末尾
+# （顶层是 YAML 序列，末尾追加一个 insert 项即可，与单源头部注释的用法说明一致）。
+$srcDshText = [System.IO.File]::ReadAllText($srcDsh, [System.Text.Encoding]::UTF8)
+$srcDshBlockIdx = $srcDshText.IndexOf('- insert:')
+$srcDshBlock = if ($srcDshBlockIdx -ge 0) { $srcDshText.Substring($srcDshBlockIdx).Trim() } else { $null }
 
 # 抽取规则条目：**格式无关** —— inline 写法（`- { re: '…', reason: '…' }` 单行）
 # 与块式写法（`- {` / `re: '…'` / `reason: '…'` / `}` 各占一行）都识别为同一条规则。
@@ -216,11 +224,37 @@ function Get-RuleEntries([string]$path) {
 
 # YAML 语法校验（PyYAML）。返回 $true/$false；python 缺失时返回 $null = 未校验（打一次警告，不静默跳过）
 $script:YamlCheckWarned = $false
-$script:YamlPy = 'D:\Technology_application\Anconda_All\Anaconda3\envs\claude\python.exe'
+# 2026-11-02：原实现硬编码 Anaconda 的 envs\claude\python.exe。Anaconda 已于 2026-10-29 卸载，
+# 该路径在本机不复存在 → 校验每次都走「跳过」分支（只打一次 Warn），等于长期不校验 YAML。
+# 改为逐级探测：RISKGUARD_YAML_PY（显式覆盖，一旦设置就只认它，不回退）→ uv 全局环境 →
+# 仓库 .venv → PATH 上的 python。探测到的解释器还要能 import yaml，否则同样按「未校验」处理。
+function Resolve-YamlPy {
+  if ($env:RISKGUARD_YAML_PY) { return $env:RISKGUARD_YAML_PY }
+  $candidates = @(
+    'D:\Python\Agents\Scripts\python.exe',
+    (Join-Path $repo '.venv\Scripts\python.exe')
+  )
+  foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+  $cmd = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($cmd -and $cmd.Source) { return $cmd.Source }
+  return $candidates[0]
+}
+$script:YamlPy = Resolve-YamlPy
+$script:YamlPyChecked = $false
+$script:YamlPyUsable = $false
+function Test-YamlPyUsable {
+  if ($script:YamlPyChecked) { return $script:YamlPyUsable }
+  $script:YamlPyChecked = $true
+  if (-not (Test-Path $script:YamlPy)) { return $false }
+  $ErrorActionPreference = 'Continue'
+  & $script:YamlPy -c "import yaml" 2>$null
+  $script:YamlPyUsable = ($LASTEXITCODE -eq 0)
+  return $script:YamlPyUsable
+}
 function Test-YamlSyntax([string]$path) {
-  if (-not (Test-Path $script:YamlPy)) {
+  if (-not (Test-YamlPyUsable)) {
     if (-not $script:YamlCheckWarned) {
-      Write-Host ("  [Warn] 未找到 python（{0}），DSH patch 的 YAML 语法校验本次跳过" -f $script:YamlPy) -ForegroundColor Yellow
+      Write-Host ("  [Warn] 未找到可用 python（{0}，需能 import yaml），DSH patch 的 YAML 语法校验本次跳过" -f $script:YamlPy) -ForegroundColor Yellow
       $script:YamlCheckWarned = $true
     }
     return $null
@@ -261,8 +295,31 @@ foreach ($prof in $dshProfiles) {
   if (-not (Test-Path $patch)) { continue }
   $raw = Get-Content $patch -Raw
   if ($raw -notmatch 'deny-risk-commands') {
-    Write-Check ("dsh {0} 缺 deny-risk-commands 注入" -f $prof.Name) $false $patch
-    continue
+    $injected = $false
+    if ($Fix -and $srcDshBlock) {
+      Backup-File $patch
+      try {
+        $curText0 = [System.IO.File]::ReadAllText($patch, [System.Text.Encoding]::UTF8)
+        $sep = if ($curText0.EndsWith("`n")) { "" } else { "`r`n" }
+        $newText = $curText0 + $sep + "`r`n" + $srcDshBlock + "`r`n"
+        [System.IO.File]::WriteAllText($patch, $newText, [System.Text.UTF8Encoding]::new($false))
+        if ((Test-YamlSyntax $patch) -eq $false) {
+          # 追加后 YAML 反而坏了：回滚成原文，不谎称已修复
+          [System.IO.File]::WriteAllText($patch, $curText0, [System.Text.UTF8Encoding]::new($false))
+          Write-Host ("  [Fix] 追加 deny-risk-commands 后 YAML 校验失败，已回滚 {0}（需人工处理）" -f $prof.Name) -ForegroundColor Yellow
+        } else {
+          Write-Host ("  [Fix] 已向 dsh {0} 追加 deny-risk-commands 注入（备份到 ~/.risk-guard-backup/）" -f $prof.Name) -ForegroundColor Cyan
+          $raw = Get-Content $patch -Raw
+          $injected = $true
+        }
+      } catch {
+        Write-Host ("  [Fix] 追加失败: " + $_.Exception.Message) -ForegroundColor Yellow
+      }
+    }
+    if (-not $injected) {
+      Write-Check ("dsh {0} 缺 deny-risk-commands 注入" -f $prof.Name) $false $patch
+      continue
+    }
   }
   if ((Get-FileHash $patch -Algorithm SHA256).Hash -eq $hashDsh) {
     Write-Check ("dsh {0} patch hash 一致" -f $prof.Name) $true $patch

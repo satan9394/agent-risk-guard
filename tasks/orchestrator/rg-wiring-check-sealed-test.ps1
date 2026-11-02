@@ -6,7 +6,12 @@ $ErrorActionPreference = 'Stop'
 $repo = 'E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard'
 $src  = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
 $tmp  = Join-Path $repo 'tasks\.tmp'
-$py   = 'D:\Technology_application\Anconda_All\Anaconda3\envs\claude\python.exe'
+# 2026-11-02：原为 Anaconda envs\claude\python.exe（已随 Anaconda 卸载而消失）。
+# 与被测脚本同一套探测顺序，保证「本用例自己也真能校验 YAML」。
+$py = if ($env:RISKGUARD_YAML_PY) { $env:RISKGUARD_YAML_PY }
+      elseif (Test-Path 'D:\Python\Agents\Scripts\python.exe') { 'D:\Python\Agents\Scripts\python.exe' }
+      elseif (Test-Path (Join-Path $repo '.venv\Scripts\python.exe')) { Join-Path $repo '.venv\Scripts\python.exe' }
+      else { 'python' }
 
 $srcLines = [IO.File]::ReadAllLines($src, [Text.Encoding]::UTF8)
 $firstRuleIdx = -1
@@ -92,12 +97,13 @@ Assert 'T3e final dsh check OK' ($o3 -match '\[OK\][^\n]*dsh headless')
 Write-Host "`n== T4: missing python should warn once and continue ==" -ForegroundColor Cyan
 ($h4, $p4) = New-FakeHome 'fake-t4'
 [IO.File]::WriteAllText($p4, (($srcLines -join "`r`n") + $n3Tail), [Text.UTF8Encoding]::new($false))
-$scriptCopy = Join-Path $tmp 'wc-pymiss.ps1'
-$scriptText = [IO.File]::ReadAllText((Join-Path $repo 'scripts\riskguard-wiring-check.ps1'), [Text.Encoding]::UTF8)
-$scriptText = $scriptText.Replace('D:\Technology_application\Anconda_All\Anaconda3\envs\claude\python.exe', 'D:\nonexistent\sealed-test\python.exe')
-# 必须带 BOM 写回：原脚本带 BOM，PS 5.1 靠 BOM 识别 UTF-8；无 BOM 副本会被按 GBK 误读直接解析错误
-[IO.File]::WriteAllText($scriptCopy, $scriptText, [Text.UTF8Encoding]::new($true))
-$o4 = Invoke-WC $h4 'powershell' -Fix -scriptPath $scriptCopy
+# 2026-11-02：改用显式覆盖变量构造「python 缺失」。此前靠字符串替换脚本里的硬编码路径，
+# 而硬编码路径已改成逐级探测，替换法不再成立；RISKGUARD_YAML_PY 一旦设置就只认它（见被测脚本）。
+$prevYamlPy = $env:RISKGUARD_YAML_PY
+try {
+  $env:RISKGUARD_YAML_PY = 'D:\nonexistent\sealed-test\python.exe'
+  $o4 = Invoke-WC $h4 'powershell' -Fix
+} finally { $env:RISKGUARD_YAML_PY = $prevYamlPy }
 $warnCount = ([regex]::Matches($o4, [regex]::Escape('D:\nonexistent\sealed-test\python.exe'))).Count
 Assert 'T4a warn line with missing-python path appears exactly once' ($warnCount -eq 1)
 Assert 'T4b rule comparison still ran and consistent' ($o4 -match '\[OK\][^\n]*dsh headless')
@@ -199,6 +205,34 @@ Assert 'T7e claude settings.json created (was missing)' (Test-Path (Join-Path $h
 $t7settings = Get-Content (Join-Path $h7 '.claude\settings.json') -Raw
 Assert 'T7f generated hook matcher covers PowerShell' ($t7settings -match 'Bash\|PowerShell')
 Assert 'T7g generated hook command has no backslash path' (-not ($t7settings -match '\\\\'))
+
+# ---------- T8: profile 整个 deny-risk-commands 段缺失 → -Fix 追加注入（不是只报红） ----------
+# 回归来源（2026-11-02）：dsh 0.2.1-rc.5 期间 ~/.dsh/profiles/desktop/cordis.patch.yml 只剩
+# llm-pi-ai + agent-default-model，整段门禁没了；旧巡检对「整段缺失」只报 [!!]、-Fix 也修不动，
+# 于是计划任务每轮都红、桌面端实际裸奔。本用例把「追加 + 保留原有内容 + YAML 仍合法」钉死。
+Write-Host "`n== T8: profile without deny-risk-commands, -Fix must inject the block ==" -ForegroundColor Cyan
+($h8, $p8) = New-FakeHome 'fake-t8'
+$noGuard = @(
+  '- insert:',
+  '    - id: llm-pi-ai',
+  "      name: 'sealed-user-provider'",
+  '      config:',
+  '        providers: {}',
+  '- id: agent-default-model',
+  '  config:',
+  '    provider: sealed',
+  "    model: 'x/y'"
+)
+[IO.File]::WriteAllText($p8, ($noGuard -join "`r`n"), [Text.UTF8Encoding]::new($false))
+Assert 'T8 pre: file has no guard registration' (-not ([IO.File]::ReadAllText($p8, [Text.Encoding]::UTF8).Contains('deny-risk-commands')))
+Assert 'T8 pre: file is valid YAML before fix' (Test-PyYaml $p8)
+$o8 = Invoke-WC $h8 'powershell' -Fix
+$t8 = [IO.File]::ReadAllText($p8, [Text.Encoding]::UTF8)
+Assert 'T8a injection happened (file state)' ($t8.Contains('deny-risk-commands'))
+Assert 'T8b pre-existing user content preserved' ($t8.Contains('sealed-user-provider') -and $t8.Contains('agent-default-model'))
+Assert 'T8c injected file still parses with PyYAML' (Test-PyYaml $p8)
+Assert 'T8d final dsh check OK after injection' ($o8 -match '\[OK\][^\n]*dsh headless')
+Assert 'T8e all single-source rules injected' (([regex]::Matches($t8, "re:\s*'")).Count -eq ([regex]::Matches(($srcLines -join "`n"), "re:\s*'")).Count)
 
 Write-Host "`n===== sealed test total: $($script:pass) pass / $($script:fail) fail =====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 }

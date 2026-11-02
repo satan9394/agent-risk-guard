@@ -35,6 +35,11 @@
 >    `-File` 收到 `C:UsersSatanchen...` → `exit 127`，判定被丢弃后命令照跑。
 > 3. **hook 输出不得含 `updatedInput: null`**：2.1.311 的 JSON 校验要求该字段「若出现必须是 record」，
 >    `null` 会让整条 deny 作废（debug 记 `Hook JSON output validation failed`）。省略即「不改写入参」。
+>
+> **2.1.316 复验（2026-11-02）**：上述三条形态在 2.1.312–2.1.316 上仍然成立。这两档里与 hook 有关的改动不影响本接线：
+> 2.1.314 让 matcher 命中 `Bash` 的 hook 也覆盖 Monitor 工具起的 shell（可拦可问、不能改写），并把 PreCompact
+> 输出截到 10k；2.1.316 修的是「PowerShell hook **内联命令**以类型转换 / `param` / `using` / 特性开头时 exit 2 不阻断」，
+> 我们的 hook 是 `-File <脚本>` 调用，不走那条路径。真实会话仍按「deny + 脏改动存活 + 同会话 allow 真执行」判定。
 
 ## Hook 脚本要点（Windows PowerShell 版）
 

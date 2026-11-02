@@ -48,12 +48,26 @@ cmd /c | pwsh/powershell -Command 内嵌删除
 ## 生效与验证
 
 - **热加载**：改 `cordis.patch.yml` 即生效，无需重启（2026-08 实测）。
+- **整段缺失会静默裸奔（2026-11-02 实测）**：`~/.dsh/profiles/desktop/cordis.patch.yml` 在 0.2.1-rc.5 期间
+  只剩 `llm-pi-ai` + `agent-default-model`，**deny-risk-commands 整段没了**，而旧巡检只报 `[!!]`、`-Fix` 也修不动。
+  现在 `riskguard-wiring-check.ps1 -Fix` 会把单源里的 `- insert:` 段追加到文件末尾（保留原内容、写完做 YAML 复验），
+  并有密封用例 T8 锁住这条路径。**判断方法**：`Select-String -Path <profile>/cordis.patch.yml -Pattern 'deny-risk-commands'` 必须有命中。
 - **探测验证**：发一条无害命令，命令文本含黑名单词，被拦即规则生效：
   ```powershell
   Write-Output 'probe shutil.rmtree text'   # 应返回"全局铁律：禁止 Python 永久删除..."
   Write-Output 'probe git status'            # 正常输出
   ```
 - **注意**：探测命令文本里的黑名单词会被门禁拦（连测试命令都拦）——这是特性；测试黑名单用这种探测，测白名单用正常命令。
+
+## 0.2.1-rc.5 适配要点（2026-11-02）
+
+- **headless 不再需要 `--patch` overlay**：`~/.dsh/profiles/headless/cordis.patch.yml` 已自带 `llm-pi-ai`（magpie provider）
+  且 `agent-default-model` 指向 `magpie / commandcode/deepseek/deepseek-v4.1-flash`。`dsh --profile headless --dump-config`
+  可直接核对这两项；真实会话 `dsh headless "<prompt>"` 即可取证，不用再拼 overlay。
+- **`desktop` profile 由 Electron 应用独占**：CLI 会拒绝 `dsh --profile desktop --dump-config`
+  （`error: profile "desktop" is managed exclusively by the Electron application`），CLI 的 `dsh plugin` 也不接它。
+  对桌面端的接线核验只能看该 profile 的 `cordis.patch.yml` 本身，或用 Desktop 自带的命令运行时。
+- 三个 profile（desktop / headless / web）的规则条数以巡检输出为准，别在文档里写死。
 
 ## DSH 其他安全层（与门禁的关系）
 

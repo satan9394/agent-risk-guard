@@ -368,6 +368,22 @@
   同步从仓库与安装态两侧移除（skill 文件数 39 → 38，接线巡检仍 exit 0）。
   注：`docs/TODO.md` 与 `tasks/orchestrator/` 下的历史记录保留原文、不重写。
 
+### Fixed
+
+- **六端升级适配（2026-11-02）：OpenCode 2.2.5 / Claude Code 2.1.316 / Codex 0.166.0 / DSH 0.2.1-rc.5 / agy 1.4.12**
+  - **OpenCode 闸门分层纠正**：V2 契约里只有 `tool` 域可 fail，`ctx.shell.hook("create.before")` 拦不住；
+    真正生效的是 `ctx.tool.hook("execute.before")`。插件两层同时认 `shell` 与 `bash`（2.2.5 起 `bash` 按 `shell` 执行），
+    日志标签分 `tool.hook` / `shell.hook`，便于确认命中层。`references/opencode.md` 与 `opencode-wiring.md` 已改写。
+  - **DSH desktop profile 补装门禁**：0.2.1-rc.5 期间该 profile 的 `cordis.patch.yml` 整段丢了
+    `deny-risk-commands`。`riskguard-wiring-check.ps1 -Fix` 现可从一个源追加该 `- insert:` 段（写后 YAML 复验、失败回滚），
+    密封用例新增 T8；本机三 profile 复验规则逐条一致。
+  - **巡检 python 探测**：YAML 校验原先硬编码已卸载的 Anaconda 路径，长期走「跳过」。改为
+    `RISKGUARD_YAML_PY` → uv 全局环境 → `.venv` → PATH，并校验能 `import yaml`；T4 改用显式覆盖构造「缺失」。
+  - `packages/installer/compatibility.json` 五端 `componentInventory.version` 与 D3 备注同步为本轮实测值。
+  - **Codex hooks 双注册复核后保留**：两条注册用两套独立引擎、6 条样本判定一致；实测注册项 spawn 失败会被宿主
+    静默忽略（fail-open），故保留双条作跨引擎冗余（ps1 ≈563 ms / node ≈131 ms 每次 Bash）。结论与复现方式见
+    `skills/agent-risk-guard/references/codex.md` 与 `docs/decisions.md`。
+
 ## [0.3.2] - 2026-09-19（`git branch` 删除的两条绕过：长选项 + 合并短选项）
 
 ### Fixed
