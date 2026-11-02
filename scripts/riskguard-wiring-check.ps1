@@ -129,7 +129,7 @@ $ocJson    = Join-Path $userHome '.config\opencode\opencode.json'
 $ocCliJson = Join-Path $userHome '.config\opencode\cli.json'
 $ocCfg     = $null
 if (Test-Path $ocJson) {
-  try { $ocCfg = Get-Content $ocJson -Raw | ConvertFrom-Json } catch { $ocCfg = $null }
+  try { $ocCfg = Get-Content $ocJson -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $ocCfg = $null }
 }
 # 与 merge.ts 同序：先看 plugins/plugin 两键，都没有时用 cli.json 作 V2 旁证。
 $ocModeV2 = $false
@@ -141,10 +141,10 @@ if ($ocModeV2) {
   # V2：自动发现，判定看产物（与第 2 段同源）；配置里不该有该字符串。
   $ocArtifact = Test-Path $ocDest
   Write-Check 'opencode.json 插件注册（V2 目录自动发现）' $ocArtifact $ocDest
-  $legacyRef = ($ocCfg -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard'))
+  $legacyRef = ($ocCfg -and ((Get-Content $ocJson -Raw -Encoding UTF8) -match 'agent-risk-guard|destructive-operation-guard'))
   if ($legacyRef) { Write-Host "  [note] opencode.json 仍残留 V1 文件路径引用（V2 忽略，merge 会清理）" -ForegroundColor Yellow }
 } else {
-  $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard')
+  $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw -Encoding UTF8) -match 'agent-risk-guard|destructive-operation-guard')
   Write-Check 'opencode.json 插件注册（V1 plugin 数组）' $ocReg $ocJson
 }
 
@@ -293,7 +293,7 @@ $dshProfiles = Get-ChildItem (Join-Path $userHome '.dsh\profiles') -Directory -E
 foreach ($prof in $dshProfiles) {
   $patch = Join-Path $prof.FullName 'cordis.patch.yml'
   if (-not (Test-Path $patch)) { continue }
-  $raw = Get-Content $patch -Raw
+  $raw = Get-Content $patch -Raw -Encoding UTF8
   if ($raw -notmatch 'deny-risk-commands') {
     $injected = $false
     if ($Fix -and $srcDshBlock) {
@@ -309,7 +309,7 @@ foreach ($prof in $dshProfiles) {
           Write-Host ("  [Fix] 追加 deny-risk-commands 后 YAML 校验失败，已回滚 {0}（需人工处理）" -f $prof.Name) -ForegroundColor Yellow
         } else {
           Write-Host ("  [Fix] 已向 dsh {0} 追加 deny-risk-commands 注入（备份到 ~/.risk-guard-backup/）" -f $prof.Name) -ForegroundColor Cyan
-          $raw = Get-Content $patch -Raw
+          $raw = Get-Content $patch -Raw -Encoding UTF8
           $injected = $true
         }
       } catch {
@@ -543,7 +543,7 @@ if (-not (Test-Path $liveSkill)) {
 # ---- 5. 接线在位（settings.json / hooks.json / config.toml 去重断言）----
 Write-Host "`n[接线在位]"
 $ccSettings = Join-Path $userHome '.claude\settings.json'
-$ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw } else { '' }
+$ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw -Encoding UTF8 } else { '' }
 $ccOk = ($ccRaw -match 'PreToolUse') -and ($ccRaw -match 'dangerous-commands')
 Write-Check 'claude-code settings.json PreToolUse' $ccOk $ccSettings
 
@@ -556,7 +556,7 @@ Write-Check 'claude-code settings.json PreToolUse' $ccOk $ccSettings
 $ccMatcher = ''
 $ccCommand = ''
 try {
-  $ccCfg = Get-Content $ccSettings -Raw | ConvertFrom-Json
+  $ccCfg = Get-Content $ccSettings -Raw -Encoding UTF8 | ConvertFrom-Json
   foreach ($entry in @($ccCfg.hooks.PreToolUse)) {
     foreach ($h in @($entry.hooks)) {
       if ($h.command -and ([string]$h.command -match 'dangerous-commands')) {
@@ -611,11 +611,11 @@ fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'
-$codexOk = (Test-Path $codexHooks) -and ((Get-Content $codexHooks -Raw) -match 'PreToolUse') -and ((Get-Content $codexHooks -Raw) -match 'dangerous-commands')
+$codexOk = (Test-Path $codexHooks) -and ((Get-Content $codexHooks -Raw -Encoding UTF8) -match 'PreToolUse') -and ((Get-Content $codexHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'codex hooks.json PreToolUse' $codexOk $codexHooks
 
 $codexToml = Join-Path $userHome '.codex\config.toml'
-$tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw } else { '' }
+$tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw -Encoding UTF8 } else { '' }
 # 2026-09-30 去重：官方要求「同一层只用一种表示」（hooks.json 与内联 [hooks] 并存会被合并 + 启动告警）。
 # 本检查由「config.toml 必须含 hooks」**反转为「不得再内联注册」**：原先为满足旧检查而补进去的那段，
 # 让同一个 dangerous-commands.ps1 每次 Bash 并发跑两遍（实测见 Notes/2026/09/NOTES_20260930.md）。
@@ -629,7 +629,7 @@ $tomlOk = (Test-Path $codexToml) -and ($tomlRaw -notmatch '(?im)^\s*\[\[?\s*hook
 Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'
-$agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw) -match 'dangerous-commands')
+$agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'agy hooks.json' $agyOk $agyHooks
 
 # ---- 汇总 ----
