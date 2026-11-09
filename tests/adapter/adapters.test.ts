@@ -71,7 +71,11 @@ test('Cursor payload: cwd 为空字符串 → 回退到 workspace_roots[0]', () 
   assert.equal(out.ok, true);
   if (out.ok) {
     assert.equal(out.event.context?.cwd, 'C:/proj');
-    assert.equal(out.event.targets[0]?.canonical, 'C:\\proj\\important.txt');
+    // 跨平台：Windows 得到 C:\proj\important.txt，POSIX 上 resolvePath 仍把它拼在
+    // 进程目录之下（/home/runner/.../C:/proj/important.txt）。两种都应以
+    // `C:/proj/important.txt` 结尾 —— 仅当 cwd 回退成功才会这样。
+    const canon = String(out.event.targets[0]?.canonical ?? '').replace(/\\/g, '/');
+    assert.ok(canon.endsWith('C:/proj/important.txt'), `target should resolve under workspace root, got ${canon}`);
   }
 });
 
