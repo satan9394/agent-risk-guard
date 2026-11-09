@@ -9,7 +9,7 @@
 #   pwsh scripts/riskguard-wiring-check.ps1 -Fix       # 巡检并自动从单源恢复（备份进回收站目录）
 #
 # 检查点（单一规则源纪律，全部期望字节一致）：
-#   ps1      : .claude/hooks + .codex/hooks + .gemini/config/hooks + .workbuddy/hooks ← assets/hooks/dangerous-commands.ps1
+#   ps1      : .claude/hooks + .codex/hooks + .gemini/config/hooks + .workbuddy/hooks + .cursor/hooks ← assets/hooks/dangerous-commands.ps1
 #              （每个目标配自己的单源；agy 适配器用 assets/hooks/agy-dangerous-commands.ps1）
 #   opencode : .config/opencode/plugins ← 仓库 assets/opencode/agent-risk-guard.ts
 #   dsh      : profiles/*/cordis.patch.yml ← 仓库 assets/dsh/deny-risk-commands.patch.yml
@@ -27,7 +27,11 @@
 param([switch]$Fix)
 
 $ErrorActionPreference = 'Stop'
-$repo = 'E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard'
+# 2026-11-08：原硬编码 `...\workspace\2026_08_21\agent-risk-guard`（下划线）。仓库改为
+# `workspace\2026\08\21\...` 后该路径不存在 → 计划任务从 00:40 起每 5 分钟 `exit=2`，
+# 巡检与 `-Fix` 自愈长期空转（实测日志见 ~/.risk-guard-backup/wiring-check-task.log）。
+# 改为由脚本自身位置推导仓库根；`RISKGUARD_REPO` 可显式覆盖（便于测试或搬移）。
+$repo = if ($env:RISKGUARD_REPO) { $env:RISKGUARD_REPO } else { Split-Path -Parent $PSScriptRoot }
 $userHome = $env:USERPROFILE
 $backupRoot = Join-Path $userHome '.risk-guard-backup'
 $issues = @()
@@ -100,7 +104,11 @@ $ps1Targets = @(
   @{ dest = (Join-Path $userHome '.gemini\config\hooks\agy-dangerous-commands.ps1');   src = $srcPs1Agy; label = 'agy adapter' },
   # 2026-09-21 新增：WorkBuddy（CodeBuddy Code 桌面版）的 hook 落点。此前完全不在巡检内，
   # 每次改单源都要靠人工记忆同步 —— 实测漏过两次（副本落后一版而巡检仍报 OK）。
-  @{ dest = (Join-Path $userHome '.workbuddy\hooks\dangerous-commands.ps1');           src = $srcPs1;    label = 'workbuddy hooks' }
+  @{ dest = (Join-Path $userHome '.workbuddy\hooks\dangerous-commands.ps1');           src = $srcPs1;    label = 'workbuddy hooks' },
+  # 2026-11-08 新增：Cursor（桌面 3.29.9 / cursor-agent 2026.11.05-86047df）。
+  # 官方 hook 位置是 ~/.cursor/hooks.json + ~/.cursor/hooks/*；复用同一 ps1 规则引擎，
+  # 只是事件名/返回格式由 hooks.json 适配（不新增任何规则）。
+  @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -129,7 +137,7 @@ $ocJson    = Join-Path $userHome '.config\opencode\opencode.json'
 $ocCliJson = Join-Path $userHome '.config\opencode\cli.json'
 $ocCfg     = $null
 if (Test-Path $ocJson) {
-  try { $ocCfg = Get-Content $ocJson -Raw | ConvertFrom-Json } catch { $ocCfg = $null }
+  try { $ocCfg = Get-Content $ocJson -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $ocCfg = $null }
 }
 # 与 merge.ts 同序：先看 plugins/plugin 两键，都没有时用 cli.json 作 V2 旁证。
 $ocModeV2 = $false
@@ -141,10 +149,10 @@ if ($ocModeV2) {
   # V2：自动发现，判定看产物（与第 2 段同源）；配置里不该有该字符串。
   $ocArtifact = Test-Path $ocDest
   Write-Check 'opencode.json 插件注册（V2 目录自动发现）' $ocArtifact $ocDest
-  $legacyRef = ($ocCfg -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard'))
+  $legacyRef = ($ocCfg -and ((Get-Content $ocJson -Raw -Encoding UTF8) -match 'agent-risk-guard|destructive-operation-guard'))
   if ($legacyRef) { Write-Host "  [note] opencode.json 仍残留 V1 文件路径引用（V2 忽略，merge 会清理）" -ForegroundColor Yellow }
 } else {
-  $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw) -match 'agent-risk-guard|destructive-operation-guard')
+  $ocReg = (Test-Path $ocJson) -and ((Get-Content $ocJson -Raw -Encoding UTF8) -match 'agent-risk-guard|destructive-operation-guard')
   Write-Check 'opencode.json 插件注册（V1 plugin 数组）' $ocReg $ocJson
 }
 
@@ -264,7 +272,11 @@ function Test-YamlSyntax([string]$path) {
   # 1) python 侧 excepthook 吞掉 traceback，stderr 一个字都不写；
   # 2) 函数内局部放宽 EAP（偏好变量函数作用域，不影响脚本其余部分）。
   $ErrorActionPreference = 'Continue'
-  & $script:YamlPy -c "import yaml, sys; sys.excepthook = lambda *a: sys.exit(3); yaml.safe_load(open(sys.argv[1], 'r', encoding='utf-8'))" $path 2>$null
+  # 2026-11-08：dsh web profile 里含 `!!js`（解析结果 tag 为 `tag:yaml.org,2002:js`）自定义标签，
+  # PyYAML 的 SafeLoader 会报 “could not determine a constructor for the tag ...” —— 那是
+  # **解析器不认标签**，不是语法损坏。给 `tag:yaml.org,2002:` 与本地 `!` 前缀各注册一个空构造器：
+  # 标准标量标签仍走精确匹配（bool/int 不受影响），仍做完整语法校验，但不因未知标签误报。
+  & $script:YamlPy -c "import yaml, sys; sys.excepthook = lambda *a: sys.exit(3); yaml.SafeLoader.add_multi_constructor('tag:yaml.org,2002:', lambda l, s, n: None); yaml.SafeLoader.add_multi_constructor('!', lambda l, s, n: None); yaml.load(open(sys.argv[1], 'r', encoding='utf-8'), Loader=yaml.SafeLoader)" $path 2>$null
   return ($LASTEXITCODE -eq 0)
 }
 
@@ -293,7 +305,7 @@ $dshProfiles = Get-ChildItem (Join-Path $userHome '.dsh\profiles') -Directory -E
 foreach ($prof in $dshProfiles) {
   $patch = Join-Path $prof.FullName 'cordis.patch.yml'
   if (-not (Test-Path $patch)) { continue }
-  $raw = Get-Content $patch -Raw
+  $raw = Get-Content $patch -Raw -Encoding UTF8
   if ($raw -notmatch 'deny-risk-commands') {
     $injected = $false
     if ($Fix -and $srcDshBlock) {
@@ -309,7 +321,7 @@ foreach ($prof in $dshProfiles) {
           Write-Host ("  [Fix] 追加 deny-risk-commands 后 YAML 校验失败，已回滚 {0}（需人工处理）" -f $prof.Name) -ForegroundColor Yellow
         } else {
           Write-Host ("  [Fix] 已向 dsh {0} 追加 deny-risk-commands 注入（备份到 ~/.risk-guard-backup/）" -f $prof.Name) -ForegroundColor Cyan
-          $raw = Get-Content $patch -Raw
+          $raw = Get-Content $patch -Raw -Encoding UTF8
           $injected = $true
         }
       } catch {
@@ -543,7 +555,7 @@ if (-not (Test-Path $liveSkill)) {
 # ---- 5. 接线在位（settings.json / hooks.json / config.toml 去重断言）----
 Write-Host "`n[接线在位]"
 $ccSettings = Join-Path $userHome '.claude\settings.json'
-$ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw } else { '' }
+$ccRaw = if (Test-Path $ccSettings) { Get-Content $ccSettings -Raw -Encoding UTF8 } else { '' }
 $ccOk = ($ccRaw -match 'PreToolUse') -and ($ccRaw -match 'dangerous-commands')
 Write-Check 'claude-code settings.json PreToolUse' $ccOk $ccSettings
 
@@ -556,7 +568,7 @@ Write-Check 'claude-code settings.json PreToolUse' $ccOk $ccSettings
 $ccMatcher = ''
 $ccCommand = ''
 try {
-  $ccCfg = Get-Content $ccSettings -Raw | ConvertFrom-Json
+  $ccCfg = Get-Content $ccSettings -Raw -Encoding UTF8 | ConvertFrom-Json
   foreach ($entry in @($ccCfg.hooks.PreToolUse)) {
     foreach ($h in @($entry.hooks)) {
       if ($h.command -and ([string]$h.command -match 'dangerous-commands')) {
@@ -610,12 +622,83 @@ fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
   $issues = @($issues | Where-Object { $_ -ne 'claude-code settings.json PreToolUse' -and $_ -ne 'claude-code hook matcher 覆盖 PowerShell' -and $_ -ne 'claude-code hook 命令为正斜杠路径' })
 }
 
+# ---- Cursor（2026-11-08 新增）----
+# 官方位置：~/.cursor/hooks.json（schema version 1）。与 Claude 不同，事件数组是**扁平项**：
+#   { "command": ..., "matcher": "Shell", "timeout": 20, "failClosed": false }
+# 实测（Cursor 3.29.9 / cursor-agent 2026.11.05-86047df）：
+#   · preToolUse 的 tool_name 为 "Shell"，tool_input.command 是真实命令；deny 用 stdout
+#     {"permission":"deny",...} + exit 0，--force 下依然拦得住。
+#   · beforeShellExecution 只接审批层，--force 下 deny 会被绕过 → 不作为硬闸门。
+#   · failClosed 默认 false；设 true 会把「空输出」判成失败并拦截，而 ps1 引擎用空输出表示放行
+#     → 正常命令会被误拦。故显式写 failClosed:false，失败语义与 Claude Code hook 一致（崩溃/超时 fail-open）。
+#   · 非法 JSON 在 preToolUse 上由 Cursor 自身按拦截处理（不依赖 failClosed）。
+$cursorHooks = Join-Path $userHome '.cursor\hooks.json'
+$cursorHookPath = Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1'
+$cursorCfgOk = $false
+$cursorEntry = $null
+if (Test-Path $cursorHooks) {
+  try {
+    $cursorCfg = Get-Content $cursorHooks -Raw -Encoding UTF8 | ConvertFrom-Json
+    $cursorCfgOk = $true
+    foreach ($e in @($cursorCfg.hooks.preToolUse)) {
+      if ($e -and $e.command -and ([string]$e.command -match 'dangerous-commands')) { $cursorEntry = $e }
+    }
+  } catch { $cursorCfgOk = $false }
+}
+$cursorEntryOk = ($null -ne $cursorEntry) -and ([string]$cursorEntry.matcher -match 'Shell') -and ([int]$cursorEntry.timeout -ge 10)
+Write-Check 'cursor hooks.json preToolUse（matcher 含 Shell）' ($cursorCfgOk -and $cursorEntryOk) $cursorHooks
+
+if ((-not $cursorCfgOk -or -not $cursorEntryOk) -and $Fix) {
+  if ((Test-Path $cursorHooks) -and (-not $cursorCfgOk)) {
+    # 用户已有配置但解析失败：不覆盖，交给人工。宁可报红也不静默丢弃别人的 hook。
+    Write-Host "  [Fix] cursor hooks.json 不是合法 JSON，拒绝覆盖（需人工处理）" -ForegroundColor Yellow
+  } else {
+    if (Test-Path $cursorHooks) { Backup-File $cursorHooks }
+    $cursorHelper = Join-Path $env:TEMP 'riskguard-cursor-hooks.js'
+    @'
+const fs = require('fs');
+const target = process.argv[2];
+const hookPosix = process.argv[3].split('\\').join('/');
+const timeout = Number(process.argv[4] || 20);
+let cfg = {};
+if (fs.existsSync(target)) {
+  try { cfg = JSON.parse(fs.readFileSync(target, 'utf8')); }
+  catch (e) { process.exit(3); }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) { process.exit(3); }
+cfg.version = 1;
+if (!cfg.hooks || typeof cfg.hooks !== 'object') cfg.hooks = {};
+if (!Array.isArray(cfg.hooks.preToolUse)) cfg.hooks.preToolUse = [];
+// 绝对 powershell.exe + 正斜杠路径：与 Claude 段同样避免 shell 吃掉反斜杠。
+const ps = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+const command = ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (/[\s"]/.test(hookPosix) ? '"' + hookPosix + '"' : hookPosix);
+const entry = cfg.hooks.preToolUse.find(e => e && typeof e.command === 'string' && /dangerous-commands/.test(e.command));
+if (entry) {
+  entry.command = command;
+  entry.matcher = 'Shell';
+  entry.timeout = timeout;
+  if (entry.failClosed === undefined) entry.failClosed = false;
+} else {
+  cfg.hooks.preToolUse.push({ command, matcher: 'Shell', timeout, failClosed: false });
+}
+fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+'@ | Set-Content -Path $cursorHelper -Encoding UTF8
+    node $cursorHelper $cursorHooks $cursorHookPath 20
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "  [Fix] cursor hooks.json 已合并式写入 preToolUse（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+      $issues = @($issues | Where-Object { $_ -ne 'cursor hooks.json preToolUse（matcher 含 Shell）' })
+    } else {
+      Write-Host "  [Fix] cursor hooks.json 恢复失败（node 退出码 $LASTEXITCODE）" -ForegroundColor Red
+    }
+  }
+}
+
 $codexHooks = Join-Path $userHome '.codex\hooks.json'
-$codexOk = (Test-Path $codexHooks) -and ((Get-Content $codexHooks -Raw) -match 'PreToolUse') -and ((Get-Content $codexHooks -Raw) -match 'dangerous-commands')
+$codexOk = (Test-Path $codexHooks) -and ((Get-Content $codexHooks -Raw -Encoding UTF8) -match 'PreToolUse') -and ((Get-Content $codexHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'codex hooks.json PreToolUse' $codexOk $codexHooks
 
 $codexToml = Join-Path $userHome '.codex\config.toml'
-$tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw } else { '' }
+$tomlRaw = if (Test-Path $codexToml) { Get-Content $codexToml -Raw -Encoding UTF8 } else { '' }
 # 2026-09-30 去重：官方要求「同一层只用一种表示」（hooks.json 与内联 [hooks] 并存会被合并 + 启动告警）。
 # 本检查由「config.toml 必须含 hooks」**反转为「不得再内联注册」**：原先为满足旧检查而补进去的那段，
 # 让同一个 dangerous-commands.ps1 每次 Bash 并发跑两遍（实测见 Notes/2026/09/NOTES_20260930.md）。
@@ -629,7 +712,7 @@ $tomlOk = (Test-Path $codexToml) -and ($tomlRaw -notmatch '(?im)^\s*\[\[?\s*hook
 Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'
-$agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw) -match 'dangerous-commands')
+$agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'agy hooks.json' $agyOk $agyHooks
 
 # ---- 汇总 ----

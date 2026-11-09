@@ -3,7 +3,9 @@
 # 断言一律用 ASCII 锚点或落盘文件状态：powershell 5.1 子进程按 GBK 误读无 BOM 的 UTF-8 脚本，
 # 中文输出是乱码，断言中文字符串必假阴性（已踩过）。
 $ErrorActionPreference = 'Stop'
-$repo = 'E:\DeepSeek_Harness\workspace\2026_08_21\agent-risk-guard'
+# 2026-11-08：原先硬编码 `...\2026_08_21\...`，仓库改目录后测试整体跑不起来；
+# 改为从脚本位置推导（tasks\orchestrator → 仓库根）。
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $src  = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
 $tmp  = Join-Path $repo 'tasks\.tmp'
 # 2026-11-02：原为 Anaconda envs\claude\python.exe（已随 Anaconda 卸载而消失）。
@@ -233,6 +235,48 @@ Assert 'T8b pre-existing user content preserved' ($t8.Contains('sealed-user-prov
 Assert 'T8c injected file still parses with PyYAML' (Test-PyYaml $p8)
 Assert 'T8d final dsh check OK after injection' ($o8 -match '\[OK\][^\n]*dsh headless')
 Assert 'T8e all single-source rules injected' (([regex]::Matches($t8, "re:\s*'")).Count -eq ([regex]::Matches(($srcLines -join "`n"), "re:\s*'")).Count)
+
+# ---------- T9/T10/T11: Cursor 接线（2026-11-08 新增）----------
+# 回归背景：cursor 段把 ps1 副本 + ~/.cursor/hooks.json 纳入巡检；hooks.json 是用户共享文件，
+# 必须**幂等合并**（保留用户已有事件/条目），解析失败时**拒绝覆盖**。
+Write-Host "`n== T9: cursor hooks.json missing, -Fix must write preToolUse(matcher Shell) ==" -ForegroundColor Cyan
+$tmp9 = New-FakeHome ('fake-t9-' + (Get-Date -Format 'HHmmssfff')); $h9 = $tmp9[0]
+$o9 = Invoke-WC $h9 'powershell' -Fix
+$c9 = Join-Path $h9 '.cursor\hooks.json'
+Assert 'T9a pre-fix report flags cursor hooks.json' ($o9 -match '\[!!\][^\n]*cursor hooks.json')
+Assert 'T9b hooks.json created' (Test-Path $c9)
+$j9 = Get-Content $c9 -Raw -Encoding UTF8 | ConvertFrom-Json
+$e9 = @($j9.hooks.preToolUse)[0]
+Assert 'T9c schema version is 1' ($j9.version -eq 1)
+Assert 'T9d matcher is Shell' ($e9.matcher -eq 'Shell')
+Assert 'T9e failClosed is false (ps1 allow = empty stdout)' ($e9.failClosed -eq $false)
+Assert 'T9f timeout >= 10s' ([int]$e9.timeout -ge 10)
+Assert 'T9g command points at cursor hook copy' ($e9.command -match '\.cursor/hooks/dangerous-commands\.ps1')
+Assert 'T9h ps1 copy restored into cursor hooks dir' (Test-Path (Join-Path $h9 '.cursor\hooks\dangerous-commands.ps1'))
+$o9b = Invoke-WC $h9 'powershell'
+Assert 'T9i second run is clean for cursor' (($o9b -match '\[OK\][^\n]*cursor hooks.json') -and -not ($o9b -match '\[!!\][^\n]*cursor'))
+
+Write-Host "`n== T10: user-authored cursor hooks preserved (merge, not overwrite) ==" -ForegroundColor Cyan
+$tmp10 = New-FakeHome ('fake-t10-' + (Get-Date -Format 'HHmmssfff')); $h10 = $tmp10[0]
+New-Item -ItemType Directory -Force (Join-Path $h10 '.cursor') | Out-Null
+$userCfg = '{"version":1,"hooks":{"sessionStart":[{"command":"echo hi"}],"preToolUse":[{"command":"other-tool.exe","matcher":"Read"}]}}'
+[IO.File]::WriteAllText((Join-Path $h10 '.cursor\hooks.json'), $userCfg, [Text.UTF8Encoding]::new($false))
+$null = Invoke-WC $h10 'powershell' -Fix
+$j10 = Get-Content (Join-Path $h10 '.cursor\hooks.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert 'T10a existing sessionStart hook preserved' (@($j10.hooks.sessionStart).Count -eq 1)
+Assert 'T10b unrelated preToolUse entry preserved' (@($j10.hooks.preToolUse | Where-Object { $_.command -eq 'other-tool.exe' }).Count -eq 1)
+Assert 'T10c cursor guard entry added' (@($j10.hooks.preToolUse | Where-Object { $_.command -match 'dangerous-commands' }).Count -eq 1)
+
+Write-Host "`n== T11: invalid cursor hooks.json, -Fix must not overwrite ==" -ForegroundColor Cyan
+$tmp11 = New-FakeHome ('fake-t11-' + (Get-Date -Format 'HHmmssfff')); $h11 = $tmp11[0]
+New-Item -ItemType Directory -Force (Join-Path $h11 '.cursor') | Out-Null
+$badCfg = '{ broken-json'
+$c11 = Join-Path $h11 '.cursor\hooks.json'
+[IO.File]::WriteAllText($c11, $badCfg, [Text.UTF8Encoding]::new($false))
+$null = Invoke-WC $h11 'powershell' -Fix
+$bk11 = Join-Path $h11 '.risk-guard-backup\riskguard-wiring-check'
+Assert 'T11a invalid config left byte-identical' ((Get-Content $c11 -Raw -Encoding UTF8) -eq $badCfg)
+Assert 'T11b no cursor backup written (fix path not taken)' (-not (Test-Path $bk11) -or @(Get-ChildItem $bk11 -Filter '*cursor-hooks.json*' -ErrorAction SilentlyContinue).Count -eq 0)
 
 Write-Host "`n===== sealed test total: $($script:pass) pass / $($script:fail) fail =====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 }

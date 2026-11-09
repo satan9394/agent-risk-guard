@@ -386,11 +386,11 @@
       "integration": "preToolUse hook",
       "enforcement": "hard",
       "verification": {
-        "windows": "D2",
+        "windows": "D3",
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。",
+      "notes": "Windows 真机会话（2026-11-08，Cursor 3.29.9 桌面 + cursor-agent 2026.11.05-86047df）：preToolUse hook 对 git reset --hard 硬拦、安全命令放行，--force 下仍生效。边界：beforeShellExecution 只接审批层（--force 可绕过，不作为硬闸门）；failClosed 未启用（ps1 引擎以空输出表示放行，崩溃/超时因此 fail-open；非法 JSON 由 Cursor 在 preToolUse 上按拦截处理）；非 shell 工具（Delete/Write）仍只有适配器 D2 单元测试。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -402,7 +402,7 @@
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
         "hardDeny": "supported",
-        "failMode": "unknown"
+        "failMode": "fail-open"
       },
       "sandbox": {
         "available": "unknown",
@@ -420,7 +420,7 @@
         "userCanDisable": "supported",
         "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "hookFailureSemantics": "fail-open",
       "conditionalAvailability": [],
       "securityBoundaries": [
         "L0",
@@ -430,7 +430,7 @@
         "shell.execute": {
           "enforcement": "hard",
           "verification": {
-            "windows": "D2"
+            "windows": "D3"
           }
         },
         "filesystem.write": {
@@ -448,10 +448,10 @@
       },
       "componentInventory": {
         "agent": "cursor",
-        "version": "unknown",
+        "version": "3.29.9（桌面）/ 2026.11.05-86047df（cursor-agent）",
         "adapter": "packages/adapters/cursor",
-        "hook": "preToolUse hook",
-        "runtime": "node",
+        "hook": "preToolUse hook（~/.cursor/hooks.json，matcher Shell）",
+        "runtime": "powershell hook（共享 ps1 规则引擎）+ node 适配器（非 shell 工具）",
         "policy": "default-policy"
       }
     },

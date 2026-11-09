@@ -195,7 +195,7 @@ hook 脚本的输出 JSON 格式是否被各 Agent 正确识别，取决于各�
 | Antigravity CLI (agy) | PreToolUse run_command → agy 适配器 `{decision:allow\|deny}` | ✅ 已实测（Windows，agy **1.2.7**；此前 1.1.27） | `scripts/agy-dangerous-commands.ps1`（BOM+fail-closed）翻译 hook 协议并复用同目录规则引擎；真实会话两次：2026-09-06（1.1.27）与 **2026-09-21（1.2.7）** `git reset --hard` 均被拦、未提交修改保留、deny 文案中文可读；规则引擎缺失时 fail-closed deny |
 | OpenCode | 插件自有格式（`tool.execute.before`） | ✅ 已实测（完整） | 520 行插件（R16 四轮修复后），真实会话验证：模型拒绝 rm/Remove-Item、调用 trash 工具进 Windows 回收站确认收到；⚠️ 需 `opencode.json` plugin 声明才加载（见 `references/opencode-wiring.md`） |
 | DeepSeek Harness | pre-execute 门禁规则 | ✅ 已实测 | patch 热加载生效（**条数以单源为准**：`assets/dsh/deny-risk-commands.patch.yml`，与 `defaultDenyRules()` 逐条一致由 `rule-alignment` 守住；巡线每次打印实际条数）（R3 生态融合：解释器 one-liner / git 破坏清单 / Windows wrapper）；`@riskguard/dsh` 插件（pre-execute+单调 guard）经 dsh-tools 源码实证 |
-| Cursor | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | hooks 文档显示兼容 CC 格式，需真实会话确认 |
+| Cursor | `hookSpecificOutput.permissionDecision`（CC 兼容）与原生 `{"permission":"deny"}` 均可 | ✅ 已实测（2026-11-08，Cursor 3.29.9 / cursor-agent 2026.11.05-86047df） | 硬拦走 `preToolUse`，`matcher: "Shell"`；`~/.cursor/hooks.json` + `~/.cursor/hooks/dangerous-commands.ps1`，由 `riskguard-wiring-check.ps1 -Fix` 维护。⚠️ `beforeShellExecution` 只是审批层（`--force` 可绕过）；`failClosed` 不能开（引擎空输出=放行） |
 | Goose | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | 需真实会话确认 |
 | Grok | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | 需真实会话确认 |
 | Hermes | `hookSpecificOutput.permissionDecision` | ⚠️ 待验证 | 需真实会话确认 |

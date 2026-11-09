@@ -8,12 +8,22 @@
 
 - 已发布为 GitHub Pre-release 的版本：**`v0.1.0` 起至 `v0.3.2`**（`v0.1.0` / `v0.1.1` / `v0.1.2` 于 2026-09-04；`v0.2.0` / `v0.2.1` / `v0.2.2` 于 2026-09-05；`v0.3.0` 于 2026-09-07；`v0.3.1` 于 2026-09-14；`v0.3.2` 于 2026-09-19）。历史 Git tag `v1.0.0`（2026-08-26）保留不动，作为发布标记，**不是**当前产品稳定版声明。
 - **每个版本的"出了什么问题 + 改变了什么"另有中英双语发行说明**：见 [`docs/release-notes/`](docs/release-notes/)——GitHub Release 的正文即取自该目录，且**缺对应说明文件时发版会失败**。
-- 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf / Cursor）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
+- 之所以仍不宣称 `1.0.0 Stable`：macOS / Linux 回收站与若干 Agent（Copilot CLI / Windsurf）的真实环境验证尚未完成，Codex 应用形态的 RiskGuard hook 应用会话触发待补测。详见 `docs/TODO.md`。
 - 历史 `[1.0.0]` / `[0.1.0]` / `[0.1.1]` / `[0.1.2]` / `[0.2.0]` / `[0.2.1]` / `[0.2.2]` 条目保留为历史记录，不删除、不重写历史。
 
 ## [Unreleased]
 
 ### Changed
+
+- **Cursor 正式接入：Windows D2 → D3（2026-11-08，真机会话）**：新增 `scripts/riskguard-wiring-check.ps1`
+  的 cursor 段——把单源 `assets/hooks/dangerous-commands.ps1` 复制到 `~/.cursor/hooks/`，并**幂等合并**
+  `~/.cursor/hooks.json` 的一条 `preToolUse`（`matcher: "Shell"`、`timeout: 20`、`failClosed: false`）；
+  用户已有配置解析失败时拒绝覆盖。适配器修 `cwd`：Cursor 的 `preToolUse` 给的是**空字符串**，
+  `??` 不会回退，现改为「取第一个非空字符串」回退到 `workspace_roots[0]`。`compatibility.json`
+  的 cursor 段同步为 D3、`fail-open`、实测版本（桌面 3.29.9 / cursor-agent 2026.11.05-86047df）。
+  **同轮登记的边界**：`beforeShellExecution` 只是审批层，`--force` 下 deny 被绕过；`failClosed` 不能开
+  （ps1 引擎以空输出表示放行，开了会误拦）；非 shell 工具（Delete/Write）仍只有适配器 D2。
+  详见 `skills/agent-risk-guard/references/cursor-windsurf.md`。
 
 - **开发/发版政策：先本地提交再推远程，日常只提交、不发版；发版节奏 ≈ 30 天一版（2026-10-09）**。
   本仓为个人开发、属「时不时回来修一修」而非高频迭代，故：① 默认工作流是**本地提交 → 推远程**（改代码
@@ -32,6 +42,15 @@
   同轮把 opencode 2.2.0 / agy 1.4.8 / dsh 0.2.1-rc.3 的真实会话复验补齐并更新 `compatibility.json`（版本 + D3 证据日期）。
 
 ### Fixed
+
+- **巡检自愈长期空转：`riskguard-wiring-check.ps1` 硬编码了仓库旧路径（2026-11-08）**：脚本里写死
+  `...\workspace\2026_08_21\agent-risk-guard`（下划线），仓库改为 `2026\08\21` 后该路径不存在，
+  计划任务 `RiskGuard_WiringCheck` 每 5 分钟 `exit=2`（实测 00:40–01:35 连续 12 次），巡检与 `-Fix`
+  实际什么都没做。改为由 `$PSScriptRoot` 推导仓库根，`RISKGUARD_REPO` 可显式覆盖。
+  同轮修 YAML 校验误报：`dsh web` profile 的 `!!js` 自定义标签（解析为 `tag:yaml.org,2002:js`）
+  被 SafeLoader 当成语法损坏，现为 `tag:yaml.org,2002:` / `!` 前缀注册空构造器——仍做完整语法校验，
+  标准标量（bool/int）不受影响。密封用例自身也硬编码了旧路径，一并改为推导，并新增 T9–T11
+  覆盖 Cursor（缺失生成 / 保留用户已有 hook / 非法 JSON 拒绝覆盖），当前 **63/63**。
 
 - **Linux trash 不再依赖系统装没装 `gio`（2026-10-27）**：`packages/trash/src/linux.ts` 原先只调 `gio trash`，
   命令缺失或失败时 `trash()` 直接返回 `ok:false`，安装事务回滚据此判 `REMOVE-FAILED`（回滚不完整）。

@@ -21,7 +21,7 @@
 | opencode | hard | fail-closed | user | supported | unsupported | fail-closed | L0,L1,L2 | — |
 | codex | hard | fail-closed | user | supported | unknown | fail-closed | L0,L2 | — |
 | dsh | hard | fail-closed | user | supported | unsupported | fail-closed | L0,L2,L3 | — |
-| cursor | hard | unknown | user | supported | unknown | unknown | L0,L2 | — |
+| cursor | hard | fail-open | user | supported | unknown | fail-open | L0,L2 | — |
 | windsurf | hard | unknown | user | supported | unknown | unknown | L0,L2 | hook:supported@Restricted Mode disabled |
 | copilot | hard | unknown | user,machine | supported | unknown | unknown | L0,L2 | — |
 | agy | hard | fail-closed | user | supported | unknown | fail-closed | L0,L2 | — |
@@ -57,7 +57,7 @@
 |  | git.destructive | hard | D3 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 |  | network.connect | unknown | D0 | — | — |
-| cursor | shell.execute | hard | D2 | — | — |
+| cursor | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 | windsurf | shell.execute | hard | D2 | — | — |
