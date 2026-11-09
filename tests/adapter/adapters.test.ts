@@ -13,6 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateClaude } from '../../packages/adapters/claude/src/index.ts';
 import { evaluateCursor } from '../../packages/adapters/cursor/src/index.ts';
+import { parseCursorPayload } from '../../packages/adapters/cursor/src/index.ts';
 import { evaluateGrok, grokExitCode } from '../../packages/adapters/grok/src/index.ts';
 import { evaluateWindsurf } from '../../packages/adapters/windsurf/src/index.ts';
 import { evaluateDsh, guardAdvisory } from '../../packages/adapters/dsh/src/index.ts';
@@ -58,6 +59,20 @@ test('Cursor payload: beforeShellExecution 形状（command 直传）', () => {
   const payload = { tool_name: 'Shell', tool_input: { command: 'Remove-Item C:\\x -Force' }, cwd: 'C:\\proj' };
   const out = JSON.parse(evaluateCursor(payload, decide));
   assert.equal(out.permission, 'deny');
+});
+
+test('Cursor payload: cwd 为空字符串 → 回退到 workspace_roots[0]', () => {
+  // 2026-11-08 实测：Cursor 3.29.9 / cursor-agent 的 preToolUse 给 cwd: ""（不是缺失），
+  // 旧实现用 ?? 不回退，会把相对路径解析到进程目录。
+  const out = parseCursorPayload({
+    tool_name: 'Delete', tool_input: { file_path: 'important.txt' },
+    cwd: '', workspace_roots: ['C:/proj'],
+  });
+  assert.equal(out.ok, true);
+  if (out.ok) {
+    assert.equal(out.event.context?.cwd, 'C:/proj');
+    assert.equal(out.event.targets[0]?.canonical, 'C:\\proj\\important.txt');
+  }
 });
 
 test('Grok payload: snake_case + rm 家族 → deny（exit 2）', () => {

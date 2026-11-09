@@ -4,6 +4,11 @@
 > 本文件记录真实状态：哪些已完成、哪些受环境限制、如何解锁。核心原则：**Real execution evidence > mock confidence**，
 > **No side effect = D3 proof**，环境无法完成的绝不伪造 D3（§二十七/§三十三）。
 
+> **2026-11-08 更新（只追加、不改写历史）**：Cursor 已完成 D3——本机 Cursor 3.29.9 桌面 + `cursor-agent`
+> 2026.11.05-86047df 的真实会话里，`git reset --hard` 被 `preToolUse` hook 拒绝且改动保留，安全命令放行并真实执行；
+> 证据见 [`tasks/orchestrator/CURSOR_D3_SESSION_20261108.md`](../tasks/orchestrator/CURSOR_D3_SESSION_20261108.md)，
+> `compatibility.json` 的 `cursor.windows` 已升为 D3。下文 2026-09-05 的结论保留为当时快照（Copilot CLI / Windsurf 仍未取证）。
+
 ## 一句话结论（2026-09-05）
 
 RiskGuard 的 ACS 协议层已在 v0.2.2 冻结并发布。v0.3.0 的**基础设施 + 三家 adapter 全部就绪（D2）**，

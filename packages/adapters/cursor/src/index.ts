@@ -32,7 +32,11 @@ export interface CursorPayload {
 export function parseCursorPayload(payload: CursorPayload, home?: string): NormalizeOutcome {
   const tool = payload.tool_name ?? payload.toolName ?? payload.tool ?? payload.name ?? '';
   const input = payload.tool_input ?? payload.toolInput ?? payload.input ?? payload.args ?? {};
-  const cwd = payload.cwd ?? payload.workspace_roots?.[0] ?? payload.workspaceRoots?.[0];
+  // 2026-11-08 实测（Cursor 3.29.9 / cursor-agent 2026.11.05-86047df）：
+  // preToolUse 的 `cwd` 字段是**空字符串**（不是缺失），`??` 不会回退到 workspace_roots[0]，
+  // 会把相对路径/home 解析成当前进程目录。改为「取第一个非空字符串」。
+  const cwd = [payload.cwd, payload.workspace_roots?.[0], payload.workspaceRoots?.[0]]
+    .find((v): v is string => typeof v === 'string' && v.trim() !== '');
 
   // Shell 命令（preToolUse Shell / beforeShellExecution 共用）
   if (typeof input.command === 'string') {

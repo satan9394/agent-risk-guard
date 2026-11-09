@@ -19,7 +19,8 @@
 
 ## v0.2.0 遗留（下一阶段，见 docs/devlog-2026-09-05-v0.2.0.md）
 
-- [ ] **真实 Agent D3 Conformance（P1 顺序 §二十八）**：基于统一 Conformance Framework（C1–C10）对 Cursor / Copilot CLI / Windsurf 做真实会话执行；Cursor 先做 official payload fixture → adapter contract test → conformance harness（§二十九）
+- [ ] **真实 Agent D3 Conformance（P1 顺序 §二十八）**：Cursor 已于 2026-11-08 完成（preToolUse hook 真机 deny/allow，见 `compatibility.json`）；剩余 **Copilot CLI / Windsurf** 的真实会话执行。Cursor 的 official payload fixture → adapter contract test 已补齐；conformance harness（§二十九）仍待接入。Cursor 侧的已知边界登记在本节下方。
+- [ ] **Cursor 已登记边界（2026-11-08 实测）**：① `beforeShellExecution` 只是审批层，`--force` 下 deny 会被绕过 → 不作为硬闸门，只挂 `preToolUse`；② `failClosed` 未启用（ps1 引擎以空输出表示放行，设 true 会误拦正常命令），hook 崩溃/超时因此 fail-open；③ 非 shell 工具（Delete / Write）目前只有适配器 D2 单元测试，尚无生产 hook 覆盖；④ Cursor 默认会读 `~/.claude/settings.json` 的 Claude hooks，但那边 matcher 是 `Bash|PowerShell`，对不上 Cursor 的 `Shell` 工具名，不能当兜底。
 - [ ] **Copilot CLI machine Policy Hook PoC**：system policy（`/etc/github-copilot/policy.d/` / `C:\ProgramData\GitHub\Copilot\policy.d\` / Registry）→ RiskGuard Machine Guard（§三十，本轮只预留 policyScope）
 - [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
 - [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
