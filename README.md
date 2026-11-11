@@ -104,7 +104,7 @@ node bin/riskguard.mjs install --dry-run
 | **WorkBuddy (CodeBuddy)** | `PreToolUse` hook（Claude Code 兼容） | 机器硬门禁——**删除委派**给平台自带 safe-delete（改道回收站），不可逆操作仍拦 | ✅ 真实会话已验证（D3，2026-09-28） |
 | **Codex** | hook + 应用策略/沙箱层 | **混合**——应用形态下拦住命令的是 Codex 自身的策略层，CLI 侧 hook 另有实测 | 🟡 部分验证 |
 | **DeepSeek Harness** | profile 注入的规则补丁 | **规则（正则）层**——`@riskguard/dsh` 插件已实现且有测试，但**未接入任何 profile** | 🟡 已验证（非插件） |
-| **Cursor** | `preToolUse` hook（`~/.cursor/hooks.json`） | 机器硬门禁（仅在**shell 面**：`Shell` 工具） | ✅ 真实会话已验证（D3，2026-11-08） |
+| **Cursor** | `preToolUse` hook（`~/.cursor/hooks.json`） | 机器硬门禁（`Shell` + 原生 `Delete`） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **Pi** | `tool_call` 扩展（`~/.pi/agent/extensions/riskguard.ts`）→ 共用规则引擎 | 机器硬门禁（shell 面） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **Oh My Pi (omp)** | `tool_call` 扩展（`~/.omp/agent/hooks/pre/riskguard.ts`）→ 共用规则引擎 | 机器硬门禁（shell 面） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **Kimi Code** | `[[hooks]]` PreToolUse（`~/.kimi-code/config.toml`）→ 共用规则引擎 | 机器硬门禁（命中即拒；hook 故障 fail-open） | ✅ 真实会话已验证（D3，2026-11-11） |

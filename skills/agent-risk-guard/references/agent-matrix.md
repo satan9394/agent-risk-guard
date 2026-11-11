@@ -23,7 +23,7 @@
 | WorkBuddy (CodeBuddy) | `~/.workbuddy/settings.json` + `hooks/` | ✅ | ✅ PreToolUse（CC 兼容） | ✅ | — | 中（**须 RG_ALLOW_DELETE=1**：删除委派给平台 safe-delete，不可逆仍拦） | workbuddy.md |
 | Cline | VS Code 设置 + `.clinerules` | ✅ | ✅ PreToolUse(v3.36+) | ✅(auto-approve) | — | 中 | cline-kilo-qwen.md |
 | Qwen Code | `~/.config/qwen-code/` + `.qwen/` | ✅ | ✅ PreToolUse | ✅(deny) | — | 中 | cline-kilo-qwen.md |
-| Cursor | `~/.cursor/hooks.json` | ✅ | ✅ preToolUse（`Shell`；**硬拦，D3 2026-11-08**） | ✅ | — | 中（`beforeShellExecution` 非硬闸门；非 shell 工具未覆盖） | cursor-windsurf.md |
+| Cursor | `~/.cursor/hooks.json` | ✅ | ✅ preToolUse（`Shell|Delete`，**硬拦，D3 2026-11-11**） | ✅ | — | 中（`Write`/MCP 未覆盖；`beforeShellExecution` 非硬闸门） | cursor-windsurf.md |
 | AugmentCode | `~/.augment/settings.json` | ✅ | ✅ PreToolUse | ✅ | — | 中 | augmentcode.md |
 | Amp | 项目设置 `amp.config.json` | ✅ | — | ✅(deny) | ✅(sandbox) | 中 | amp-roo.md |
 | Roo Code | VS Code 设置 + `.roo/rules/` | ✅ | ⚠️(部分) | ✅(auto-approve) | — | 中 | amp-roo.md |

@@ -80,3 +80,13 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
 - 用户级 hooks 默认加载；托管环境可用 `requirements.toml` 的 `[features].hooks` 强制。
 - `command_windows` 是 Windows 专用命令覆盖，`command` 为默认（macOS/Linux）。
 - Codex 会在运行时写 config.toml（如会话状态），改完复查 approval_policy 是否还在。
+
+## apply_patch 不在 hooks 里（2026-11-11 实测，0.166.0）
+
+- 侦察方法：在 `~/.codex/hooks.json` 加一个只记录 stdin 的探针，matcher 先写 `apply_patch`、再写 `.*`，然后用
+  `codex exec -s workspace-write "Use the apply_patch tool to delete tracked.txt"`。
+  两次探针日志都是空的，而 `*** Delete File: tracked.txt` 真的把文件删了 → **Codex 的 PreToolUse 只对 Bash 触发，
+  apply_patch 不经过 hook**。
+- 结论：apply_patch 的 `*** Delete File` 不能靠现有 hook 拦；`approval_policy` 保持默认 `on-request`，不要为了
+  「不弹审批」改成 `never`。要覆盖它只能等 Codex 上游给 apply_patch 提供可拦截的策略点，或用外部沙箱/文件保护。
+- 别用「sandbox=workspace-write 能挡删除」当证据：它允许删工作区内文件，挡不住这次的问题。

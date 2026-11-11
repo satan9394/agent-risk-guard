@@ -83,6 +83,7 @@ $srcDsh    = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
 $srcBridge = Join-Path $repo 'assets\shared\riskguard-bridge.mjs'
 $srcPiExt  = Join-Path $repo 'assets\pi\riskguard-extension.ts'
 $srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.sh'
+$srcCursorAdapter = Join-Path $repo 'assets\hooks\cursor-riskguard-adapter.ps1'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
@@ -90,7 +91,8 @@ Write-Check '单源 dsh patch 存在' (Test-Path $srcDsh) $srcDsh
 Write-Check '单源 shared bridge 存在' (Test-Path $srcBridge) $srcBridge
 Write-Check '单源 pi 扩展存在' (Test-Path $srcPiExt) $srcPiExt
 Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh)) { exit 2 }
+Write-Check '单源 cursor 适配器存在' (Test-Path $srcCursorAdapter) $srcCursorAdapter
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -114,7 +116,10 @@ $ps1Targets = @(
   # 2026-11-08 新增：Cursor（桌面 3.29.9 / cursor-agent 2026.11.05-86047df）。
   # 官方 hook 位置是 ~/.cursor/hooks.json + ~/.cursor/hooks/*；复用同一 ps1 规则引擎，
   # 只是事件名/返回格式由 hooks.json 适配（不新增任何规则）。
-  @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' }
+  @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' },
+  # 2026-11-11: Cursor preToolUse 的原生 Delete 工具无法走回收站，单独用适配器翻译
+  # Cursor 的 {"permission":"deny"} 协议；Shell 仍转给上面的共享引擎判定。
+  @{ dest = (Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1');      src = $srcCursorAdapter; label = 'cursor adapter' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -639,7 +644,7 @@ fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
 #     → 正常命令会被误拦。故显式写 failClosed:false，失败语义与 Claude Code hook 一致（崩溃/超时 fail-open）。
 #   · 非法 JSON 在 preToolUse 上由 Cursor 自身按拦截处理（不依赖 failClosed）。
 $cursorHooks = Join-Path $userHome '.cursor\hooks.json'
-$cursorHookPath = Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1'
+$cursorHookPath = Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1'
 $cursorCfgOk = $false
 $cursorEntry = $null
 if (Test-Path $cursorHooks) {
@@ -647,12 +652,13 @@ if (Test-Path $cursorHooks) {
     $cursorCfg = Get-Content $cursorHooks -Raw -Encoding UTF8 | ConvertFrom-Json
     $cursorCfgOk = $true
     foreach ($e in @($cursorCfg.hooks.preToolUse)) {
-      if ($e -and $e.command -and ([string]$e.command -match 'dangerous-commands')) { $cursorEntry = $e }
+      if ($e -and $e.command -and ([string]$e.command -match 'cursor-riskguard-adapter|dangerous-commands')) { $cursorEntry = $e }
     }
   } catch { $cursorCfgOk = $false }
 }
-$cursorEntryOk = ($null -ne $cursorEntry) -and ([string]$cursorEntry.matcher -match 'Shell') -and ([int]$cursorEntry.timeout -ge 10)
-Write-Check 'cursor hooks.json preToolUse（matcher 含 Shell）' ($cursorCfgOk -and $cursorEntryOk) $cursorHooks
+$cursorMatcher = if ($cursorEntry) { [string]$cursorEntry.matcher } else { '' }
+$cursorEntryOk = ($null -ne $cursorEntry) -and ($cursorMatcher -match 'Shell') -and ($cursorMatcher -match 'Delete') -and ([int]$cursorEntry.timeout -ge 10)
+Write-Check 'cursor hooks.json preToolUse（matcher 含 Shell 与 Delete）' ($cursorCfgOk -and $cursorEntryOk) $cursorHooks
 
 if ((-not $cursorCfgOk -or -not $cursorEntryOk) -and $Fix) {
   if ((Test-Path $cursorHooks) -and (-not $cursorCfgOk)) {
@@ -675,24 +681,26 @@ if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) { process.exit(3); }
 cfg.version = 1;
 if (!cfg.hooks || typeof cfg.hooks !== 'object') cfg.hooks = {};
 if (!Array.isArray(cfg.hooks.preToolUse)) cfg.hooks.preToolUse = [];
+// 清掉侦察用的临时探针（_probe），只保留真实接线
+cfg.hooks.preToolUse = cfg.hooks.preToolUse.filter(e => !(e && e._probe));
 // 绝对 powershell.exe + 正斜杠路径：与 Claude 段同样避免 shell 吃掉反斜杠。
 const ps = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 const command = ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (/[\s"]/.test(hookPosix) ? '"' + hookPosix + '"' : hookPosix);
-const entry = cfg.hooks.preToolUse.find(e => e && typeof e.command === 'string' && /dangerous-commands/.test(e.command));
+const entry = cfg.hooks.preToolUse.find(e => e && typeof e.command === 'string' && /cursor-riskguard-adapter|dangerous-commands/.test(e.command));
 if (entry) {
   entry.command = command;
-  entry.matcher = 'Shell';
+  entry.matcher = 'Shell|Delete';
   entry.timeout = timeout;
   if (entry.failClosed === undefined) entry.failClosed = false;
 } else {
-  cfg.hooks.preToolUse.push({ command, matcher: 'Shell', timeout, failClosed: false });
+  cfg.hooks.preToolUse.push({ command, matcher: 'Shell|Delete', timeout, failClosed: false });
 }
 fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
 '@ | Set-Content -Path $cursorHelper -Encoding UTF8
     node $cursorHelper $cursorHooks $cursorHookPath 20
     if ($LASTEXITCODE -eq 0) {
       Write-Host "  [Fix] cursor hooks.json 已合并式写入 preToolUse（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
-      $issues = @($issues | Where-Object { $_ -ne 'cursor hooks.json preToolUse（matcher 含 Shell）' })
+      $issues = @($issues | Where-Object { $_ -ne 'cursor hooks.json preToolUse（matcher 含 Shell 与 Delete）' })
     } else {
       Write-Host "  [Fix] cursor hooks.json 恢复失败（node 退出码 $LASTEXITCODE）" -ForegroundColor Red
     }

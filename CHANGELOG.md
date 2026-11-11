@@ -15,6 +15,19 @@
 
 ### Changed
 
+- **Cursor 原生 Delete 工具接入硬门禁；Codex apply_patch 确认不在 hook 内（2026-11-11）**：
+  Cursor 的 `preToolUse` matcher 从 `Shell` 扩为 `Shell|Delete`，新增
+  `assets/hooks/cursor-riskguard-adapter.ps1` 把共享引擎的判定翻译成 Cursor 的
+  `{"permission":"deny","agent_message":...}` 协议；原生 `Delete`（`tool_input.file_path`）无法进回收站，
+  适配器一律拒绝并提示改用 shell 回收站命令。实测 `cursor-agent --force` 与
+  `approvalMode: unrestricted` 下 Delete 均被拒、文件保留，Shell 的 `git reset --hard` 仍被拒、
+  `git status` 放行；`scripts/riskguard-wiring-check.ps1` 增加适配器哈希与 matcher 校验，
+  `tests/adapter/cursor-adapter.test.ts` 4/4。
+  **Codex 没有拉满**：探针在 matcher `apply_patch` 与 `.*` 两种写法下都没有被调用，而
+  `codex exec` 的 `apply_patch *** Delete File` 实际删掉了文件——`PreToolUse` 只对 Bash 生效，
+  apply_patch 目前不可 hook，故 `approval_policy` 保持默认 `on-request`。结论写进
+  `references/codex.md` 与 `compatibility.json`。
+
 - **四个 Node 系 Agent 接入机器硬门禁：Pi / Oh My Pi (omp) / Kimi Code / MiniMax Code（D3，2026-11-11）**：
   新增共用桥 `assets/shared/riskguard-bridge.mjs`（把各 agent 的 hook 事件转成命令 → 调**同一份**
   `assets/hooks/dangerous-commands.ps1` → 按各家的阻断协议返回；规则不复制）与 Pi/omp 共用扩展

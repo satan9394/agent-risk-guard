@@ -63,6 +63,7 @@
 | cursor | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
+|  | filesystem.delete | hard | D3 | — | — |
 | windsurf | shell.execute | hard | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 | copilot | shell.execute | hard | D2 | — | — |
@@ -104,7 +105,7 @@
 | opencode | supported | supported | supported | unknown | unknown |
 | codex | supported | supported | supported | unknown | unknown |
 | dsh | supported | supported | supported | unknown | unknown |
-| cursor | supported | unknown | unknown | unknown | unknown |
+| cursor | supported | supported | unknown | unknown | unknown |
 | windsurf | supported | unknown | unknown | unknown | unknown |
 | copilot | supported | unknown | unknown | unknown | unknown |
 | agy | supported | unknown | unknown | unknown | unknown |
