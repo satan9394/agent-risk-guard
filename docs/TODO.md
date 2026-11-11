@@ -165,6 +165,11 @@
   `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；
   若将来要统一，先确认新机器的 pwsh 可用性再动。
 
+- [ ] **`riskguard-wiring-check.ps1 -Fix` 不能给没有 `# N3 预算闸门` 标记的 dsh profile 追加新规则**
+      （2026-11-11 加 `git -C` 伞形规则时暴露）：desktop/headless 两份 profile 命中「缺 1 条」但
+      没有同位次可替换的条目，兜底重组又要求 N3 标记，只能手工插入。要么给兜底加「按
+      deny-risk-commands 规则块末尾插入」，要么在巡检里明确提示「需人工插入」并给出插入点。
+
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 
 - bash AST 角色解析（allowlister 式：管道过滤命令按角色判定）

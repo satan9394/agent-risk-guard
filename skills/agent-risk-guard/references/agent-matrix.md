@@ -34,7 +34,10 @@
 | Windsurf | `.windsurfrules` + `.codeiumignore` | ✅ | ❌ | ❌ | ❌ | **低（无 hooks）** | windsurf-zed-warp.md |
 | Zed | 项目设置 | ✅ | ❌ | ✅(deny) | — | 中 | windsurf-zed-warp.md |
 | Warp | 项目设置 | ✅ | ❌ | ✅(deny) | — | 中 | windsurf-zed-warp.md |
-| Pi | `~/.pi/` | ✅ | ❌ | ❌ | ❌ | **低（无权限系统）** | pi-aider.md |
+| Pi | `~/.pi/agent/` | ✅ | ✅ tool_call 扩展（**硬拦，D3 2026-11-11**） | ❌ | ❌ | 中（只拦 shell；无沙箱） | pi-aider.md |
+| Oh My Pi (omp) | `~/.omp/agent/` | ✅ | ✅ tool_call 扩展（`hooks/pre/`，**硬拦，D3 2026-11-11**） | ❌ | ❌ | 中（只拦 shell） | pi-aider.md |
+| Kimi Code | `~/.kimi-code/` | ✅ | ✅ PreToolUse `[[hooks]]`（**D3 2026-11-11**，fail-open） | ❌ | ❌ | 中（hook 故障放行） | pi-aider.md |
+| MiniMax Code | `~/.minimax/` | ✅ | ✅ PreToolUse `hooks.json`（**D3 2026-11-11**，fail-open） | ❌ | ❌ | 中（hook 故障放行） | pi-aider.md |
 | Aider | `~/.aider.conf.yml` + `.aiderignore` | ✅ | ❌ | ❌ | ❌ | **低（最小攻击面）** | pi-aider.md |
 
 ## 高价值结论
@@ -42,7 +45,7 @@
 1. **有 hooks 的**（Claude Code/OpenCode/Codex/Copilot/Goose/Grok/Hermes/Cursor/Cline/Qwen/AugmentCode/Amp/Roo Code/OpenClaw）：用 PreToolUse 类钩子做"自动拒绝"黑名单命令，最可靠。**通用 hook 脚本 `scripts/dangerous-commands-universal.ps1` 可直接复用**（Windows ps1 多维套件 + bash sh 52/52，四轮 GAN 审查至 8/10）。
 2. **只有 permissions 的**（Zed/Warp/Takt 等）：用 deny 规则硬拦删除类命令。
 3. **只有 rules/ignore 的**（Windsurf/Aider/Claude Desktop）：只能 rules 提示 + ignore 保护敏感路径，**无法机器级拦截**，需外部包装（容器/包装脚本）。Claude Desktop 主要靠 MCP 插件生态，无内建命令拦截。
-4. **无内建权限的**（pi 官方明示、Aider）：容器化或包装是唯一硬隔离。
+4. **内建无权限、但有 pre-tool 扩展点的**（Pi / omp / Kimi Code / MiniMax Code）：RiskGuard 已用扩展或 hook 接硬拒（D3 2026-11-11），但这些 hook 只管 Agent 的工具调用、不是沙箱；文件写入/MCP/网络与用户手敲命令仍需容器化或包装。Aider 没有此挂点，只能外部隔离。
 5. **截图补充**（2026-08 调研）：OpenClaw（Clawland AI 开源 Agent 框架）有权限系统；Claude Desktop 无命令级拦截（仅 MCP）；Grok Build（Grok CLI 前身）hooks 格式同 Claude Code。
 
 ## 覆盖率（2026-08 更新）

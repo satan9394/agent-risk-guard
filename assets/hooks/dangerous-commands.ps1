@@ -607,8 +607,13 @@ if ($cmd -match '(?i)\bdocker\s+(run|exec)\b[^|;&\n]*\b(rm|rmdir|remove-item|shu
     Deny-Command 'docker 容器内删除/破坏操作（含挂载卷逃逸面）'
 }
 
+# 2026-11-11: git 全局选项（-C <path> / -c k=v / --git-dir=…）可出现在子命令前。
+# 实测 `git -C <repo> reset --hard` 会绕过下面所有 git 判据（omp 通过 RiskGuard 桥时放行并丢了改动）。
+# 检测前只对副本剥掉这类选项，不改原命令；规则仍由后面的统一判定。
+$gitScan = [regex]::Replace($cmd, '(?i)\bgit(?:\s+(?:-C|-c)\s+(?:"[^"]*"|''[^'']*''|\S+)|\s+--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\S+|\s+--(?:no-pager|paginate|bare|literal-pathspecs|no-optional-locks))+', 'git')
+
 # 26) R2 新增：git gc --prune / git reflog expire（不可恢复清除 git 对象/历史）
-if ($cmd -match '(?i)\bgit\s+gc\b.*--prune|\bgit\s+reflog\s+expire\b') {
+if ($gitScan -match '(?i)\bgit\s+gc\b.*--prune|\bgit\s+reflog\s+expire\b') {
     Deny-Command 'git 对象/历史不可恢复清除操作'
 }
 
@@ -633,19 +638,19 @@ if ($cmd -match ($CMD_PRE + 'chmod\s+(?:-[^ ]+\s+)?(?:777|0777|a\+rwx)\s+')) {
 # R4-02 修复：switch 用 -cmatch 精确大写 -C（-c 创建分支是安全操作，不得误拦）
 # 2026-09-10 跨平台测试补缺口：checkout -- <file>、restore <file>（原只匹配整目录形态）；
 # 误伤防线：git restore --help/--version 放行
-if ($cmd -match '(?i)\bgit\s+restore\s+--(?:help|version)\b') {
+if ($gitScan -match '(?i)\bgit\s+restore\s+--(?:help|version)\b') {
     # 帮助/版本 → 放行
-} elseif ($cmd -match '(?i)\bgit\s+(?:clean\s+-f|reset\s+--hard|checkout\s+--(?:\s|$)|restore(?:\s|$))') {
+} elseif ($gitScan -match '(?i)\bgit\s+(?:clean\s+-f|reset\s+--hard|checkout\s+--(?:\s|$)|restore(?:\s|$))') {
     Deny-Command 'git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止'
 }
-if ($cmd -cmatch '\bgit\s+switch\s+-C\b') {
+if ($gitScan -cmatch '\bgit\s+switch\s+-C\b') {
     Deny-Command 'git switch -C 强制重置分支，丢弃更改，禁止'
 }
-if ($cmd -match '(?i)\bgit\s+worktree\s+remove\s+--force') {
+if ($gitScan -match '(?i)\bgit\s+worktree\s+remove\s+--force') {
     Deny-Command 'git worktree remove --force 丢弃工作区更改，禁止'
 }
 # R3+R4 修复：--force 后须有空白/结尾（放开 --force-with-lease），且覆盖 -f 短标志（R4-01）
-if ($cmd -match '(?i)\bgit\s+push\s+.*--force(?:\s|$|\.)|\bgit\s+push\s+.*(?<![-\w])-f(?:\s|$|\.)') {
+if ($gitScan -match '(?i)\bgit\s+push\s+.*--force(?:\s|$|\.)|\bgit\s+push\s+.*(?<![-\w])-f(?:\s|$|\.)') {
     Deny-Command 'git push 强制推送（-f/--force，非 --force-with-lease）覆盖远程历史，禁止'
 }
 # R7c（2026-09-21）：删除标志**不必是 `branch` 之后第一个 token**。旧写法
@@ -661,20 +666,20 @@ if ($cmd -match '(?i)\bgit\s+push\s+.*--force(?:\s|$|\.)|\bgit\s+push\s+.*(?<![-
 #   字符类必须**互不相交**（token 类排除空白、分隔符只吃空白）。否则 `'git branch' + 5 万空格
 #   + '-d'` 会从 0.6ms 劣化到 4403ms。`[ \t]` 而非 `\s` 还保证「标志必须处于 token 起点」，
 #   使 `--merged` / `feat-d` 这类词内 `-d` 不被误伤。
-if ($cmd -match '(?i)\bgit\s+branch[ \t](?:[^;&|\n \t]*[ \t])*(?:--delete|-[A-Za-z]*[dD])') {
+if ($gitScan -match '(?i)\bgit\s+branch[ \t](?:[^;&|\n \t]*[ \t])*(?:--delete|-[A-Za-z]*[dD])') {
     Deny-Command 'git 删除分支（branch -d/-D/--delete 及其等价组合），分支引用删除不可逆，禁止'
 }
 # R7c（2026-09-21）：与 DSH patch 对齐。DSH 自 R4 起就拦 `git update-ref` / `filter-branch`，
 # 而 core / ps1 / sh / opencode 四端**全漏** —— `git update-ref -d refs/heads/x` 与
 # `git branch -d x` 等价，`filter-branch` 重写历史，都不可逆。
-if ($cmd -match '(?i)\bgit\s+(?:update-ref|filter-branch)\b') {
+if ($gitScan -match '(?i)\bgit\s+(?:update-ref|filter-branch)\b') {
     Deny-Command 'git update-ref / filter-branch 改写分支引用或重写历史，禁止'
 }
-if ($cmd -match '(?i)\bgit\s+stash\s+drop\b') {
+if ($gitScan -match '(?i)\bgit\s+stash\s+drop\b') {
     Deny-Command 'git stash drop 永久删除 stash，禁止'
 }
 # GAN P1-包装变体：git rm（永久删除文件）
-if ($cmd -match '(?i)\bgit\s+rm\b') {
+if ($gitScan -match '(?i)\bgit\s+rm\b') {
     Deny-Command 'git rm 是永久删除（不进回收站），禁止'
 }
 # R3 新发现：wmic shadowcopy delete（勒索软件前置；大小写不敏感）

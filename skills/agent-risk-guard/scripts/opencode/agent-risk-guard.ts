@@ -304,7 +304,10 @@ function detectPerlRuby(s: string): Block | null {
 }
 
 function detectGit(s: string): Block | null {
-  const lo = s.toLowerCase()
+  // 2026-11-11: git 全局选项（-C <path> / -c k=v / --git-dir=…）可出现在子命令前；
+  // 不归一化时 `git -C <repo> reset --hard` 会绕过下面所有判据（omp 经 RiskGuard 桥实测放行并丢改动）。
+  const gitCmd = s.replace(/\bgit(?:\s+(?:-C|-c)\s+(?:"[^"]*"|'[^']*'|\S+)|\s+--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\S+|\s+--(?:no-pager|paginate|bare|literal-pathspecs|no-optional-locks))+/gi, "git")
+  const lo = gitCmd.toLowerCase()
   if (/^git\s+clean\b/.test(lo))
     return { policy: P.GIT_CLEAN_DESTRUCTIVE, reason: "git clean can irreversibly discard uncommitted files." }
   if (/^git\s+reset\b/.test(lo) && /--hard/.test(lo))
@@ -330,7 +333,7 @@ function detectGit(s: string): Block | null {
   if (/\bgit\s+stash\s+drop\b/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git stash drop permanently discards stashes." }
   // switch -C 用原始 s 判断（lo 已小写化；s 保留大小写，-C 大写才匹配，安全的 -c 不误拦）
-  if (/\bgit\s+switch\s+-C\b/.test(s))
+  if (/\bgit\s+switch\s+-C\b/.test(gitCmd))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git switch -C force-resets branch." }
   if (/\bgit\s+gc\b[^;&|]*--prune/.test(lo))
     return { policy: P.GIT_WORKTREE_DISCARD, reason: "git gc --prune irreversibly drops objects." }

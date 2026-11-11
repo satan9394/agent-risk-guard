@@ -15,6 +15,28 @@
 
 ### Changed
 
+- **四个 Node 系 Agent 接入机器硬门禁：Pi / Oh My Pi (omp) / Kimi Code / MiniMax Code（D3，2026-11-11）**：
+  新增共用桥 `assets/shared/riskguard-bridge.mjs`（把各 agent 的 hook 事件转成命令 → 调**同一份**
+  `assets/hooks/dangerous-commands.ps1` → 按各家的阻断协议返回；规则不复制）与 Pi/omp 共用扩展
+  `assets/pi/riskguard-extension.ts`（`pi.on("tool_call")`，桥异常时 fail-closed）。落点：Pi
+  `~/.pi/agent/extensions/riskguard.ts`、omp `~/.omp/agent/hooks/pre/riskguard.ts`（omp 只扫
+  `hooks/pre|post/`）、Kimi `~/.kimi-code/config.toml` 的 `[[hooks]]` PreToolUse、MiniMax
+  `~/.minimax/hooks.json` 的 PreToolUse。`riskguard-wiring-check.ps1` 新增第 7 段做哈希/幂等接线
+  （Kimi 追加 TOML、MiniMax 合并式写 JSON，写前备份到 `~/.risk-guard-backup/`）。
+  **真实会话（Windows）**：四个 CLI 执行 `git reset --hard HEAD` 全部被拒且未提交改动保留，
+  `git status --short` 全部放行。边界：只覆盖 shell 工具；Kimi / MiniMax 的 hook 语义是 fail-open
+  （崩溃/超时放行），Pi / omp 的扩展在桥异常时 fail-closed。`compatibility.json` 已按实测写
+  D3 + 版本（Pi 1.5.2 / omp 18.18.8 / Kimi 2.5.3 / MiniMax 0.7.6），README 支持表、
+  `references/pi-aider.md`、`references/agent-matrix.md` 同步。
+  **顺带修掉实测暴露的规则缺口**：omp 把命令包成 `git -C <repo> reset --hard` 时，ps1/sh/OpenCode
+  插件/deploy+dsh 的 git 判据都只看 `git <subcommand>`，直接放行并丢了改动。ps1 增加 `$gitScan`
+  归一化（剥掉 `-C/-c/--git-dir=…` 前缀后再判），sh 用 `sed` 做同形归一化，OpenCode 插件在
+  `detectGit` 前归一化，`defaultDenyRules()` 与 dsh patch 同步补一条伞形规则（rule-alignment 保持逐条一致）；
+  `tests/adapter/riskguard-bridge.test.ts` 增加 `-C` / `--git-dir` 拒绝用例，`decision-parity` 复跑通过。
+  生产侧 dsh desktop/headless 两份 profile 没有 `# N3 预算闸门` 标记，`-Fix` 无法自动追加新规则，
+  已按 web profile 的同一条规则手工插入（写前备份到 `~/.risk-guard-backup/riskguard-wiring-check/`），
+  三份 profile 现在都含新规则且巡检 exit 0。
+
 - **Cursor 正式接入：Windows D2 → D3（2026-11-08，真机会话）**：新增 `scripts/riskguard-wiring-check.ps1`
   的 cursor 段——把单源 `assets/hooks/dangerous-commands.ps1` 复制到 `~/.cursor/hooks/`，并**幂等合并**
   `~/.cursor/hooks.json` 的一条 `preToolUse`（`matcher: "Shell"`、`timeout: 20`、`failClosed: false`）；

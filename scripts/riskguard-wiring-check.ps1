@@ -80,11 +80,17 @@ $srcPs1    = Join-Path $repo 'assets\hooks\dangerous-commands.ps1'
 $srcPs1Agy = Join-Path $repo 'assets\hooks\agy-dangerous-commands.ps1'
 $srcOc     = Join-Path $repo 'assets\opencode\agent-risk-guard.ts'
 $srcDsh    = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
+$srcBridge = Join-Path $repo 'assets\shared\riskguard-bridge.mjs'
+$srcPiExt  = Join-Path $repo 'assets\pi\riskguard-extension.ts'
+$srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.sh'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
 Write-Check '单源 dsh patch 存在' (Test-Path $srcDsh) $srcDsh
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh)) { exit 2 }
+Write-Check '单源 shared bridge 存在' (Test-Path $srcBridge) $srcBridge
+Write-Check '单源 pi 扩展存在' (Test-Path $srcPiExt) $srcPiExt
+Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -714,6 +720,121 @@ Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'
 $agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'agy hooks.json' $agyOk $agyHooks
+
+# ---- 7. Pi / omp / Kimi Code / MiniMax Code（2026-11-11）----
+# 四个 Node 系 agent 共用一套「扩展/钩子 → ~/.risk-guard/riskguard-bridge.mjs →
+# 同一份 assets/hooks/dangerous-commands.ps1」链路。规则仍只在 ps1 单源里；
+# 这一节只负责把桥、引擎副本和各自的接线装到位，且全部幂等。
+Write-Host "`n[Pi / omp / Kimi Code / MiniMax Code]"
+
+$rgHome = Join-Path $userHome '.risk-guard'
+$rgTargets = @(
+  @{ dest = (Join-Path $rgHome 'riskguard-bridge.mjs');   src = $srcBridge; label = 'shared bridge' },
+  @{ dest = (Join-Path $rgHome 'dangerous-commands.ps1'); src = $srcPs1;    label = 'shared ps1 engine' },
+  @{ dest = (Join-Path $rgHome 'dangerous-commands.sh');  src = $srcSh;     label = 'shared sh engine' }
+)
+foreach ($t in $rgTargets) {
+  $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
+  Write-Check ("shared: " + $t.label) $ok $t.dest
+  if (-not $ok) { Restore-Single-Source $t.dest $t.src $t.label }
+}
+
+$piDest  = Join-Path $userHome '.pi\agent\extensions\riskguard.ts'
+$ompDest = Join-Path $userHome '.omp\agent\hooks\pre\riskguard.ts'
+$extTargets = @(
+  @{ dest = $piDest;  label = 'pi extension' },
+  @{ dest = $ompDest; label = 'omp extension' }
+)
+foreach ($t in $extTargets) {
+  $ok = Test-Hash (Get-FileHash $srcPiExt -Algorithm SHA256).Hash $t.dest
+  Write-Check ("extension: " + $t.label) $ok $t.dest
+  if (-not $ok) { Restore-Single-Source $t.dest $srcPiExt $t.label }
+}
+
+# 稳定入口优先：nvm 的 .nodejs 是 junction，换 Node 版本不会失效；找不到再退回 PATH 上的 node
+$nodeExe = Join-Path $userHome 'AppData\Local\Author Software\nvm\.nodejs\node.exe'
+if (-not (Test-Path $nodeExe)) {
+  $nodeCmd = Get-Command node -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($nodeCmd -and $nodeCmd.Source) { $nodeExe = $nodeCmd.Source } else { $nodeExe = 'node' }
+}
+$nodePosix   = $nodeExe.Replace('\', '/')
+$bridgePosix = (Join-Path $rgHome 'riskguard-bridge.mjs').Replace('\', '/')
+
+# Kimi Code：config.toml 的 [[hooks]] PreToolUse（TOML 字面量字符串，路径用正斜杠交给 Git Bash）
+$kimiCfg = Join-Path $userHome '.kimi-code\config.toml'
+$kimiRaw = if (Test-Path $kimiCfg) { Get-Content $kimiCfg -Raw -Encoding UTF8 } else { '' }
+$kimiOk = ($kimiRaw -match [regex]::Escape($bridgePosix))
+Write-Check 'kimi config.toml PreToolUse hook' $kimiOk $kimiCfg
+if (-not $kimiOk -and $Fix) {
+  try {
+    if (-not (Test-Path (Split-Path -Parent $kimiCfg))) { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $kimiCfg) | Out-Null }
+    if (Test-Path $kimiCfg) { Backup-File $kimiCfg }
+    $kimiLine = "command = '""$nodePosix"" ""$bridgePosix""'"
+    if ($kimiRaw -match 'riskguard-bridge\.mjs') {
+      # 已有一条但指向旧位置（例如任务目录）：只改 command 行，保留其余 hook 配置
+      $kimiNew = [regex]::Replace($kimiRaw, "(?m)^command = '.*riskguard-bridge\.mjs.*'$", $kimiLine)
+      [System.IO.File]::WriteAllText($kimiCfg, $kimiNew, [System.Text.UTF8Encoding]::new($false))
+      Write-Host "  [Fix] kimi config.toml 的 PreToolUse command 已改指 ~/.risk-guard/" -ForegroundColor Cyan
+    } else {
+      $kimiBlock = "`r`n[[hooks]]`r`nevent = ""PreToolUse""`r`n$kimiLine`r`ntimeout = 10`r`n"
+      Add-Content -LiteralPath $kimiCfg -Value $kimiBlock -Encoding UTF8 -NoNewline
+      Write-Host "  [Fix] kimi config.toml 已追加 PreToolUse hook" -ForegroundColor Cyan
+    }
+    $issues = @($issues | Where-Object { $_ -ne 'kimi config.toml PreToolUse hook' })
+  } catch { Write-Host ("  [Fix] kimi 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# MiniMax Code：用户级 hooks.json（Claude 兼容 PreToolUse，原生工具名 bash）
+$mmHooks = Join-Path $userHome '.minimax\hooks.json'
+$mmRaw = if (Test-Path $mmHooks) { Get-Content $mmHooks -Raw -Encoding UTF8 } else { '' }
+$mmOk = ($mmRaw -match [regex]::Escape($bridgePosix))
+Write-Check 'minimax hooks.json PreToolUse hook' $mmOk $mmHooks
+if (-not $mmOk -and $Fix) {
+  $mmHelper = Join-Path $env:TEMP 'riskguard-minimax-hooks.cjs'
+  @'
+const fs = require('fs');
+const target = process.argv[2];
+const node = process.argv[3];
+const bridge = process.argv[4];
+let cfg = {};
+if (fs.existsSync(target)) {
+  try { cfg = JSON.parse(fs.readFileSync(target, 'utf8')); }
+  catch (e) { process.exit(3); }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) process.exit(3);
+cfg.enabled = true;
+if (!cfg.hooks || typeof cfg.hooks !== 'object') cfg.hooks = {};
+if (!Array.isArray(cfg.hooks.PreToolUse)) cfg.hooks.PreToolUse = [];
+const cmd = '"' + node + '" "' + bridge + '"';
+let updated = 0;
+for (const g of cfg.hooks.PreToolUse) {
+  if (!g || !Array.isArray(g.hooks)) continue;
+  for (const h of g.hooks) {
+    if (h && typeof h.command === 'string' && /riskguard-bridge/.test(h.command)) {
+      h.command = cmd;
+      h.commandWindows = cmd;
+      h.type = 'command';
+      h.timeout = 10;
+      updated++;
+    }
+  }
+}
+if (updated === 0) {
+  cfg.hooks.PreToolUse.push({ matcher: 'bash|shell|terminal', hooks: [{ type: 'command', name: 'RiskGuard', command: cmd, commandWindows: cmd, timeout: 10 }] });
+}
+fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+'@ | Set-Content -Path $mmHelper -Encoding UTF8
+  if (Test-Path $mmHooks) { Backup-File $mmHooks }
+  $mmParent = Split-Path -Parent $mmHooks
+  if (-not (Test-Path $mmParent)) { New-Item -ItemType Directory -Force -Path $mmParent | Out-Null }
+  node $mmHelper $mmHooks $nodePosix $bridgePosix
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "  [Fix] minimax hooks.json 已合并 PreToolUse（原文备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'minimax hooks.json PreToolUse hook' })
+  } else {
+    Write-Host "  [Fix] minimax hooks.json 合并失败（node 退出码 $LASTEXITCODE，原文件可能不是合法 JSON）" -ForegroundColor Red
+  }
+}
 
 # ---- 汇总 ----
 Write-Host ""

@@ -792,52 +792,378 @@
     },
     "pi": {
       "display": "Pi",
-      "integration": "none",
-      "enforcement": "none",
+      "integration": "tool_call extension (~/.pi/agent/extensions)",
+      "enforcement": "hard",
       "verification": {
-        "windows": "D0",
-        "macos": "D0",
-        "linux": "D0"
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
       },
-      "notes": "无实现（adapter 目录为空），Unsupported。",
+      "notes": "2026-11-11 Windows 实机 D3（pi 1.5.2）：~/.pi/agent/extensions/riskguard.ts 在 pi.on('tool_call') 里把 bash 命令交给 ~/.risk-guard/riskguard-bridge.mjs，再由同一份 assets/hooks/dangerous-commands.ps1 判 deny；返回 {block:true,reason}。实测 `pi -p \"git reset --hard HEAD\"` 被拒绝、未提交改动保留，`git status --short` 正常放行。桥在规则引擎异常时返回 block（fail-closed）。只覆盖 shell 工具；write/edit 与 MCP 未接。",
       "surfaces": {
-        "shell": "not-applicable",
-        "filesystem": "not-applicable",
-        "git": "not-applicable",
-        "mcp": "not-applicable",
-        "network": "not-applicable"
-      },
-      "enforcementDetail": {
-        "preExecutionHook": "not-applicable",
-        "postExecutionHook": "not-applicable",
-        "hardDeny": "not-applicable",
-        "failMode": "not-applicable"
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
       },
       "sandbox": {
-        "available": "not-applicable",
-        "osEnforced": "not-applicable"
+        "available": "unknown",
+        "osEnforced": "unknown"
       },
       "policy": {
-        "userLevel": "not-applicable",
-        "systemLevel": "not-applicable",
-        "enterpriseLevel": "not-applicable",
-        "policyScope": []
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
       },
       "bypass": {
-        "userCanDisable": "not-applicable",
-        "agentCanBypass": "not-applicable"
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "hookFailureSemantics": "fail-closed",
       "conditionalAvailability": [],
-      "securityBoundaries": [],
-      "capabilities": {},
+      "securityBoundaries": [
+        "L0",
+        "L1",
+        "L2"
+      ],
       "componentInventory": {
         "agent": "pi",
-        "version": "unknown",
-        "adapter": "none",
-        "hook": "none",
-        "runtime": "none",
-        "policy": "none"
+        "version": "1.5.2",
+        "adapter": "assets/pi/riskguard-extension.ts + assets/shared/riskguard-bridge.mjs",
+        "hook": "tool_call extension",
+        "runtime": "node",
+        "policy": "default-policy"
+      }
+    },
+    "omp": {
+      "display": "Oh My Pi (omp)",
+      "integration": "tool_call extension (~/.omp/agent/hooks/pre)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（omp 18.18.8，Bun 1.4.4 运行时）：omp 的原生发现只扫 ~/.omp/agent/hooks/pre|post/*.ts，riskguard.ts 与 Pi 共用同一扩展（pi.on('tool_call') → 桥 → 同一 ps1 引擎）。实测 `omp -p \"git reset --hard HEAD\"` 被 block、未提交改动保留，`git status --short` 放行。桥异常时 fail-closed。只覆盖 shell；omp 启动时自带的一批 MCP 目录不在门禁范围。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": [
+        "L0",
+        "L1",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "omp",
+        "version": "18.18.8",
+        "adapter": "assets/pi/riskguard-extension.ts + assets/shared/riskguard-bridge.mjs",
+        "hook": "tool_call extension",
+        "runtime": "node (hosted by omp/Bun)",
+        "policy": "default-policy"
+      }
+    },
+    "kimi-code": {
+      "display": "Kimi Code",
+      "integration": "PreToolUse hook ([[hooks]] in config.toml)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（kimi 2.5.3）：~/.kimi-code/config.toml 的 [[hooks]] PreToolUse 调 ~/.risk-guard/riskguard-bridge.mjs（桥读 stdin 事件并转给同一 ps1 引擎，deny 时 exit 2 + stderr）。实测 `kimi -p \"git reset --hard HEAD\"` 显示 HOOK 已拦截、未提交改动保留，`git status --short` 放行。官方语义是 hook 崩溃/超时/非 0/2 退出码一律 fail-open（文档明示），所以这是「命中即硬拒 + 故障开放」；已知桌面端 1.1.0 不执行 config.toml 的 [[hooks]]（MoonshotAI/kimi-code#4254），CLI 正常。只覆盖 shell 工具。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-open"
+      },
+      "hookFailureSemantics": "fail-open",
+      "conditionalAvailability": [
+        {
+          "feature": "hook",
+          "condition": "Kimi Code CLI（桌面端 1.1.0 曾不执行 config.toml 的 [[hooks]]，见 issue #4254）",
+          "state": "supported"
+        }
+      ],
+      "securityBoundaries": [
+        "L0",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "kimi-code",
+        "version": "2.5.3",
+        "adapter": "assets/shared/riskguard-bridge.mjs + assets/hooks/dangerous-commands.ps1",
+        "hook": "PreToolUse hook ([[hooks]])",
+        "runtime": "node bridge",
+        "policy": "default-policy"
+      }
+    },
+    "minimax-code": {
+      "display": "MiniMax Code",
+      "integration": "PreToolUse hook (~/.minimax/hooks.json)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（mcode 0.7.6）：用户级 ~/.minimax/hooks.json 的 PreToolUse matcher `bash|shell|terminal` 调 ~/.risk-guard/riskguard-bridge.mjs（deny 时 exit 2 + stderr，MiniMax 把 stderr 作为拒绝原因）。实测 `mcode exec ... \"git reset --hard HEAD\"` 被拒、未提交改动保留，`git status --short` 放行。用户 hooks.json 必须带顶层 \"enabled\": true。官方语义：非 0/2 退出码与超时都按未运行处理（fail-open），故同为「命中即硬拒 + 故障开放」。只覆盖 shell 工具；Desktop 与 TUI 都读该文件。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-open"
+      },
+      "hookFailureSemantics": "fail-open",
+      "conditionalAvailability": [],
+      "securityBoundaries": [
+        "L0",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "minimax-code",
+        "version": "0.7.6",
+        "adapter": "assets/shared/riskguard-bridge.mjs + assets/hooks/dangerous-commands.ps1",
+        "hook": "PreToolUse hook (hooks.json)",
+        "runtime": "node bridge",
+        "policy": "default-policy"
       }
     }
   }

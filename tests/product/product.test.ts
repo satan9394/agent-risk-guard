@@ -149,17 +149,20 @@ test('compatibility: 诚实等级 — claude/opencode/dsh 本机 D3，codex 应�
   assert.equal(levelAtLeast(oc, 'D3'), true, 'opencode 应达到 D3（本机实测硬阻断）');
   assert.equal(cx, 'D3', 'codex 本机为应用形态（非 CLI 二进制），2026-09-06 应用内真实会话拦截确认升 D3（拦截来自应用策略/沙箱层，hook 触发待补测，见 notes）');
   assert.equal(levelAtLeast(dsh, 'D3'), true, 'dsh pre-execute 门禁本机实测为 D3');
+  for (const id of ['pi', 'omp', 'kimi-code', 'minimax-code']) {
+    assert.equal(levelAtLeast(c.agents[id].verification.windows, 'D3'), true, `${id} 本机实测为 D3`);
+  }
 });
 
 test('compatibility: enforce-soft 的 agent 必须显示 soft（不误报 hard）', () => {
   const c = loadCompatibility();
   assert.equal(c.agents['grok'].enforcement, 'soft');
-  assert.equal(c.agents['pi'].enforcement, 'none');
+  assert.equal(c.agents['pi'].enforcement, 'hard');
 });
 
 test('compatibility: describeAgent 平台缺省回退 D1', () => {
-  const d = describeAgent('pi', 'windows');
-  assert.equal(d.level, 'D0');
+  const d = describeAgent('pi', 'freebsd');
+  assert.equal(d.level, 'D1');
   const g = describeAgent('grok', 'windows');
   assert.equal(g.enforcement, 'soft');
 });
