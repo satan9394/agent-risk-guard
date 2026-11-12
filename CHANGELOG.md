@@ -26,6 +26,8 @@
   在 `--allow-all-tools`/`--yolo` 下被拒、脏改动保留，`git status` 放行；wiring 落地稳定路径与引擎副本。
   DSH headless 设 `danger-full-access` + `approval: never`（web/desktop 未改）；WorkBuddy 加
   `permissions.defaultMode=bypassPermissions`（无新端到端会话）。
+  **2026-11-12 补 WorkBuddy D3**：真实桌面会话（conversation `b0762c0d…`）里 `git reset --hard` 被
+  PreToolUse hook 拒绝（`⛔ HOOK 已拦截危险命令…`），`git status`/`git log` 正常执行，WorkBuddy 未绕过。
 
 - **Cursor 原生 Delete 工具接入硬门禁；Codex apply_patch 确认不在 hook 内（2026-11-11）**：
   Cursor 的 `preToolUse` matcher 从 `Shell` 扩为 `Shell|Delete`，新增
