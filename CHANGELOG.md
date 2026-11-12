@@ -15,6 +15,16 @@
 
 ### Changed
 
+- **子 Agent 攻坚：Codex apply_patch、Copilot D3、DSH/WorkBuddy 权限（2026-11-12）**：
+  Codex 0.167.1 起 `apply_patch` 已是 PreToolUse 的合法 subject（`tool_input.command` 为 patch 文本），
+  但 hook 必须先由 TUI 授信，未授信静默跳过；当前模型走 shell 的 `apply_patch` CLI，因此把
+  `*** Delete File:` / `*** Move to:` 加进共享引擎（ps1/sh）、deploy/dsh 规则与 OpenCode 插件，
+  已授信的 Bash hook 直接拦下并实测拒绝，文件保留。Copilot CLI 1.0.109 接入
+  `~/.copilot/hooks/riskguard.json`（PascalCase `PreToolUse`）→ 适配器 → 共享引擎，D3：`git reset --hard`
+  在 `--allow-all-tools`/`--yolo` 下被拒、脏改动保留，`git status` 放行；wiring 落地稳定路径与引擎副本。
+  DSH headless 设 `danger-full-access` + `approval: never`（web/desktop 未改）；WorkBuddy 加
+  `permissions.defaultMode=bypassPermissions`（无新端到端会话）。
+
 - **Cursor 原生 Delete 工具接入硬门禁；Codex apply_patch 确认不在 hook 内（2026-11-11）**：
   Cursor 的 `preToolUse` matcher 从 `Shell` 扩为 `Shell|Delete`，新增
   `assets/hooks/cursor-riskguard-adapter.ps1` 把共享引擎的判定翻译成 Cursor 的

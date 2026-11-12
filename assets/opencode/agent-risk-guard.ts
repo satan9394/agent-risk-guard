@@ -349,6 +349,15 @@ function detectGit(s: string): Block | null {
   return null
 }
 
+// 2026-11-12: apply_patch deletes/moves a file without the recycle bin. The
+// native tool's command is the patch text; a shell call to apply_patch carries
+// the same markers inside the command.
+function detectApplyPatch(s: string): Block | null {
+  if (/(?:^|\n)\s*\*\*\*\s*(?:Delete File|Move to):/i.test(s))
+    return { policy: P.PERMANENT_DELETE_POSIX, reason: "apply_patch deletes or moves a file without the recycle bin." }
+  return null
+}
+
 function detectDisk(s: string): Block | null {
   const lo = s.toLowerCase()
   if (/^(?:format|format\.com)(?:\.exe)?\b/.test(lo) && /\b[a-z]:/.test(lo))
@@ -517,7 +526,7 @@ function analyzeCommand(command: string): AR {
     if (rd) return { blocked: true, policy: rd.policy, reason: rd.reason, command }
 
     // Run all detectors
-    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectDisk, detectRecycleBin, detectPipe, detectDynamicExec]
+    const detectors = [detectPOSIX, detectPowerShell, detectCMD, detectPython, detectNode, detectPerlRuby, detectGit, detectApplyPatch, detectDisk, detectRecycleBin, detectPipe, detectDynamicExec]
     for (const det of detectors) {
       const r = det(t)
       if (r) {

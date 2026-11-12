@@ -84,6 +84,7 @@ $srcBridge = Join-Path $repo 'assets\shared\riskguard-bridge.mjs'
 $srcPiExt  = Join-Path $repo 'assets\pi\riskguard-extension.ts'
 $srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.sh'
 $srcCursorAdapter = Join-Path $repo 'assets\hooks\cursor-riskguard-adapter.ps1'
+$srcCopilotAdapter = Join-Path $repo 'assets\hooks\copilot-riskguard-adapter.ps1'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
@@ -92,7 +93,8 @@ Write-Check '单源 shared bridge 存在' (Test-Path $srcBridge) $srcBridge
 Write-Check '单源 pi 扩展存在' (Test-Path $srcPiExt) $srcPiExt
 Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
 Write-Check '单源 cursor 适配器存在' (Test-Path $srcCursorAdapter) $srcCursorAdapter
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter)) { exit 2 }
+Write-Check '单源 copilot 适配器存在' (Test-Path $srcCopilotAdapter) $srcCopilotAdapter
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -119,7 +121,10 @@ $ps1Targets = @(
   @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' },
   # 2026-11-11: Cursor preToolUse 的原生 Delete 工具无法走回收站，单独用适配器翻译
   # Cursor 的 {"permission":"deny"} 协议；Shell 仍转给上面的共享引擎判定。
-  @{ dest = (Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1');      src = $srcCursorAdapter; label = 'cursor adapter' }
+  @{ dest = (Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1');      src = $srcCursorAdapter; label = 'cursor adapter' },
+  # 2026-11-12: Copilot CLI 的 preToolUse 也是自家协议，适配层与引擎一起落到 ~/.copilot/hooks\。
+  @{ dest = (Join-Path $userHome '.copilot\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'copilot engine' },
+  @{ dest = (Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1');     src = $srcCopilotAdapter; label = 'copilot adapter' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -705,6 +710,43 @@ fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
       Write-Host "  [Fix] cursor hooks.json 恢复失败（node 退出码 $LASTEXITCODE）" -ForegroundColor Red
     }
   }
+}
+
+# ---- Copilot CLI（2026-11-12）----
+# 官方用户级 hook：~/.copilot/hooks/*.json；事件名必须 PascalCase PreToolUse（camelCase 的 payload
+# 是 toolName/toolArgs，现有引擎读不到）。deny 用顶层 permissionDecision + exit 2。
+$copilotHooks = Join-Path $userHome '.copilot\hooks\riskguard.json'
+$copilotAdapterPath = Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1'
+$copilotRaw = if (Test-Path $copilotHooks) { Get-Content $copilotHooks -Raw -Encoding UTF8 } else { '' }
+$copilotExpected = $copilotAdapterPath.Replace('\', '\\')
+$copilotExpectedPosix = $copilotAdapterPath.Replace('\', '/')
+$copilotOk = ($copilotRaw -match 'PreToolUse') -and ($copilotRaw.Contains($copilotExpected) -or $copilotRaw.Contains($copilotExpectedPosix))
+Write-Check 'copilot hooks/riskguard.json PreToolUse' $copilotOk $copilotHooks
+if (-not $copilotOk -and $Fix) {
+  try {
+    if (Test-Path $copilotHooks) { Backup-File $copilotHooks }
+    $pwshExe = 'C:\Program Files\PowerShell\7\pwsh.exe'
+    if (-not (Test-Path $pwshExe)) { $pwshExe = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
+    $adapterPosix = $copilotAdapterPath.Replace('\', '/')
+    $obj = @{
+      version = 1
+      hooks = @{
+        PreToolUse = @(
+          @{
+            type = 'command'
+            exec = $pwshExe
+            args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $adapterPosix)
+            timeoutSec = 30
+          }
+        )
+      }
+    }
+    $parent = Split-Path -Parent $copilotHooks
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($copilotHooks, (($obj | ConvertTo-Json -Depth 8) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] copilot hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'copilot hooks/riskguard.json PreToolUse' })
+  } catch { Write-Host ("  [Fix] copilot 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'

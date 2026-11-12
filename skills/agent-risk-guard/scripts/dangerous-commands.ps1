@@ -268,7 +268,7 @@ if (-not [string]::IsNullOrWhiteSpace($Cmd)) {
 # ---- 只拦截 shell 类工具（闭集白名单；Wsl/Nushell 等不在名单者按需求放行）----
 $tn = $data.tool_name
 if ([string]::IsNullOrWhiteSpace($tn)) { exit 0 }
-if ($tn -notmatch '(?i)^(bash|shell|command|execute|powershell|pwsh|zsh|fish|cmd)$') { exit 0 }
+if ($tn -notmatch '(?i)^(bash|shell|command|execute|powershell|pwsh|zsh|fish|cmd|apply_patch)$') { exit 0 }
 
 # ---- shell 工具：command 缺失/为空 → fail-closed deny ----
 if ($null -eq $data.tool_input -or $null -eq $data.tool_input.command) { Deny-Command "shell 工具 ($tn) 缺少 command 字段" }
@@ -685,6 +685,11 @@ if ($gitScan -match '(?i)\bgit\s+rm\b') {
 # R3 新发现：wmic shadowcopy delete（勒索软件前置；大小写不敏感）
 if ($cmd -match '(?i)\bwmic\b[^|;&\n]*(?:shadowcopy|shadowstorage)[^|;&\n]*\bdelete\b|\bwmic\b[^|;&\n]*\bdelete\b') {
     Deny-Command 'wmic 删除（shadowcopy/系统管理）操作，禁止'
+}
+# 2026-11-12: apply_patch 的删除/移动。原生 apply_patch 被 hook 时 tool_input.command 是 patch 文本；
+# shell 里调 apply_patch CLI 时同样以 `*** Delete File:` 出现在命令里 —— 两种路径统一按文本判。
+if ($cmd -match '(?m)(?i)^\s*\*\*\*\s*(?:Delete File|Move to):') {
+    Deny-Command 'apply_patch 删除/移动文件（不经回收站），禁止'
 }
 
 # 31) 任意管道到 shell（P0-05 修复：echo|bash / cat|sh / printf|bash 等）

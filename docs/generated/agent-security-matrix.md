@@ -23,7 +23,7 @@
 | dsh | hard | fail-closed | user | supported | unsupported | fail-closed | L0,L2,L3 | — |
 | cursor | hard | fail-open | user | supported | unknown | fail-open | L0,L2 | — |
 | windsurf | hard | unknown | user | supported | unknown | unknown | L0,L2 | hook:supported@Restricted Mode disabled |
-| copilot | hard | unknown | user,machine | supported | unknown | unknown | L0,L2 | — |
+| copilot | hard | fail-closed | user,machine | supported | unknown | fail-closed | L0,L2 | — |
 | agy | hard | fail-closed | user | supported | unknown | fail-closed | L0,L2 | — |
 | workbuddy | soft | fail-closed | user | supported | unknown | fail-closed | L2 | undefined:undefined@undefined |
 | grok | soft | fail-open | user | supported | unknown | fail-open | L0 | — |
@@ -66,7 +66,7 @@
 |  | filesystem.delete | hard | D3 | — | — |
 | windsurf | shell.execute | hard | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
-| copilot | shell.execute | hard | D2 | — | — |
+| copilot | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 | agy | shell.execute | hard | D3 | — | — |

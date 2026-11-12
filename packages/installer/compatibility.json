@@ -205,7 +205,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（应用自带 codex.exe 副本 0.162.0-alpha.17.2，MSIX OpenAI.Codex 26.1007.2314.0，%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>），~/.codex/ 为完整应用数据目录；独立 CLI 已于 2026-09-26 移除（不保留 `codex` 命令）。机器级 hook 注册面**只有** `~/.codex/hooks.json`（PreToolUse matcher Bash → `~/.codex/hooks/dangerous-commands.ps1`）；`~/.codex/config.toml` 的内联 `[[hooks.PreToolUse]]` 已于 2026-09-30 去重移除（同一层只用一种表示，避免同一脚本每次 Bash 并发跑两遍），config.toml 现仅保留 Codex 自己在 `/hooks` 勾选信任后写入的 `[hooks.state.*]` 信任账本。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。2026-09-07 Codex CLI 0.153.4（install.ps1 安装，%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe）真实会话补测 PASS：codex exec --cd <gitrepo> 会话中模型尝试 git reset --hard HEAD → PreToolUse hook deny（输出 \"Command blocked by PreToolUse hook\"，hook 日志 %TEMP%\\riskguard-hook-calls.log 时间戳 2026-09-07 03:48:46 与 exec 吻合新增 2 条 deny），未提交改动保留（git status 仍 M tracked.txt）——RiskGuard hook 双注册（hooks.json+config.toml，CLI/应用共用 ~/.codex）真实会话拦截验证通过。补充：2026-09-06 应用内手动验证 blocked by policy 来源=应用策略/沙箱层（approval_policy=never+sandbox=unelevated，钩子日志无该次 deny 记录）。2026-09-10 二次实测验证：codex 会话中模型生成测试文件后尝试永久删除（Remove-Item）→ PreToolUse Hook 明确拦截（输出 blocked by policy，hook 禁止该删除命令并提示使用回收站），测试文件保留未删除——与 09-07 git reset 场景互补，删除类 D3 证据链完整闭合。\n2026-10-27：本机已升到 codex-cli 0.164.0（PATH 上的 `codex` 可用；应用形态 MSIX 仍是 26.1007.2314.0）。hooks.json 仍是「危险命令 ps1 + _riskguard node」两条注册，config.toml 无内联重复。真实会话已复验：`codex exec` 下 `git reset --hard` 被 PreToolUse hook 拒绝（\"Command blocked by PreToolUse hook\"，hook 日志 05:51:15 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并真实执行（05:52:11 decision=allow）。\n2026-11-02（0.166.0 复验，D3 重取）：`codex-cli 0.166.0` 上 hooks.json 两条注册仍被宿主合并执行（输出可见 `hook: PreToolUse` 两次），`codex exec -s danger-full-access` 下 `git reset --hard HEAD` 被拒（宿主打印 `Command blocked by PreToolUse hook: ⛔ HOOK 已拦截…`、hook 日志 02:19:13 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并回显真实输出（02:19:58 decision=allow）。0.166.0 的 release notes 无 hook 协议变更；`codex exec` 默认 read-only 沙箱会先于 hook 拦下写操作，取 D3 证据须显式 `-s danger-full-access`（否则只能得到沙箱拒绝、不能证明 hook 生效）。同轮复核决定**保留双注册**：两套引擎在 6 条样本上判定一致，且注册项 spawn 失败会被宿主静默忽略（单条即单点），详见 references/codex.md。\n2026-11-11 侦察（0.166.0）：Codex 的 PreToolUse hook 只对 Bash 工具触发；apply_patch 在 matcher 写成 apply_patch 与 .* 两种情况下都未调用 hook（探针日志为空），而 apply_patch 的 *** Delete File 实际删掉了文件。因此 apply_patch 删除不在现有 hook 门禁内，approval_policy 保持默认 on-request，未拉满；要覆盖它需要 Codex 上游给 apply_patch 提供可拦截的 hook/策略点。",
+      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（应用自带 codex.exe 副本 0.162.0-alpha.17.2，MSIX OpenAI.Codex 26.1007.2314.0，%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>），~/.codex/ 为完整应用数据目录；独立 CLI 已于 2026-09-26 移除（不保留 `codex` 命令）。机器级 hook 注册面**只有** `~/.codex/hooks.json`（PreToolUse matcher Bash → `~/.codex/hooks/dangerous-commands.ps1`）；`~/.codex/config.toml` 的内联 `[[hooks.PreToolUse]]` 已于 2026-09-30 去重移除（同一层只用一种表示，避免同一脚本每次 Bash 并发跑两遍），config.toml 现仅保留 Codex 自己在 `/hooks` 勾选信任后写入的 `[hooks.state.*]` 信任账本。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。2026-09-07 Codex CLI 0.153.4（install.ps1 安装，%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe）真实会话补测 PASS：codex exec --cd <gitrepo> 会话中模型尝试 git reset --hard HEAD → PreToolUse hook deny（输出 \"Command blocked by PreToolUse hook\"，hook 日志 %TEMP%\\riskguard-hook-calls.log 时间戳 2026-09-07 03:48:46 与 exec 吻合新增 2 条 deny），未提交改动保留（git status 仍 M tracked.txt）——RiskGuard hook 双注册（hooks.json+config.toml，CLI/应用共用 ~/.codex）真实会话拦截验证通过。补充：2026-09-06 应用内手动验证 blocked by policy 来源=应用策略/沙箱层（approval_policy=never+sandbox=unelevated，钩子日志无该次 deny 记录）。2026-09-10 二次实测验证：codex 会话中模型生成测试文件后尝试永久删除（Remove-Item）→ PreToolUse Hook 明确拦截（输出 blocked by policy，hook 禁止该删除命令并提示使用回收站），测试文件保留未删除——与 09-07 git reset 场景互补，删除类 D3 证据链完整闭合。\n2026-10-27：本机已升到 codex-cli 0.164.0（PATH 上的 `codex` 可用；应用形态 MSIX 仍是 26.1007.2314.0）。hooks.json 仍是「危险命令 ps1 + _riskguard node」两条注册，config.toml 无内联重复。真实会话已复验：`codex exec` 下 `git reset --hard` 被 PreToolUse hook 拒绝（\"Command blocked by PreToolUse hook\"，hook 日志 05:51:15 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并真实执行（05:52:11 decision=allow）。\n2026-11-02（0.166.0 复验，D3 重取）：`codex-cli 0.166.0` 上 hooks.json 两条注册仍被宿主合并执行（输出可见 `hook: PreToolUse` 两次），`codex exec -s danger-full-access` 下 `git reset --hard HEAD` 被拒（宿主打印 `Command blocked by PreToolUse hook: ⛔ HOOK 已拦截…`、hook 日志 02:19:13 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并回显真实输出（02:19:58 decision=allow）。0.166.0 的 release notes 无 hook 协议变更；`codex exec` 默认 read-only 沙箱会先于 hook 拦下写操作，取 D3 证据须显式 `-s danger-full-access`（否则只能得到沙箱拒绝、不能证明 hook 生效）。同轮复核决定**保留双注册**：两套引擎在 6 条样本上判定一致，且注册项 spawn 失败会被宿主静默忽略（单条即单点），详见 references/codex.md。\n2026-11-11 侦察（0.166.0）：Codex 的 PreToolUse hook 只对 Bash 工具触发；apply_patch 在 matcher 写成 apply_patch 与 .* 两种情况下都未调用 hook（探针日志为空），而 apply_patch 的 *** Delete File 实际删掉了文件。因此 apply_patch 删除不在现有 hook 门禁内，approval_policy 保持默认 on-request，未拉满；要覆盖它需要 Codex 上游给 apply_patch 提供可拦截的 hook/策略点。\n2026-11-12 更新（0.167.1）：apply_patch 已是 PreToolUse 的合法 subject（tool_input.command 是 patch 文本），但 hook 必须先由 TUI 的 \"Trust all and continue\" 授信，未授信时静默跳过（fail-open）。当前 magpie 模型走 shell 的 apply_patch CLI，这条路径被已授信的 Bash hook 新规则（*** Delete File / *** Move to）拦住并实测拒绝；原生 apply_patch 工具要在模型目录暴露它时才走 hook，届时需一次性授信并复测。approval_policy 仍未改。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
@@ -281,7 +281,7 @@
       },
       "componentInventory": {
         "agent": "codex",
-        "version": "0.166.0（codex-cli）",
+        "version": "0.167.1",
         "adapter": "packages/adapters/codex + packages/codex",
         "hook": "PreToolUse hook (hooks.json；config.toml 内联注册已于 2026-09-30 去重移除)",
         "runtime": "node + powershell hook（应用形态：VS Code 扩展 openai.chatgpt + 本地 server codex.exe）",
@@ -297,7 +297,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27（0.2.1-rc.3 复验，D3 重取）：headless profile 默认 route 是 deepseek-official，其 DEEPSEEK_API_KEY 已失效（401），故真实会话用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` 并把 agent-default-model 指向 `command` provider（`deepseek/deepseek-v4.1-flash`）后完成：`git reset --hard` 被门禁拒绝（返回 `Error: 高危：git reset --hard 丢弃工作区改动`、命令未执行、未提交改动保留），同会话 `git status --short` 放行并真实回显。契约层同步复核：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。注：headless 默认组合不含 llm-pi-ai，这是本次需要 overlay 才能用 command 模型的原因。\n2026-11-02（0.2.1-rc.5 复验，D3 重取 + 生产接线修复）：headless profile 现已自带 `llm-pi-ai`（magpie provider）且 `agent-default-model` 指向 `magpie / commandcode/deepseek/deepseek-v4.1-flash`，**无需再打 `--patch` overlay**：`dsh headless <prompt>` 下 `git reset --hard HEAD` 被 pre-execute 门禁拒绝（`Error: 高危：git reset --hard 丢弃工作区改动`）、脏改动保留，同会话 `git status --short` 放行并回显。同轮巡检发现 **desktop profile 的 `cordis.patch.yml` 整段丢了 `deny-risk-commands`**（只剩 llm-pi-ai + agent-default-model，桌面端实际裸奔），已由 `riskguard-wiring-check.ps1 -Fix` 追加注入成功、三个 profile 均 74 条逐条一致；该脚本新增「整段缺失则追加」自愈路径与密封用例 T8。注：`desktop` profile 由 Electron 应用独占管理，CLI 拒绝 `--dump-config`，其生效性只能在应用内或看该 patch 文件本身。",
+      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27（0.2.1-rc.3 复验，D3 重取）：headless profile 默认 route 是 deepseek-official，其 DEEPSEEK_API_KEY 已失效（401），故真实会话用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` 并把 agent-default-model 指向 `command` provider（`deepseek/deepseek-v4.1-flash`）后完成：`git reset --hard` 被门禁拒绝（返回 `Error: 高危：git reset --hard 丢弃工作区改动`、命令未执行、未提交改动保留），同会话 `git status --short` 放行并真实回显。契约层同步复核：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。注：headless 默认组合不含 llm-pi-ai，这是本次需要 overlay 才能用 command 模型的原因。\n2026-11-02（0.2.1-rc.5 复验，D3 重取 + 生产接线修复）：headless profile 现已自带 `llm-pi-ai`（magpie provider）且 `agent-default-model` 指向 `magpie / commandcode/deepseek/deepseek-v4.1-flash`，**无需再打 `--patch` overlay**：`dsh headless <prompt>` 下 `git reset --hard HEAD` 被 pre-execute 门禁拒绝（`Error: 高危：git reset --hard 丢弃工作区改动`）、脏改动保留，同会话 `git status --short` 放行并回显。同轮巡检发现 **desktop profile 的 `cordis.patch.yml` 整段丢了 `deny-risk-commands`**（只剩 llm-pi-ai + agent-default-model，桌面端实际裸奔），已由 `riskguard-wiring-check.ps1 -Fix` 追加注入成功、三个 profile 均 74 条逐条一致；该脚本新增「整段缺失则追加」自愈路径与密封用例 T8。注：`desktop` profile 由 Electron 应用独占管理，CLI 拒绝 `--dump-config`，其生效性只能在应用内或看该 patch 文件本身。\n2026-11-12 权限：headless profile 在 cordis.patch.yml 加 sandbox-policy.mode=danger-full-access + approval.policy=never（原默认 workspace-write 在本机 ACL 报 Win32 5，ask 无 answerer 时直接拒绝）；实测 git status 放行、git reset --hard 与 Remove-Item 被 deny-risk-commands 拒。web/desktop profile 未改，仍按默认审批。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
@@ -540,11 +540,11 @@
       "integration": "preToolUse hook + policy.d machine policy",
       "enforcement": "hard",
       "verification": {
-        "windows": "D2",
+        "windows": "D3",
         "macos": "D2",
         "linux": "D2"
       },
-      "notes": "adapter 已实现（D1/D2 单测，2026-09 官方 hooks-reference 核查）。真实 D3 待本机安装 Copilot CLI（当前 SKIP）；copilot-cli issue #3874（2026-06）显示 preToolUse deny 在部分版本存在不阻断回归 → failMode 记 unknown，不标 D3。machine policy（Layer B）需管理员权限：policy.d + HKLM。",
+      "notes": "adapter 已实现（D1/D2 单测，2026-09 官方 hooks-reference 核查）。真实 D3 待本机安装 Copilot CLI（当前 SKIP）；copilot-cli issue #3874（2026-06）显示 preToolUse deny 在部分版本存在不阻断回归 → failMode 记 unknown，不标 D3。machine policy（Layer B）需管理员权限：policy.d + HKLM。\n2026-11-12 Windows D3（Copilot CLI 1.0.109）：~/.copilot/hooks/riskguard.json 用 PascalCase PreToolUse（camelCase 的 payload 是 toolName/toolArgs，引擎读不到），适配层 copilot-riskguard-adapter.ps1 输出顶层 permissionDecision + exit 2；真实 copilot -p 会话中 git reset --hard 在 --allow-all-tools 与 --yolo 下都被拒、脏改动保留，git status 放行；移走 hook 的负向对照里命令真的执行。命令型 hook 崩溃/非零退出/exit 2 为 fail-closed（官方文档称超时 fail-open，未实测）。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -556,7 +556,7 @@
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
         "hardDeny": "supported",
-        "failMode": "unknown"
+        "failMode": "fail-closed"
       },
       "sandbox": {
         "available": "unknown",
@@ -575,7 +575,7 @@
         "userCanDisable": "supported",
         "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "hookFailureSemantics": "fail-closed",
       "conditionalAvailability": [],
       "securityBoundaries": [
         "L0",
@@ -585,7 +585,7 @@
         "shell.execute": {
           "enforcement": "hard",
           "verification": {
-            "windows": "D2"
+            "windows": "D3"
           }
         },
         "filesystem.write": {
@@ -603,9 +603,9 @@
       },
       "componentInventory": {
         "agent": "copilot",
-        "version": "unknown",
+        "version": "1.0.109",
         "adapter": "packages/adapters/copilot",
-        "hook": "preToolUse hook + policy.d",
+        "hook": "preToolUse hook（PreToolUse，PascalCase）",
         "runtime": "node",
         "policy": "default-policy"
       }
@@ -681,7 +681,7 @@
         "macos": "D0",
         "linux": "D0"
       },
-      "notes": "CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎，与 claude/codex/agy 同一单源）。**与其余 Agent 的关键差别**：WorkBuddy 自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），把删除强制改道回收站；所以接线**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（把「永久删除」类拦截委派给下游 shim），否则会出现「hook 拦下 → 命令不执行 → shim 没机会改道」的死锁；且 hook 文案建议的 VB 回收站路径又被平台硬编码黑名单（Add-Type / New-Object -ComObject / Reflection）拦住。委派后仍拦：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/cleanmgr/$Recycle.Bin）；Clear-Content 显式排除。D2 = 自动化判定实测（tests/adapter/workbuddy-injection.test.ts 钉住注入形状与委派矩阵）；**D3 已取**（2026-09-28 真实 WorkBuddy 会话，conversationId a051ea4d-f94d-4eb8-847a-431e8a3bb9b6）：hook 日志 decision=deny 两条（shred 06:00:52、Clear-Content 06:01:56，均为委派后仍拦的不可逆操作）+ decision=allow 多条（python 分析 / ls / 回收站只读盘点）；委派链路端到端实证——3 个 rm 经 [delete-exempted:RG_ALLOW_DELETE] 放行，7 个测试文件全部落进回收站（$I 元数据原路径/大小/删除时间逐一吻合），永久删除实际发生 0 起。会话自产报告与复现材料入仓 tasks/orchestrator/WORKBUDDY_D3_SESSION_20260928.md 等三件。",
+      "notes": "CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎，与 claude/codex/agy 同一单源）。**与其余 Agent 的关键差别**：WorkBuddy 自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），把删除强制改道回收站；所以接线**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（把「永久删除」类拦截委派给下游 shim），否则会出现「hook 拦下 → 命令不执行 → shim 没机会改道」的死锁；且 hook 文案建议的 VB 回收站路径又被平台硬编码黑名单（Add-Type / New-Object -ComObject / Reflection）拦住。委派后仍拦：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/cleanmgr/$Recycle.Bin）；Clear-Content 显式排除。D2 = 自动化判定实测（tests/adapter/workbuddy-injection.test.ts 钉住注入形状与委派矩阵）；**D3 已取**（2026-09-28 真实 WorkBuddy 会话，conversationId a051ea4d-f94d-4eb8-847a-431e8a3bb9b6）：hook 日志 decision=deny 两条（shred 06:00:52、Clear-Content 06:01:56，均为委派后仍拦的不可逆操作）+ decision=allow 多条（python 分析 / ls / 回收站只读盘点）；委派链路端到端实证——3 个 rm 经 [delete-exempted:RG_ALLOW_DELETE] 放行，7 个测试文件全部落进回收站（$I 元数据原路径/大小/删除时间逐一吻合），永久删除实际发生 0 起。会话自产报告与复现材料入仓 tasks/orchestrator/WORKBUDDY_D3_SESSION_20260928.md 等三件。\n2026-11-12：~/.workbuddy/settings.json 加 permissions.defaultMode=bypassPermissions（备份在 subagents/workbuddy/backup/）；原文件无 permission/approval 键。桌面端未运行、内置 CLI 需认证，本次没有新的端到端会话；2026-09-28 的 D3 仍有效。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",

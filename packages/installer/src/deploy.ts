@@ -40,6 +40,8 @@ export function defaultDenyRules(): GuardRules {
     // 2026-11-11：git 全局选项（-C/-c/--git-dir=…）出现在子命令前时上面两条会失效
     // （omp 实测 `git -C <repo> reset --hard` 被放过并丢了改动）。补一条伞形规则，与 dsh patch 逐条一致。
     '\\bgit\\s+(?:-C\\s+(?:"[^"]*"|\\S+)\\s+|-c\\s+\\S+\\s+|--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\\S+\\s+)+(?:clean|reset|checkout|restore|switch|worktree|stash|branch|update-ref|filter-branch|rm)\\b',
+    // 2026-11-12：apply_patch 的删除/移动（原生工具或 shell 调 apply_patch CLI）
+    '(?m)^\\s*\\*\\*\\*\\s*(?:Delete File|Move to):',
     // R2 新向量（ADVERSARIAL-AUDIT-ROUND2.md 新-1~新-5）
     '\\breg\\s+delete\\b', '\\bcertutil\\b[^|;&\\n]*(-urlcache|-decode)',
     '\\bdocker\\s+(run|exec)\\b', '\\bgit\\s+gc\\b.*--prune', '\\bgit\\s+reflog\\s+expire\\b',

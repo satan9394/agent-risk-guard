@@ -5,8 +5,14 @@
 ## GitHub Copilot CLI
 
 - 规则：`.github/copilot-instructions.md`（项目）+ `~/.copilot/`（全局）
-- hooks/permissions：支持（`~/.copilot/` 下配置）
-- 加固：查 hooks 是否挂载黑名单；`copilot` 的 `--dangerously-bypass-approvals` 类 flag 是否被用（等效 bypass）
+- hooks/permissions：支持。用户级 hook 放 `~/.copilot/hooks/<name>.json`，`version: 1`，事件名必须
+  **PascalCase `PreToolUse`**（camelCase 给的是 `toolName`/`toolArgs`，读不到 `tool_input.command`）。
+- 生产接线（2026-11-12，D3）：`~/.copilot/hooks/riskguard.json` → `copilot-riskguard-adapter.ps1` →
+  共享 `dangerous-commands.ps1`；适配器 deny 输出顶层 `{"permissionDecision":"deny",...}` 并 `exit 2`，
+  **exit 2 同时保证 agent 看到真实理由**（只靠 exit 2 会显示通用错误）。
+- 真实会话：`copilot --prompt "..." --allow-all-tools` 下 `git reset --hard` 被拒、脏改动保留；
+  `git status --short` 放行；`--yolo` 同样拦得住。移走 hook 的负向对照里命令真的执行。
+- 失败语义：命令型 hook 崩溃 / 非零退出 / `exit 2` 都是 **fail-closed**；官方文档称超时 fail-open，未实测。
 
 ## Goose（Block 开源 Agent）
 

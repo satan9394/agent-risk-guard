@@ -604,6 +604,11 @@ if printf '%s' "$cmd" | grep -qiE 'wmic[^;]*(shadowcopy|shadowstorage)[^;]*delet
     deny_command "wmic delete (shadowcopy/system admin) blocked."
 fi
 
+# 2026-11-12: apply_patch 删除/移动（原生工具或 shell 调 apply_patch CLI 都以 *** Delete File: 出现）
+if printf '%s' "$cmd" | grep -qE '(^|[[:space:]])\*\*\*[[:space:]]*(Delete File|Move to):'; then
+    deny_command "apply_patch delete/move is blocked (use the recycle bin through shell)."
+fi
+
 # 8) 磁盘操作（diskpart/format 用命令边界匹配以防 echo 字符串误伤）
 # G3-FIX5/A：CMD_SEG → CMD_PRE（补 sudo / 绝对路径前缀，两端同批；ps1 rule 8 同步由 `\bdiskpart\b` 改为同形锚）。
 if printf '%s' "$cmd" | grep -qiE "${CMD_PRE}diskpart\b|${CMD_PRE}mkfs\.|${CMD_PRE}fdisk|${CMD_PRE}parted|${CMD_PRE}wipefs"; then

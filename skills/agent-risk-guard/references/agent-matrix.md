@@ -17,10 +17,11 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Claude Code | `~/.claude/settings.json` | ✅ | ✅ PreToolUse | ✅ | ✅(mac/Linux) | 中 | claude-code.md |
 | OpenCode | `~/.config/opencode/opencode.json` | ✅ | ✅ 插件 | ✅ | ❌ 无内建 | **低（默认全 allow）** | opencode.md |
-| Codex CLI | `~/.codex/config.toml` + `hooks.json` | ✅ | ✅ PreToolUse | ✅ | ✅(含 Windows) | 中 | codex.md |
-| DeepSeek Harness | `~/.dsh/profiles/*/cordis.patch.yml` | ✅ | ✅ pre-execute | ✅(沙箱+审批) | ✅(仅文件) | 中 | dsh.md |
+| Codex CLI | `~/.codex/config.toml` + `hooks.json` | ✅ | ✅ PreToolUse（Bash；apply_patch 的 shell 形态已拦，原生需授信） | ✅(含 Windows) | ✅(含 Windows) | 中（原生 apply_patch 未授信前 fail-open） | codex.md |
+| DeepSeek Harness | `~/.dsh/profiles/*/cordis.patch.yml` | ✅ | ✅ pre-execute | ✅(沙箱+审批) | ✅(仅文件) | 中（headless 已设 danger-full-access + never；web/desktop 未改） | dsh.md |
 | Antigravity CLI (agy) | `~/.gemini/config/hooks.json` + `hooks/` | ✅ | ✅ PreToolUse run_command | ✅(deny) | — | 中（fail-closed 适配器） | codex.md（复用 codex 规则源）+ agy 内联 |
 | WorkBuddy (CodeBuddy) | `~/.workbuddy/settings.json` + `hooks/` | ✅ | ✅ PreToolUse（CC 兼容） | ✅ | — | 中（**须 RG_ALLOW_DELETE=1**：删除委派给平台 safe-delete，不可逆仍拦） | workbuddy.md |
+| Copilot CLI | `~/.copilot/hooks/` | ✅ | ✅ PreToolUse（PascalCase，**D3 2026-11-12**） | ✅ | — | 中（shell 面；MCP/网络未覆盖） | copilot-goose-grok.md |
 | Cline | VS Code 设置 + `.clinerules` | ✅ | ✅ PreToolUse(v3.36+) | ✅(auto-approve) | — | 中 | cline-kilo-qwen.md |
 | Qwen Code | `~/.config/qwen-code/` + `.qwen/` | ✅ | ✅ PreToolUse | ✅(deny) | — | 中 | cline-kilo-qwen.md |
 | Cursor | `~/.cursor/hooks.json` | ✅ | ✅ preToolUse（`Shell|Delete`，**硬拦，D3 2026-11-11**） | ✅ | — | 中（`Write`/MCP 未覆盖；`beforeShellExecution` 非硬闸门） | cursor-windsurf.md |
