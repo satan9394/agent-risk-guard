@@ -25,6 +25,19 @@
 - [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
 - [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
 
+## DSH 覆盖边界（2026-11-12 登记）
+
+- [ ] **dsh-ops 的 `ops_bash` 不在门禁白名单**：`deny-risk-commands` 只匹配 `exec.name` 为 `pwsh` / `bash`
+  的调用，而 dsh-ops 启用 bash 时发布的是另一个工具 `ops_bash`（自带 MSYS bash）→ 这类调用不过闸。
+  本机 `~/.dsh/profiles/web/cordis.patch.yml` 已用 `dsh-ops` 的 `global.bash: false` + `hidePwsh: false`
+  规避（官方 `pwsh` 保持在位），`agent-preset-registry.selectedDefault` 仍是 `ops-ptc`。
+  **将来若要恢复 `ops_bash`**：必须同时让插件认这个名字（并确认其命令参数名是 `command`），
+  否则等于自带一个不受管的 shell。改动这三项前先核对门禁覆盖面。
+- [x] **PTC 内层调用是否绕过门禁（2026-11-12 源码核实）**：不绕过。`run_code` 内的 `tools.pwsh(...)`
+  走同一个工具管线 —— `@deepseek-ai/dsh-tools` 的 `pipeline.js` 在派发前执行
+  `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`，工具名保持 `pwsh`。本轮**未**单独跑 PTC 会话取证，
+  结论基于 0.2.2-rc.2 安装包源码；真实 PTC 会话（web profile + ops-ptc）尚未复验。
+
 ## 已知过拦（登记延后，不开新轮）
 
 > 项目停止规则：**只有安全方向（放松 / fail-open / 丢拦截）才开新轮，过拦与边角一律登记延后。**

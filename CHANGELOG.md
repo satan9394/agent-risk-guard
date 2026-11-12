@@ -15,6 +15,18 @@
 
 ### Changed
 
+- **DSH 0.2.2-rc.2 适配：规则集去 PCRE 内联标志 + JS 可编译闸门（2026-11-12）**：
+  DSH 的 `deny-risk-commands` 插件用 JS `new RegExp(re, 'i')` 编译规则，`(?m)` 这类 PCRE 内联标志
+  会让整行 `apply()` 抛 `SyntaxError: Invalid group` → 插件不激活 → **删除门禁静默 fail-open**
+  （本机日志 `dsh: warning: 1 entry did not activate`）。已从单源两处
+  （`packages/installer/src/deploy.ts` 的 `defaultDenyRules()` 与 `assets/dsh/deny-risk-commands.patch.yml`）
+  去掉内联标志，并新增 `tests/adversarial/dsh-rule-js-compat.test.ts`：DSH patch 与 `defaultDenyRules()`
+  逐条 `new RegExp(re, 'i')`，任一条编译失败即红（回退证明：把 `(?m)` 加回去该测试 2/4 红）。
+  同轮核实 rc.2 的 insert id/config 形状未变（`--dump-config` 可见 `- id: deny-risk-commands`），
+  并写清 `ops-ptc` 的覆盖面：PTC `run_code` 内层调用仍以 `pwsh` 过 `tools/pre-execute`，
+  缺口只在 dsh-ops 的 `ops_bash`（本机 web profile 以 `global.bash: false` + `hidePwsh: false` 规避）。
+  D3 在 0.2.2-rc.2 重取：`pwsh` 调 `git reset --hard HEAD` 被拒、脏改动保留，`git status --short` 放行。
+
 - **子 Agent 攻坚：Codex apply_patch、Copilot D3、DSH/WorkBuddy 权限（2026-11-12）**：
   Codex 0.167.1 起 `apply_patch` 已是 PreToolUse 的合法 subject（`tool_input.command` 为 patch 文本），
   但 hook 必须先由 TUI 授信，未授信静默跳过；当前模型走 shell 的 `apply_patch` CLI，因此把
