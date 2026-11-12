@@ -19,7 +19,9 @@
   Codex 0.167.1 起 `apply_patch` 已是 PreToolUse 的合法 subject（`tool_input.command` 为 patch 文本），
   但 hook 必须先由 TUI 授信，未授信静默跳过；当前模型走 shell 的 `apply_patch` CLI，因此把
   `*** Delete File:` / `*** Move to:` 加进共享引擎（ps1/sh）、deploy/dsh 规则与 OpenCode 插件，
-  已授信的 Bash hook 直接拦下并实测拒绝，文件保留。Copilot CLI 1.0.109 接入
+  已授信的 Bash hook 直接拦下并实测拒绝，文件保留。**授信后复验**：TUI 选 Trust all，
+  `config.toml` 出现 `pre_tool_use:1:0`，原生 `apply_patch *** Delete File` 同样被拒、文件保留，
+  `filesystem.delete` 升 D3。Copilot CLI 1.0.109 接入
   `~/.copilot/hooks/riskguard.json`（PascalCase `PreToolUse`）→ 适配器 → 共享引擎，D3：`git reset --hard`
   在 `--allow-all-tools`/`--yolo` 下被拒、脏改动保留，`git status` 放行；wiring 落地稳定路径与引擎副本。
   DSH headless 设 `danger-full-access` + `approval: never`（web/desktop 未改）；WorkBuddy 加

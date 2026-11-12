@@ -92,6 +92,7 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
   Bash hook 管——引擎新增 `*** Delete File:` / `*** Move to:` 规则后，实测 `codex exec` 的删除被拒、
   文件保留（2026-11-12）。
 - 原生工具路径要启用，需要在 `hooks.json` 加 `matcher: "apply_patch"` 的条目，再由用户 TUI 授信一次；
-  每次改该条目都要重新授信并复测 deny，不能只看配置存在。
+  每次改该条目都要重新授信并复测 deny，不能只看配置存在。**2026-11-12 已授信并复验**：
+  `config.toml` 出现 `pre_tool_use:1:0`，原生 `*** Delete File` 被拒、文件保留；`Update File` 放行。
 - `approval_policy` 仍保持默认 `on-request`；不要用 `never` 换“少弹窗”。
 - 别用「sandbox=workspace-write 能挡删除」当证据：它允许删工作区内文件，挡不住这次的问题。

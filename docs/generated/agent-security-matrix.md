@@ -50,7 +50,7 @@
 |  | network.connect | unknown | D0 | — | — |
 | codex | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | hard | D2 | — | — |
-|  | filesystem.delete | hard | D2 | — | — |
+|  | filesystem.delete | hard | D3 | — | — |
 |  | git.destructive | hard | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 |  | network.connect | unknown | D0 | — | — |
