@@ -38,6 +38,9 @@
   在 `--allow-all-tools`/`--yolo` 下被拒、脏改动保留，`git status` 放行；wiring 落地稳定路径与引擎副本。
   DSH headless 设 `danger-full-access` + `approval: never`（web/desktop 未改）；WorkBuddy 加
   `permissions.defaultMode=bypassPermissions`（无新端到端会话）。
+  **2026-11-12 补 DSH Web D3**：web profile 同样设 `danger-full-access` + `approval: never`，真实浏览器会话
+  执行 `git -C … reset --hard HEAD` 被 `deny-risk-commands` 拒绝（`高危：git 全局选项后接破坏性子命令`），
+  workdir 写法也被拒，未提交修改保留；Web 与 Desktop 同机制，web 覆盖 desktop。
   **2026-11-12 补 WorkBuddy D3**：真实桌面会话（conversation `b0762c0d…`）里 `git reset --hard` 被
   PreToolUse hook 拒绝（`⛔ HOOK 已拦截危险命令…`），`git status`/`git log` 正常执行，WorkBuddy 未绕过。
 
