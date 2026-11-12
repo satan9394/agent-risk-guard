@@ -27,16 +27,22 @@
 
 ## DSH 覆盖边界（2026-11-12 登记）
 
-- [ ] **dsh-ops 的 `ops_bash` 不在门禁白名单**：`deny-risk-commands` 只匹配 `exec.name` 为 `pwsh` / `bash`
-  的调用，而 dsh-ops 启用 bash 时发布的是另一个工具 `ops_bash`（自带 MSYS bash）→ 这类调用不过闸。
-  本机 `~/.dsh/profiles/web/cordis.patch.yml` 已用 `dsh-ops` 的 `global.bash: false` + `hidePwsh: false`
-  规避（官方 `pwsh` 保持在位），`agent-preset-registry.selectedDefault` 仍是 `ops-ptc`。
-  **将来若要恢复 `ops_bash`**：必须同时让插件认这个名字（并确认其命令参数名是 `command`），
-  否则等于自带一个不受管的 shell。改动这三项前先核对门禁覆盖面。
+- [x] **dsh-ops 的 `ops_bash` 白名单缺口（2026-11-12 已补判据）**：原判据只匹配 `exec.name` 为 `pwsh` / `bash`
+  的调用，dsh-ops 启用 bash 时发布的 `ops_bash`（自带 MSYS bash）不过闸。已把插件判据改成 fail-closed 结构性判据：
+  只要 `arguments.command` 是字符串就按执行器处理，例外表默认只有 `str_replace_editor`（它的 `command` 是编辑动作名）；
+  实测 rc.2 + dsh-ops 里带 `command` 字符串的工具只有 pwsh / bash / 持久化 shell / `ops_bash` / 该编辑器。
+  16 条用例矩阵覆盖 pwsh、bash、sh、`ops_bash`、`pwsh_persistent`、`bash_persistent`、未知同名工具、编辑器误杀、
+  无 `command` 参数、`arguments` 为 JSON 字符串，全 PASS。插件同时从 `file:`（复制）改成 `link:`（junction），
+  避免「改了源码、profile 跑旧副本」的漂移。
+  本机仍保持 `global.bash: false` + `hidePwsh: false`；**恢复 `ops_bash` 现在只剩一个开关决定**，
+  不再是门禁缺口（真跑一次 `ops_bash` 的拒/放仍待取证）。
 - [x] **PTC 内层调用是否绕过门禁（2026-11-12 源码核实）**：不绕过。`run_code` 内的 `tools.pwsh(...)`
   走同一个工具管线 —— `@deepseek-ai/dsh-tools` 的 `pipeline.js` 在派发前执行
-  `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`，工具名保持 `pwsh`。本轮**未**单独跑 PTC 会话取证，
-  结论基于 0.2.2-rc.2 安装包源码；真实 PTC 会话（web profile + ops-ptc）尚未复验。
+  `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`；`@deepseek-ai/dsh-tool-executor-ptc` 直接 import
+  `ToolExecutionPipeline` / `executeToolBatch` 并构造同一个 pipeline（`executor.prepare(input)`），工具名保持 `pwsh`。
+  本轮**未**单独跑 PTC 会话取证：`dsh headless` 用的 headless profile 没有 dsh-ops（无 `run_code`），
+  而 web profile 的 ops-ptc 只能从 GUI 驱动；结论基于 0.2.2-rc.2 安装包源码。真实 PTC 会话复验仍待一次
+  「web profile + ops-ptc」的会话。
 
 ## 已知过拦（登记延后，不开新轮）
 
