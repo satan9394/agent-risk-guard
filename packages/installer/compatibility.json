@@ -470,7 +470,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "2026-11-13：Cognition 已把 Windsurf 改名为 Devin Desktop/Devin CLI（Cascade 2026-07-01 停用），旧 `pre_run_command` 契约退役，新契约是 `PreToolUse` + `matcher: \"exec\"`，stdin `{hook_event_name, tool_name, tool_input.command}`，拒绝用 exit 2 或 `{\"decision\":\"block\"}`。本机已装 Devin CLI 3000.12.57，用户级 `%APPDATA%\\devin\\config.json` 已由 wiring 写入 hook（`~/.devin/hooks/devin-riskguard-adapter.ps1` → 共享引擎），离线 payload 验证 deny/allow 3/3。但 `devin auth status` = Not logged in，需要用户跑 `devin auth login` 才能取真实会话，所以仍停在 D2，不报 D3。Restricted Mode 下 hook 不加载。",
+      "notes": "2026-11-13：Windsurf 已更名 Devin（Cascade 2026-07-01 停用），新契约为 `PreToolUse` + matcher `exec`。Devin CLI 3000.12.57 已装，用户已 `auth login` 成功；用户级 `%APPDATA%\\devin\\config.json` 与项目 `.devin/hooks.v1.json` 都已接线（`~/.devin/hooks/devin-riskguard-adapter.ps1` → 共享引擎），离线 payload deny/allow 3/3。但真实 `devin -p` 复验发现：`--permission-mode dangerous` 下 hook 已返回 `{\"decision\":\"block\"}` + exit 2（适配器日志有 deny），命令仍被执行；改用 auto/smart 又在 print 模式被权限确认提前拒绝，hook 没机会跑。即 CLI 当前无法同时做到“无审批 + 硬拦截”，所以维持 D2，不报 D3。需要等 Devin 修复 dangerous 模式忽略 hook，或改用 Desktop 交互模式取证。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",

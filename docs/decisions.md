@@ -147,4 +147,6 @@ and why, is as valuable as knowing what shipped.
 
 | 2026-11-13 | @opencode | **Codex 权限决策修正（取代同日 B）：选 A 改良**——`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，并 `enabled=false` 关闭 `node_repl` 与 `unified-computer-use`（注入 `cua_repl`）。理由：审批不约束 MCP，原配置下 `js` 能在工作区内建/删文件且 hook 不可见；关掉这两个自由 JS 入口后 MCP 工具为 `NONE`，Bash/apply_patch 仍由 hook 硬拦；不开 `danger-full-access`，避免放大到工作区外。 | ✅ ACCEPT | 配置文件 3 处改动（备份 `backup/config.toml.bak-codex-perm-20261113-023837`）；真跑 `git reset` 与 apply_patch delete 均 deny，`git status`/工作区写 allow 且无审批；会话 MCP 工具 `NONE`；两条 `pre_tool_use` 授信仍在。 | 未发布 |
 
+| 2026-11-13 | @opencode | **Devin 登录后复验：仍无法 D3**。`auth login` 成功；用户级/项目级 hook 均已接线，适配器离线 deny/allow 3/3。真实 `devin -p`：`--permission-mode dangerous` 下适配器已输出 block + exit 2（日志有 deny），命令仍执行；`auto`/`smart` 在 print 模式被权限确认提前拒绝，hook 无机会跑。CLI 当前无法同时满足「无审批 + 硬拦截」，维持 D2，等 Devin 修复或 Desktop 交互取证。 | ⚠️ 维持 D2 | 配置/适配器不变；`%TEMP%\riskguard-devin-hook.log` 有 deny 记录但命令执行（`tracked.txt` 被 reset）；最小 `cmd /c exit 2` hook 同样被 dangerous 忽略。 | 未发布 |
+
 > Changes not yet released sit at the bottom until the next release fills in the version column.

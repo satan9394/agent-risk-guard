@@ -22,9 +22,10 @@
   回滚把两处 `enabled` 改回 `true`。
 
 - **Devin（原 Windsurf）CLI 接线，停在 D2（2026-11-13）**：Windsurf 已更名 Devin，旧 `pre_run_command`
-  契约退役；新 hook 是 `PreToolUse` + `matcher: "exec"`。已装 Devin CLI 3000.12.57，wiring 写入
-  `%APPDATA%\devin\config.json` 的 `hooks`，适配器 `assets/hooks/devin-riskguard-adapter.ps1` 离线
-  deny/allow 3/3；`devin auth status` = Not logged in，未取真实会话，维持 D2。
+  契约退役；新 hook 是 `PreToolUse` + `matcher: "exec"`。已装 Devin CLI 3000.12.57 并完成登录，wiring
+  写入 `%APPDATA%\devin\config.json` 的 `hooks`，适配器离线 deny/allow 3/3。真实 `devin -p` 发现：
+  `--permission-mode dangerous` 下 hook 返回 block + exit 2 后命令仍执行；非 dangerous 模式又在 print
+  模式被权限确认提前拒绝。CLI 当前无法同时做到「无审批 + 硬拦截」，维持 D2。
 
 - **Grok CLI 接入并达到 D3（2026-11-13）**：安装 xAI Grok Build 1.0.77（npm `@xai-official/grok`），
   `~/.grok/hooks/riskguard.json` 的 PreToolUse → `grok-riskguard-adapter.ps1` → 共享 ps1 引擎；
