@@ -15,10 +15,11 @@
 
 ### Changed
 
-- **Codex 权限决策：保持 on-request（2026-11-13）**：`never`+`danger-full-access` 下 MCP `js` 可绕过
-  hook 直接写/删文件（默认沙箱下是 `EPERM`），且 `node_repl` 占 MCP 调用 53%、`cua_repl` 由 App 注入
-  关不掉；命令历史 22226 completed / 12 declined，提示成本低。故不改 `config.toml`，Bash/apply_patch
-  仍由 hook 硬拦，审批保留为 MCP 侧唯一边界。
+- **Codex 权限决策：A 改良（2026-11-13）**：`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，
+  并关闭 `node_repl` / `unified-computer-use`（`cua_repl`）两个自由 JS 面。审批本来就不管 MCP，原配置下
+  `js` 能在工作区内建/删文件且 hook 不可见；关掉入口后 MCP 工具为 `NONE`，`git reset` 与 apply_patch
+  删除仍被 hook 拒，`git status` 与工作区写放行，全程无审批。代价是 Codex 电脑操作/浏览器自动化关闭，
+  回滚把两处 `enabled` 改回 `true`。
 
 - **Devin（原 Windsurf）CLI 接线，停在 D2（2026-11-13）**：Windsurf 已更名 Devin，旧 `pre_run_command`
   契约退役；新 hook 是 `PreToolUse` + `matcher: "exec"`。已装 Devin CLI 3000.12.57，wiring 写入

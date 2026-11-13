@@ -102,7 +102,7 @@ node bin/riskguard.mjs install --dry-run
 | **OpenCode** | `tool.execute.before` 插件 | 机器硬门禁 | ✅ 真实会话已验证 |
 | **Antigravity CLI** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
 | **WorkBuddy (CodeBuddy)** | `PreToolUse` hook（Claude Code 兼容） | 机器硬门禁——**删除委派**给平台自带 safe-delete（改道回收站），不可逆操作仍拦 | ✅ 真实会话已验证（D3，2026-09-28 / 2026-11-12） |
-| **Codex** | `hooks.json` PreToolUse（Bash + apply_patch） | 机器硬门禁（原生 apply_patch 已授信；shell 形态同拦） | ✅ 真实会话已验证（D3，2026-11-12） |
+| **Codex** | `hooks.json` PreToolUse（Bash + apply_patch） | 机器硬门禁（原生 apply_patch 已授信；`approval_policy=never` + `workspace-write`，`node_repl`/`cua_repl` 已关） | ✅ 真实会话已验证（D3，2026-11-13） |
 | **DeepSeek Harness** | profile 注入的 `deny-risk-commands` | 机器规则层（headless + web 已设 `danger-full-access` + `approval: never`；desktop 同机制） | ✅ 真实会话已验证（D3，2026-11-12） |
 | **Cursor** | `preToolUse` hook（`~/.cursor/hooks.json`） | 机器硬门禁（`Shell` + 原生 `Delete`） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **Pi** | `tool_call` 扩展（`~/.pi/agent/extensions/riskguard.ts`）→ 共用规则引擎 | 机器硬门禁（shell 面） | ✅ 真实会话已验证（D3，2026-11-11） |

@@ -97,11 +97,14 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
 - `approval_policy` 仍保持默认 `on-request`；不要用 `never` 换“少弹窗”。
 - 别用「sandbox=workspace-write 能挡删除」当证据：它允许删工作区内文件，挡不住这次的问题。
 
-## 权限决策：保持 `on-request`（2026-11-13）
+## 权限决策：A 改良（2026-11-13，最终）
 
-- 要「完全不弹窗」只能 `approval_policy=never` + `sandbox_mode=danger-full-access`；实测该组合下 MCP `js`
-  能直接写/删文件，hook 看不到（默认策略下同一代码报 `EPERM`）——**沙箱才是 js 的边界**。
-- 关 `node_repl` 不划算：2555 次调用（53% MCP，含 403 次文件读写、645 次 computer-use），且 `cua_repl`
-  由 App 注入、不在 `config.toml`，关不干净。
-- 弹窗成本低：命令历史 22226 completed / 12 declined；App 已有 193 条 `never`+full-access 会话。
-- 结论：Codex 保留审批；Bash/apply_patch 仍由 hook 硬拦。要改这个决定，先把 MCP `js` 接进可拦截的策略点。
+- 配置：`approval_policy="never"` + `sandbox_mode="workspace-write"`，并 `enabled=false` 关闭
+  `node_repl` 与 `unified-computer-use`（注入 `cua_repl`）。
+- 为什么不能只开 `never`：审批不管 MCP；原配置下 `js` 工具能在工作区内建/删文件，hook 看不到也不弹窗。
+  开 `danger-full-access` 会把这条路径放大到工作区外，所以不采用。
+- 关掉两个自由 JS 入口后，MCP 工具集会变成 `NONE`；Bash 与 apply_patch 的 hook 仍硬拦。
+- 真跑验证：`git reset --hard` 被拒、原生 apply_patch `*** Delete File` 被拒；`git status` 与工作区内建文件
+  放行，全程无审批。
+- 代价：Codex 的电脑操作/浏览器自动化随之关闭；回滚把两处 `enabled` 改回 `true` 即可。
+- 每次改 `hooks.json` 的 hook 条目仍会让对应授信失效，需要 TUI 重新授信并复测 deny。

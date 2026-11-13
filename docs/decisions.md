@@ -145,4 +145,6 @@ and why, is as valuable as knowing what shipped.
 
 | 2026-11-13 | @opencode | **Devin（原 Windsurf）接线，停在 D2**：Windsurf 更名 Devin、Cascade 停用，旧 `pre_run_command` 适配器对应退役契约；新契约 `PreToolUse` + `matcher: "exec"`。装 Devin CLI 3000.12.57，wiring 写用户级 `%APPDATA%\devin\config.json` 的 `hooks`，新增 `assets/hooks/devin-riskguard-adapter.ps1` 与离线单测 3/3。`devin auth status` = Not logged in，需用户 `devin auth login` 才能取 D3，故不报 D3。 | ✅ ACCEPT | `devin --version` 3000.12.57；config.json 含 matcher exec + 适配器路径；离线 payload deny/allow 3/3；`riskguard-wiring-check` exit 0。 | 未发布 |
 
+| 2026-11-13 | @opencode | **Codex 权限决策修正（取代同日 B）：选 A 改良**——`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，并 `enabled=false` 关闭 `node_repl` 与 `unified-computer-use`（注入 `cua_repl`）。理由：审批不约束 MCP，原配置下 `js` 能在工作区内建/删文件且 hook 不可见；关掉这两个自由 JS 入口后 MCP 工具为 `NONE`，Bash/apply_patch 仍由 hook 硬拦；不开 `danger-full-access`，避免放大到工作区外。 | ✅ ACCEPT | 配置文件 3 处改动（备份 `backup/config.toml.bak-codex-perm-20261113-023837`）；真跑 `git reset` 与 apply_patch delete 均 deny，`git status`/工作区写 allow 且无审批；会话 MCP 工具 `NONE`；两条 `pre_tool_use` 授信仍在。 | 未发布 |
+
 > Changes not yet released sit at the bottom until the next release fills in the version column.
