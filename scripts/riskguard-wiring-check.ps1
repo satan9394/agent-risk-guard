@@ -86,6 +86,7 @@ $srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands
 $srcCursorAdapter = Join-Path $repo 'assets\hooks\cursor-riskguard-adapter.ps1'
 $srcCopilotAdapter = Join-Path $repo 'assets\hooks\copilot-riskguard-adapter.ps1'
 $srcGrokAdapter = Join-Path $repo 'assets\hooks\grok-riskguard-adapter.ps1'
+$srcDevinAdapter = Join-Path $repo 'assets\hooks\devin-riskguard-adapter.ps1'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
@@ -96,7 +97,8 @@ Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
 Write-Check '单源 cursor 适配器存在' (Test-Path $srcCursorAdapter) $srcCursorAdapter
 Write-Check '单源 copilot 适配器存在' (Test-Path $srcCopilotAdapter) $srcCopilotAdapter
 Write-Check '单源 grok 适配器存在' (Test-Path $srcGrokAdapter) $srcGrokAdapter
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter) -or -not (Test-Path $srcGrokAdapter)) { exit 2 }
+Write-Check '单源 devin 适配器存在' (Test-Path $srcDevinAdapter) $srcDevinAdapter
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter) -or -not (Test-Path $srcGrokAdapter) -or -not (Test-Path $srcDevinAdapter)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -129,7 +131,10 @@ $ps1Targets = @(
   @{ dest = (Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1');     src = $srcCopilotAdapter; label = 'copilot adapter' },
   # 2026-11-13: Grok Build 的 PreToolUse 也是自家协议（{"decision":"deny"} + exit 2）。
   @{ dest = (Join-Path $userHome '.grok\hooks\dangerous-commands.ps1');                 src = $srcPs1;    label = 'grok engine' },
-  @{ dest = (Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1');            src = $srcGrokAdapter; label = 'grok adapter' }
+  @{ dest = (Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1');            src = $srcGrokAdapter; label = 'grok adapter' },
+  # 2026-11-13: Devin（Windsurf 的继任者）CLI 已装，hook 契约换成 PreToolUse + matcher exec。
+  @{ dest = (Join-Path $userHome '.devin\hooks\dangerous-commands.ps1');                src = $srcPs1;    label = 'devin engine' },
+  @{ dest = (Join-Path $userHome '.devin\hooks\devin-riskguard-adapter.ps1');           src = $srcDevinAdapter; label = 'devin adapter' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -787,6 +792,38 @@ if (-not $grokOk -and $Fix) {
     Write-Host "  [Fix] grok hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
     $issues = @($issues | Where-Object { $_ -ne 'grok hooks/riskguard.json PreToolUse' })
   } catch { Write-Host ("  [Fix] grok 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# ---- Devin（原 Windsurf，2026-11-13）----
+# 用户级配置 %APPDATA%\devin\config.json 的 "hooks" 键；matcher 用正则 "exec"（shell 工具名）。
+$devinCfg = Join-Path $userHome 'AppData\Roaming\devin\config.json'
+$devinAdapterPath = Join-Path $userHome '.devin\hooks\devin-riskguard-adapter.ps1'
+$devinRaw = if (Test-Path $devinCfg) { Get-Content $devinCfg -Raw -Encoding UTF8 } else { '' }
+$devinExpected = $devinAdapterPath.Replace('\', '/')
+$devinOk = ($devinRaw -match 'devin-riskguard-adapter') -and ($devinRaw -match '"exec"')
+Write-Check 'devin config.json PreToolUse(exec)' $devinOk $devinCfg
+if (-not $devinOk -and $Fix) {
+  try {
+    $obj = if ($devinRaw.Trim()) { $devinRaw | ConvertFrom-Json -ErrorAction Stop } else { [pscustomobject]@{ version = 1 } }
+    if (-not $obj.PSObject.Properties.Name.Contains('hooks')) {
+      $obj | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $entry = @{
+      matcher = 'exec'
+      hooks = @(@{
+        type = 'command'
+        timeout = 20
+        command = "pwsh -NoProfile -ExecutionPolicy Bypass -File $devinExpected"
+      })
+    }
+    $obj.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @($entry) -Force
+    if (Test-Path $devinCfg) { Backup-File $devinCfg }
+    $parent = Split-Path -Parent $devinCfg
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($devinCfg, (($obj | ConvertTo-Json -Depth 12) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] devin config.json 已写入 hooks.PreToolUse（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'devin config.json PreToolUse(exec)' })
+  } catch { Write-Host ("  [Fix] devin 接线失败（配置不是合法 JSON？）: " + $_.Exception.Message) -ForegroundColor Yellow }
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'

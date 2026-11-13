@@ -462,15 +462,15 @@
       }
     },
     "windsurf": {
-      "display": "Windsurf",
-      "integration": "pre_run_command hook",
-      "enforcement": "hard",
+      "display": "Devin (ex-Windsurf)",
+      "integration": "PreToolUse hook (matcher exec)",
+      "enforcement": "soft",
       "verification": {
         "windows": "D2",
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。⚠ Restricted Mode 下 hooks 不加载：Restricted Mode ≠ RiskGuard ACTIVE。",
+      "notes": "2026-11-13：Cognition 已把 Windsurf 改名为 Devin Desktop/Devin CLI（Cascade 2026-07-01 停用），旧 `pre_run_command` 契约退役，新契约是 `PreToolUse` + `matcher: \"exec\"`，stdin `{hook_event_name, tool_name, tool_input.command}`，拒绝用 exit 2 或 `{\"decision\":\"block\"}`。本机已装 Devin CLI 3000.12.57，用户级 `%APPDATA%\\devin\\config.json` 已由 wiring 写入 hook（`~/.devin/hooks/devin-riskguard-adapter.ps1` → 共享引擎），离线 payload 验证 deny/allow 3/3。但 `devin auth status` = Not logged in，需要用户跑 `devin auth login` 才能取真实会话，所以仍停在 D2，不报 D3。Restricted Mode 下 hook 不加载。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -482,7 +482,7 @@
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
         "hardDeny": "supported",
-        "failMode": "unknown"
+        "failMode": "fail-open"
       },
       "sandbox": {
         "available": "unknown",
@@ -500,7 +500,7 @@
         "userCanDisable": "supported",
         "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "hookFailureSemantics": "fail-open",
       "conditionalAvailability": [
         {
           "feature": "hook",
@@ -514,7 +514,7 @@
       ],
       "capabilities": {
         "shell.execute": {
-          "enforcement": "hard",
+          "enforcement": "soft",
           "verification": {
             "windows": "D2"
           }
@@ -528,9 +528,9 @@
       },
       "componentInventory": {
         "agent": "windsurf",
-        "version": "unknown",
-        "adapter": "packages/adapters/windsurf",
-        "hook": "pre_run_command hook",
+        "version": "3000.12.57 (Devin CLI)",
+        "adapter": "assets/hooks/devin-riskguard-adapter.ps1",
+        "hook": "PreToolUse hook (matcher exec)",
         "runtime": "node",
         "policy": "default-policy"
       }

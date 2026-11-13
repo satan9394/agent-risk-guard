@@ -143,4 +143,6 @@ and why, is as valuable as knowing what shipped.
 
 | 2026-11-13 | @opencode | **Codex 权限决定：保持 `approval_policy=on-request`**，不设 `never`。理由：① 只有 `never`+`danger-full-access` 能完全不弹窗，但实测该组合下 MCP `js` 直接写/删文件成功、hook 看不到（默认策略下同一代码 `EPERM`），沙箱是 js 的唯一边界；② `node_repl` 有 2555 次调用（53% MCP，含 403 次文件读写、645 次 computer-use），且 `cua_repl` 由 App 注入、不在 config.toml，禁不干净；③ 命令历史 22226 completed / 12 declined，弹窗成本低。 | ✅ ACCEPT | 子 Agent 报告 `subagents/codex-perm/report.md` + `logs/fullaccess-js.jsonl`、`logs/default-js.jsonl`、`logs/baseline-reset.jsonl`；`config.toml` 未改（仅 Codex 自己写 1 条 scratch trust），Bash/apply_patch 两个 `pre_tool_use` 授信仍在；`git reset --hard` hook deny、`git status` allow。 | 未发布 |
 
+| 2026-11-13 | @opencode | **Devin（原 Windsurf）接线，停在 D2**：Windsurf 更名 Devin、Cascade 停用，旧 `pre_run_command` 适配器对应退役契约；新契约 `PreToolUse` + `matcher: "exec"`。装 Devin CLI 3000.12.57，wiring 写用户级 `%APPDATA%\devin\config.json` 的 `hooks`，新增 `assets/hooks/devin-riskguard-adapter.ps1` 与离线单测 3/3。`devin auth status` = Not logged in，需用户 `devin auth login` 才能取 D3，故不报 D3。 | ✅ ACCEPT | `devin --version` 3000.12.57；config.json 含 matcher exec + 适配器路径；离线 payload deny/allow 3/3；`riskguard-wiring-check` exit 0。 | 未发布 |
+
 > Changes not yet released sit at the bottom until the next release fills in the version column.

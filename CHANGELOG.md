@@ -20,6 +20,11 @@
   关不掉；命令历史 22226 completed / 12 declined，提示成本低。故不改 `config.toml`，Bash/apply_patch
   仍由 hook 硬拦，审批保留为 MCP 侧唯一边界。
 
+- **Devin（原 Windsurf）CLI 接线，停在 D2（2026-11-13）**：Windsurf 已更名 Devin，旧 `pre_run_command`
+  契约退役；新 hook 是 `PreToolUse` + `matcher: "exec"`。已装 Devin CLI 3000.12.57，wiring 写入
+  `%APPDATA%\devin\config.json` 的 `hooks`，适配器 `assets/hooks/devin-riskguard-adapter.ps1` 离线
+  deny/allow 3/3；`devin auth status` = Not logged in，未取真实会话，维持 D2。
+
 - **Grok CLI 接入并达到 D3（2026-11-13）**：安装 xAI Grok Build 1.0.77（npm `@xai-official/grok`），
   `~/.grok/hooks/riskguard.json` 的 PreToolUse → `grok-riskguard-adapter.ps1` → 共享 ps1 引擎；
   deny 用 `{"decision":"deny","reason":...}` + exit 2。真实 `grok --always-approve -p` 会话里
