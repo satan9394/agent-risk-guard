@@ -15,6 +15,13 @@
 
 ### Changed
 
+- **Grok CLI 接入并达到 D3（2026-11-13）**：安装 xAI Grok Build 1.0.77（npm `@xai-official/grok`），
+  `~/.grok/hooks/riskguard.json` 的 PreToolUse → `grok-riskguard-adapter.ps1` → 共享 ps1 引擎；
+  deny 用 `{"decision":"deny","reason":...}` + exit 2。真实 `grok --always-approve -p` 会话里
+  `git reset --hard HEAD` 被拒、脏改动与未跟踪文件保留，`git status --short` 放行；单测 3/3。
+  适配器曾有 `$input` 自动变量吞 stdin 的 bug（每次都 fail-closed 空输入），已改名 `$toolInputData`。
+  Windsurf 仍是 GUI IDE、无 CLI，未安装，维持 D2。
+
 - **DSH 0.2.2-rc.2 适配：规则集去 PCRE 内联标志 + JS 可编译闸门（2026-11-12）**：
   DSH 的 `deny-risk-commands` 插件用 JS `new RegExp(re, 'i')` 编译规则，`(?m)` 这类 PCRE 内联标志
   会让整行 `apply()` 抛 `SyntaxError: Invalid group` → 插件不激活 → **删除门禁静默 fail-open**

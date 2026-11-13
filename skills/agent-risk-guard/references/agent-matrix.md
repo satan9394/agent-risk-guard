@@ -29,7 +29,7 @@
 | Amp | 项目设置 `amp.config.json` | ✅ | — | ✅(deny) | ✅(sandbox) | 中 | amp-roo.md |
 | Roo Code | VS Code 设置 + `.roo/rules/` | ✅ | ⚠️(部分) | ✅(auto-approve) | — | 中 | amp-roo.md |
 | Goose | `~/.config/goose/` | ✅ | ✅ | ✅ | — | 中 | copilot-goose-grok.md |
-| Grok CLI | `~/.grok/` | ✅ | ✅ | ✅ | — | 中 | copilot-goose-grok.md |
+| Grok CLI | `~/.grok/hooks/` | ✅ | ✅ PreToolUse（**D3 2026-11-13**） | ✅ | — | 中（vendor 崩溃/超时 fail-open） | copilot-goose-grok.md |
 | Hermes Agent | `~/.hermes/` | ✅ | ✅ PreToolUse | ✅ | — | 中 | copilot-goose-grok.md |
 | Copilot CLI | `~/.copilot/` | ✅ | ✅ | ✅ | — | 中 | copilot-goose-grok.md |
 | Windsurf | `.windsurfrules` + `.codeiumignore` | ✅ | ❌ | ❌ | ❌ | **低（无 hooks）** | windsurf-zed-warp.md |

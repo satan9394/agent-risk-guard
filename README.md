@@ -110,7 +110,8 @@ node bin/riskguard.mjs install --dry-run
 | **Kimi Code** | `[[hooks]]` PreToolUse（`~/.kimi-code/config.toml`）→ 共用规则引擎 | 机器硬门禁（命中即拒；hook 故障 fail-open） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **MiniMax Code** | PreToolUse（`~/.minimax/hooks.json`）→ 共用规则引擎 | 机器硬门禁（命中即拒；hook 故障 fail-open） | ✅ 真实会话已验证（D3，2026-11-11） |
 | **GitHub Copilot CLI** | `~/.copilot/hooks/riskguard.json` 的 `PreToolUse`（PascalCase）→ 共用规则引擎 | 机器硬门禁（hook 崩溃/非零退出 fail-closed） | ✅ 真实会话已验证（D3，2026-11-12） |
-| **Windsurf / Grok** | adapter | 无真实会话验证 | ⚪ 仅实现 |
+| **Grok CLI** | `~/.grok/hooks/riskguard.json` 的 `PreToolUse` → 共享规则引擎 | 机器硬门禁（shell；崩溃/超时按 vendor 合同 fail-open） | ✅ 真实会话已验证（D3，2026-11-13） |
+| **Windsurf** | adapter | 无 CLI、需 GUI 账号登录，未安装 | ⚪ 仅实现（D2） |
 | **其他** | — | — | ⚪ 未覆盖 |
 
 > **"Supported" 不代表同等安全等级。** 上表刻意区分"由谁拦的"：Codex 那一行真正拦住命令的是它自己的策略层，

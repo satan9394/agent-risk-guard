@@ -740,11 +740,11 @@
       "integration": "PreToolUse hook",
       "enforcement": "soft",
       "verification": {
-        "windows": "D1",
+        "windows": "D3",
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。",
+      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。\n2026-11-13 Windows D3（xAI Grok Build 1.0.77）：~/.grok/hooks/riskguard.json 的 PreToolUse（无 matcher）→ grok-riskguard-adapter.ps1 → 共享 ps1 引擎；`grok --always-approve -p` 真实会话里 `git reset --hard HEAD` 被拒（reason `git 不可逆操作…`），脏改动与未跟踪文件保留；`git status --short` 放行。适配器曾因把 payload 变量命名为 PowerShell 自动变量 `$input` 导致 stdin 被吞、每次调用都 fail-closed 空输入，已改名 `$toolInputData`。vendor 合同对崩溃/超时仍是 fail-open，所以整体 enforcement 记 soft。Windsurf 是 GUI IDE、无 CLI，需账号登录，未安装未验证。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -755,7 +755,7 @@
       "enforcementDetail": {
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
-        "hardDeny": "unsupported",
+        "hardDeny": "supported",
         "failMode": "fail-open"
       },
       "sandbox": {
@@ -781,15 +781,15 @@
       ],
       "capabilities": {
         "shell.execute": {
-          "enforcement": "soft",
+          "enforcement": "hard",
           "verification": {
-            "windows": "D1"
+            "windows": "D3"
           }
         }
       },
       "componentInventory": {
         "agent": "grok",
-        "version": "unknown",
+        "version": "1.0.77",
         "adapter": "packages/adapters/grok",
         "hook": "PreToolUse hook (fail-open)",
         "runtime": "node",

@@ -20,11 +20,19 @@
 - 机制：扩展系统 + hooks + permissions
 - 加固：查 extension/hook 是否挂黑名单；`goose configure` 的权限模式
 
-## Grok CLI
+## Grok CLI（xAI Grok Build）
 
-- 配置：`~/.grok/`（settings）
-- 机制：hooks + permissions（rulesync ✅）
-- 加固：同上，挂统一黑名单
+- 配置：`~/.grok/config.toml`；本机用 `[model.magpie]` 指向本地 magpie 网关，`env_key = "GROK_MAGPIE_KEY"`。
+- Hooks：用户级 `~/.grok/hooks/*.json`，`PreToolUse` 无 matcher = 匹配全部工具；无需 `--trust`（项目级才要）。
+- 生产接线（2026-11-13，D3）：`~/.grok/hooks/riskguard.json` → `grok-riskguard-adapter.ps1` → 共享
+  `dangerous-commands.ps1`。适配器输出 `{"decision":"deny","reason":...}` 并 `exit 2`；payload 是 camelCase
+  `toolName` / `toolInput`。
+- 真实会话（`grok --always-approve -p`）：`git reset --hard HEAD` 被拒、脏改动与未跟踪文件保留；
+  `git status --short` 放行。
+- **踩过的坑**：适配器不要把 payload 变量命名为 `$input`——PowerShell 的自动变量会让宿主先吞掉 stdin，
+  每次调用都变成「空输入 → fail-closed deny」。改名 `$toolInputData` 后恢复。
+- 边界：vendor 对崩溃/超时/非法输出是 fail-open；只覆盖 shell（`run_terminal_command`），MCP/写工具未接。
+- 备注：`git stash push` 不在 reset/clean 规则里，模型可能用它绕过「丢弃改动」的意图（可恢复，但语义上要补语料）。
 
 ## 通用做法（三者一致）
 

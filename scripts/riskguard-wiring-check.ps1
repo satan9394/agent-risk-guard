@@ -85,6 +85,7 @@ $srcPiExt  = Join-Path $repo 'assets\pi\riskguard-extension.ts'
 $srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.sh'
 $srcCursorAdapter = Join-Path $repo 'assets\hooks\cursor-riskguard-adapter.ps1'
 $srcCopilotAdapter = Join-Path $repo 'assets\hooks\copilot-riskguard-adapter.ps1'
+$srcGrokAdapter = Join-Path $repo 'assets\hooks\grok-riskguard-adapter.ps1'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
@@ -94,7 +95,8 @@ Write-Check '单源 pi 扩展存在' (Test-Path $srcPiExt) $srcPiExt
 Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
 Write-Check '单源 cursor 适配器存在' (Test-Path $srcCursorAdapter) $srcCursorAdapter
 Write-Check '单源 copilot 适配器存在' (Test-Path $srcCopilotAdapter) $srcCopilotAdapter
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter)) { exit 2 }
+Write-Check '单源 grok 适配器存在' (Test-Path $srcGrokAdapter) $srcGrokAdapter
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter) -or -not (Test-Path $srcGrokAdapter)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -124,7 +126,10 @@ $ps1Targets = @(
   @{ dest = (Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1');      src = $srcCursorAdapter; label = 'cursor adapter' },
   # 2026-11-12: Copilot CLI 的 preToolUse 也是自家协议，适配层与引擎一起落到 ~/.copilot/hooks\。
   @{ dest = (Join-Path $userHome '.copilot\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'copilot engine' },
-  @{ dest = (Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1');     src = $srcCopilotAdapter; label = 'copilot adapter' }
+  @{ dest = (Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1');     src = $srcCopilotAdapter; label = 'copilot adapter' },
+  # 2026-11-13: Grok Build 的 PreToolUse 也是自家协议（{"decision":"deny"} + exit 2）。
+  @{ dest = (Join-Path $userHome '.grok\hooks\dangerous-commands.ps1');                 src = $srcPs1;    label = 'grok engine' },
+  @{ dest = (Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1');            src = $srcGrokAdapter; label = 'grok adapter' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -747,6 +752,41 @@ if (-not $copilotOk -and $Fix) {
     Write-Host "  [Fix] copilot hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
     $issues = @($issues | Where-Object { $_ -ne 'copilot hooks/riskguard.json PreToolUse' })
   } catch { Write-Host ("  [Fix] copilot 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# ---- Grok Build（2026-11-13）----
+# 官方用户级 hook：~/.grok/hooks/*.json；PreToolUse 无 matcher = 匹配全部工具。
+# deny 用 stdout {"decision":"deny","reason":...} + exit 2；崩溃/超时按 vendor 合同 fail-open。
+$grokHooks = Join-Path $userHome '.grok\hooks\riskguard.json'
+$grokAdapterPath = Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1'
+$grokRaw = if (Test-Path $grokHooks) { Get-Content $grokHooks -Raw -Encoding UTF8 } else { '' }
+$grokExpectedPosix = $grokAdapterPath.Replace('\', '/')
+$grokOk = ($grokRaw -match 'PreToolUse') -and $grokRaw.Contains($grokExpectedPosix)
+Write-Check 'grok hooks/riskguard.json PreToolUse' $grokOk $grokHooks
+if (-not $grokOk -and $Fix) {
+  try {
+    if (Test-Path $grokHooks) { Backup-File $grokHooks }
+    $obj = @{
+      hooks = @{
+        PreToolUse = @(
+          @{
+            hooks = @(
+              @{
+                type = 'command'
+                command = "pwsh -NoProfile -ExecutionPolicy Bypass -File $grokExpectedPosix"
+                timeout = 20
+              }
+            )
+          }
+        )
+      }
+    }
+    $parent = Split-Path -Parent $grokHooks
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($grokHooks, (($obj | ConvertTo-Json -Depth 8) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] grok hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'grok hooks/riskguard.json PreToolUse' })
+  } catch { Write-Host ("  [Fix] grok 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'
