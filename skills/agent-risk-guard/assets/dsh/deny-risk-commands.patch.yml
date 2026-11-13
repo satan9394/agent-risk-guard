@@ -1,8 +1,12 @@
 # deny-risk-commands —— DeepSeek Harness pre-execute 门禁规则（下发模板）
-# 来源：本机 ~/.dsh/profiles/web/cordis.patch.yml 实测版（2026-08-22），30 条规则。
+# 来源：本机 ~/.dsh/profiles/web/cordis.patch.yml 实测版（2026-08-22）；条数以巡检
+#       （scripts/riskguard-wiring-check.ps1）与 `dsh --profile <p> --dump-config` 的实际输出为准，此处不写死。
 # 用法：把下面这个 insert 块合并进你的 profile 的 cordis.patch.yml（如 ~/.dsh/profiles/<profile>/cordis.patch.yml），
 #       在顶层数组末尾追加即可；改完热加载生效（2026-08 实测，无需重启 dsh web）。
 # 注意：规则为正则，忽略大小写；命中即在 pwsh/bash 工具派发前拒绝命令（tools/pre-execute 门禁）。可自行增删规则。
+# ⚠️ 规则必须是 **JS 合法正则**：插件用 JS `new RegExp(re, 'i')` 编译，PCRE 内联标志（(?m)/(?s)/(?i)）
+#    会让整个 apply() 抛 SyntaxError、插件整行不激活 → 门禁静默 fail-open（2026-11-12 实测）。
+#    需要行首锚点时写 `(?:^|[\r\n])`，不要写 `(?m)`；闸门：tests/adversarial/dsh-rule-js-compat.test.ts。
 #
 # 作用域与 fail 语义（如实声明，GAN-AUDIT-5AGENTS finding 4）：
 #   - 作用域：本规则仅对「加载了本 insert 块所在 cordis.patch.yml 的 profile 会话」生效，
@@ -49,6 +53,8 @@
           - { re: '\bfind\s+[^|;&]*\s-exec\b[^|;&]*\brm\b', reason: '全局铁律：禁止 find -exec rm 永久删除（不进回收站）' }
           - { re: '\bgit\s+clean\b', reason: '高危：git clean 永久删除未跟踪文件' }
           - { re: '\bgit\s+reset\b.*--hard', reason: '高危：git reset --hard 丢弃工作区改动' }
+          - { re: '\bgit\s+(?:(?:-C\s+(?:"[^"]*"|\S+))|(?:-c\s+\S+)|(?:--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\S+))\s+(?:clean|reset|checkout|restore|switch|worktree|stash|branch|update-ref|filter-branch|rm)\b', reason: '高危：git 全局选项后接破坏性子命令（-C 绕过）' }
+          - { re: '\s*\*\*\*\s*(?:Delete File|Move to):', reason: '高危：apply_patch 删除/移动文件（不经回收站）' }
           - { re: '\breg\s+delete\b', reason: '高危：reg delete 删除注册表项（R2 新增）' }
           - { re: '\bcertutil\b[^|;&\n]*(-urlcache|-decode)', reason: '高危：certutil 下载/解码执行（R2 新增）' }
           - { re: '\bdocker\s+(run|exec)\b', reason: '高危：docker 容器内执行（R2 新增，含挂载卷删除/逃逸面）' }

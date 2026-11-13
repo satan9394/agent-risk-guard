@@ -15,6 +15,89 @@
 
 ### Changed
 
+- **Codex 权限决策：A 改良（2026-11-13）**：`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，
+  并关闭 `node_repl` / `unified-computer-use`（`cua_repl`）两个自由 JS 面。审批本来就不管 MCP，原配置下
+  `js` 能在工作区内建/删文件且 hook 不可见；关掉入口后 MCP 工具为 `NONE`，`git reset` 与 apply_patch
+  删除仍被 hook 拒，`git status` 与工作区写放行，全程无审批。代价是 Codex 电脑操作/浏览器自动化关闭，
+  回滚把两处 `enabled` 改回 `true`。
+
+- **Devin（原 Windsurf）CLI 接线，停在 D2（2026-11-13）**：Windsurf 已更名 Devin，旧 `pre_run_command`
+  契约退役；新 hook 是 `PreToolUse` + `matcher: "exec"`。已装 Devin CLI 3000.12.57 并完成登录，wiring
+  写入 `%APPDATA%\devin\config.json` 的 `hooks`，适配器离线 deny/allow 3/3。真实 `devin -p` 发现：
+  `--permission-mode dangerous` 下 hook 返回 block + exit 2 后命令仍执行；非 dangerous 模式又在 print
+  模式被权限确认提前拒绝。CLI 当前无法同时做到「无审批 + 硬拦截」，维持 D2。
+
+- **Grok CLI 接入并达到 D3（2026-11-13）**：安装 xAI Grok Build 1.0.77（npm `@xai-official/grok`），
+  `~/.grok/hooks/riskguard.json` 的 PreToolUse → `grok-riskguard-adapter.ps1` → 共享 ps1 引擎；
+  deny 用 `{"decision":"deny","reason":...}` + exit 2。真实 `grok --always-approve -p` 会话里
+  `git reset --hard HEAD` 被拒、脏改动与未跟踪文件保留，`git status --short` 放行；单测 3/3。
+  适配器曾有 `$input` 自动变量吞 stdin 的 bug（每次都 fail-closed 空输入），已改名 `$toolInputData`。
+  Windsurf 仍是 GUI IDE、无 CLI，未安装，维持 D2。
+
+- **DSH 0.2.2-rc.2 适配：规则集去 PCRE 内联标志 + JS 可编译闸门（2026-11-12）**：
+  DSH 的 `deny-risk-commands` 插件用 JS `new RegExp(re, 'i')` 编译规则，`(?m)` 这类 PCRE 内联标志
+  会让整行 `apply()` 抛 `SyntaxError: Invalid group` → 插件不激活 → **删除门禁静默 fail-open**
+  （本机日志 `dsh: warning: 1 entry did not activate`）。已从单源两处
+  （`packages/installer/src/deploy.ts` 的 `defaultDenyRules()` 与 `assets/dsh/deny-risk-commands.patch.yml`）
+  去掉内联标志，并新增 `tests/adversarial/dsh-rule-js-compat.test.ts`：DSH patch 与 `defaultDenyRules()`
+  逐条 `new RegExp(re, 'i')`，任一条编译失败即红（回退证明：把 `(?m)` 加回去该测试 2/4 红）。
+  同轮核实 rc.2 的 insert id/config 形状未变（`--dump-config` 可见 `- id: deny-risk-commands`），
+  并写清 `ops-ptc` 的覆盖面：PTC `run_code` 内层调用仍以 `pwsh` 过 `tools/pre-execute`，
+  缺口只在 dsh-ops 的 `ops_bash`（本机 web profile 以 `global.bash: false` + `hidePwsh: false` 规避）。
+  D3 在 0.2.2-rc.2 重取：`pwsh` 调 `git reset --hard HEAD` 被拒、脏改动保留，`git status --short` 放行。
+
+- **子 Agent 攻坚：Codex apply_patch、Copilot D3、DSH/WorkBuddy 权限（2026-11-12）**：
+  Codex 0.167.1 起 `apply_patch` 已是 PreToolUse 的合法 subject（`tool_input.command` 为 patch 文本），
+  但 hook 必须先由 TUI 授信，未授信静默跳过；当前模型走 shell 的 `apply_patch` CLI，因此把
+  `*** Delete File:` / `*** Move to:` 加进共享引擎（ps1/sh）、deploy/dsh 规则与 OpenCode 插件，
+  已授信的 Bash hook 直接拦下并实测拒绝，文件保留。**授信后复验**：TUI 选 Trust all，
+  `config.toml` 出现 `pre_tool_use:1:0`，原生 `apply_patch *** Delete File` 同样被拒、文件保留，
+  `filesystem.delete` 升 D3。Copilot CLI 1.0.109 接入
+  `~/.copilot/hooks/riskguard.json`（PascalCase `PreToolUse`）→ 适配器 → 共享引擎，D3：`git reset --hard`
+  在 `--allow-all-tools`/`--yolo` 下被拒、脏改动保留，`git status` 放行；wiring 落地稳定路径与引擎副本。
+  DSH headless 设 `danger-full-access` + `approval: never`（web/desktop 未改）；WorkBuddy 加
+  `permissions.defaultMode=bypassPermissions`（无新端到端会话）。
+  **2026-11-12 补 DSH Web D3**：web profile 同样设 `danger-full-access` + `approval: never`，真实浏览器会话
+  执行 `git -C … reset --hard HEAD` 被 `deny-risk-commands` 拒绝（`高危：git 全局选项后接破坏性子命令`），
+  workdir 写法也被拒，未提交修改保留；Web 与 Desktop 同机制，web 覆盖 desktop。
+  **2026-11-12 补 WorkBuddy D3**：真实桌面会话（conversation `b0762c0d…`）里 `git reset --hard` 被
+  PreToolUse hook 拒绝（`⛔ HOOK 已拦截危险命令…`），`git status`/`git log` 正常执行，WorkBuddy 未绕过。
+
+- **Cursor 原生 Delete 工具接入硬门禁；Codex apply_patch 确认不在 hook 内（2026-11-11）**：
+  Cursor 的 `preToolUse` matcher 从 `Shell` 扩为 `Shell|Delete`，新增
+  `assets/hooks/cursor-riskguard-adapter.ps1` 把共享引擎的判定翻译成 Cursor 的
+  `{"permission":"deny","agent_message":...}` 协议；原生 `Delete`（`tool_input.file_path`）无法进回收站，
+  适配器一律拒绝并提示改用 shell 回收站命令。实测 `cursor-agent --force` 与
+  `approvalMode: unrestricted` 下 Delete 均被拒、文件保留，Shell 的 `git reset --hard` 仍被拒、
+  `git status` 放行；`scripts/riskguard-wiring-check.ps1` 增加适配器哈希与 matcher 校验，
+  `tests/adapter/cursor-adapter.test.ts` 4/4。
+  **Codex 没有拉满**：探针在 matcher `apply_patch` 与 `.*` 两种写法下都没有被调用，而
+  `codex exec` 的 `apply_patch *** Delete File` 实际删掉了文件——`PreToolUse` 只对 Bash 生效，
+  apply_patch 目前不可 hook，故 `approval_policy` 保持默认 `on-request`。结论写进
+  `references/codex.md` 与 `compatibility.json`。
+
+- **四个 Node 系 Agent 接入机器硬门禁：Pi / Oh My Pi (omp) / Kimi Code / MiniMax Code（D3，2026-11-11）**：
+  新增共用桥 `assets/shared/riskguard-bridge.mjs`（把各 agent 的 hook 事件转成命令 → 调**同一份**
+  `assets/hooks/dangerous-commands.ps1` → 按各家的阻断协议返回；规则不复制）与 Pi/omp 共用扩展
+  `assets/pi/riskguard-extension.ts`（`pi.on("tool_call")`，桥异常时 fail-closed）。落点：Pi
+  `~/.pi/agent/extensions/riskguard.ts`、omp `~/.omp/agent/hooks/pre/riskguard.ts`（omp 只扫
+  `hooks/pre|post/`）、Kimi `~/.kimi-code/config.toml` 的 `[[hooks]]` PreToolUse、MiniMax
+  `~/.minimax/hooks.json` 的 PreToolUse。`riskguard-wiring-check.ps1` 新增第 7 段做哈希/幂等接线
+  （Kimi 追加 TOML、MiniMax 合并式写 JSON，写前备份到 `~/.risk-guard-backup/`）。
+  **真实会话（Windows）**：四个 CLI 执行 `git reset --hard HEAD` 全部被拒且未提交改动保留，
+  `git status --short` 全部放行。边界：只覆盖 shell 工具；Kimi / MiniMax 的 hook 语义是 fail-open
+  （崩溃/超时放行），Pi / omp 的扩展在桥异常时 fail-closed。`compatibility.json` 已按实测写
+  D3 + 版本（Pi 1.5.2 / omp 18.18.8 / Kimi 2.5.3 / MiniMax 0.7.6），README 支持表、
+  `references/pi-aider.md`、`references/agent-matrix.md` 同步。
+  **顺带修掉实测暴露的规则缺口**：omp 把命令包成 `git -C <repo> reset --hard` 时，ps1/sh/OpenCode
+  插件/deploy+dsh 的 git 判据都只看 `git <subcommand>`，直接放行并丢了改动。ps1 增加 `$gitScan`
+  归一化（剥掉 `-C/-c/--git-dir=…` 前缀后再判），sh 用 `sed` 做同形归一化，OpenCode 插件在
+  `detectGit` 前归一化，`defaultDenyRules()` 与 dsh patch 同步补一条伞形规则（rule-alignment 保持逐条一致）；
+  `tests/adapter/riskguard-bridge.test.ts` 增加 `-C` / `--git-dir` 拒绝用例，`decision-parity` 复跑通过。
+  生产侧 dsh desktop/headless 两份 profile 没有 `# N3 预算闸门` 标记，`-Fix` 无法自动追加新规则，
+  已按 web profile 的同一条规则手工插入（写前备份到 `~/.risk-guard-backup/riskguard-wiring-check/`），
+  三份 profile 现在都含新规则且巡检 exit 0。
+
 - **Cursor 正式接入：Windows D2 → D3（2026-11-08，真机会话）**：新增 `scripts/riskguard-wiring-check.ps1`
   的 cursor 段——把单源 `assets/hooks/dangerous-commands.ps1` 复制到 `~/.cursor/hooks/`，并**幂等合并**
   `~/.cursor/hooks.json` 的一条 `preToolUse`（`matcher: "Shell"`、`timeout: 20`、`failClosed: false`）；

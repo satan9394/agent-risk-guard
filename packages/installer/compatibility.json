@@ -205,7 +205,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（应用自带 codex.exe 副本 0.162.0-alpha.17.2，MSIX OpenAI.Codex 26.1007.2314.0，%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>），~/.codex/ 为完整应用数据目录；独立 CLI 已于 2026-09-26 移除（不保留 `codex` 命令）。机器级 hook 注册面**只有** `~/.codex/hooks.json`（PreToolUse matcher Bash → `~/.codex/hooks/dangerous-commands.ps1`）；`~/.codex/config.toml` 的内联 `[[hooks.PreToolUse]]` 已于 2026-09-30 去重移除（同一层只用一种表示，避免同一脚本每次 Bash 并发跑两遍），config.toml 现仅保留 Codex 自己在 `/hooks` 勾选信任后写入的 `[hooks.state.*]` 信任账本。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。2026-09-07 Codex CLI 0.153.4（install.ps1 安装，%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe）真实会话补测 PASS：codex exec --cd <gitrepo> 会话中模型尝试 git reset --hard HEAD → PreToolUse hook deny（输出 \"Command blocked by PreToolUse hook\"，hook 日志 %TEMP%\\riskguard-hook-calls.log 时间戳 2026-09-07 03:48:46 与 exec 吻合新增 2 条 deny），未提交改动保留（git status 仍 M tracked.txt）——RiskGuard hook 双注册（hooks.json+config.toml，CLI/应用共用 ~/.codex）真实会话拦截验证通过。补充：2026-09-06 应用内手动验证 blocked by policy 来源=应用策略/沙箱层（approval_policy=never+sandbox=unelevated，钩子日志无该次 deny 记录）。2026-09-10 二次实测验证：codex 会话中模型生成测试文件后尝试永久删除（Remove-Item）→ PreToolUse Hook 明确拦截（输出 blocked by policy，hook 禁止该删除命令并提示使用回收站），测试文件保留未删除——与 09-07 git reset 场景互补，删除类 D3 证据链完整闭合。\n2026-10-27：本机已升到 codex-cli 0.164.0（PATH 上的 `codex` 可用；应用形态 MSIX 仍是 26.1007.2314.0）。hooks.json 仍是「危险命令 ps1 + _riskguard node」两条注册，config.toml 无内联重复。真实会话已复验：`codex exec` 下 `git reset --hard` 被 PreToolUse hook 拒绝（\"Command blocked by PreToolUse hook\"，hook 日志 05:51:15 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并真实执行（05:52:11 decision=allow）。\n2026-11-02（0.166.0 复验，D3 重取）：`codex-cli 0.166.0` 上 hooks.json 两条注册仍被宿主合并执行（输出可见 `hook: PreToolUse` 两次），`codex exec -s danger-full-access` 下 `git reset --hard HEAD` 被拒（宿主打印 `Command blocked by PreToolUse hook: ⛔ HOOK 已拦截…`、hook 日志 02:19:13 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并回显真实输出（02:19:58 decision=allow）。0.166.0 的 release notes 无 hook 协议变更；`codex exec` 默认 read-only 沙箱会先于 hook 拦下写操作，取 D3 证据须显式 `-s danger-full-access`（否则只能得到沙箱拒绝、不能证明 hook 生效）。同轮复核决定**保留双注册**：两套引擎在 6 条样本上判定一致，且注册项 spawn 失败会被宿主静默忽略（单条即单点），详见 references/codex.md。",
+      "notes": "本机 Codex 为应用形态（非 CLI 二进制）：VS Code 扩展 openai.chatgpt + 本地 server（应用自带 codex.exe 副本 0.162.0-alpha.17.2，MSIX OpenAI.Codex 26.1007.2314.0，%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>），~/.codex/ 为完整应用数据目录；独立 CLI 已于 2026-09-26 移除（不保留 `codex` 命令）。机器级 hook 注册面**只有** `~/.codex/hooks.json`（PreToolUse matcher Bash → `~/.codex/hooks/dangerous-commands.ps1`）；`~/.codex/config.toml` 的内联 `[[hooks.PreToolUse]]` 已于 2026-09-30 去重移除（同一层只用一种表示，避免同一脚本每次 Bash 并发跑两遍），config.toml 现仅保留 Codex 自己在 `/hooks` 勾选信任后写入的 `[hooks.state.*]` 信任账本。权限/沙箱 approval_policy=never + sandbox=unelevated。DENY 输出 {decision:'deny'} exit 2，ALLOW {} exit 0。doctor dynamic PASS（真实 spawn hook + 无害 allow + 危险 deny self-test）。2026-09-07 Codex CLI 0.153.4（install.ps1 安装，%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe）真实会话补测 PASS：codex exec --cd <gitrepo> 会话中模型尝试 git reset --hard HEAD → PreToolUse hook deny（输出 \"Command blocked by PreToolUse hook\"，hook 日志 %TEMP%\\riskguard-hook-calls.log 时间戳 2026-09-07 03:48:46 与 exec 吻合新增 2 条 deny），未提交改动保留（git status 仍 M tracked.txt）——RiskGuard hook 双注册（hooks.json+config.toml，CLI/应用共用 ~/.codex）真实会话拦截验证通过。补充：2026-09-06 应用内手动验证 blocked by policy 来源=应用策略/沙箱层（approval_policy=never+sandbox=unelevated，钩子日志无该次 deny 记录）。2026-09-10 二次实测验证：codex 会话中模型生成测试文件后尝试永久删除（Remove-Item）→ PreToolUse Hook 明确拦截（输出 blocked by policy，hook 禁止该删除命令并提示使用回收站），测试文件保留未删除——与 09-07 git reset 场景互补，删除类 D3 证据链完整闭合。\n2026-10-27：本机已升到 codex-cli 0.164.0（PATH 上的 `codex` 可用；应用形态 MSIX 仍是 26.1007.2314.0）。hooks.json 仍是「危险命令 ps1 + _riskguard node」两条注册，config.toml 无内联重复。真实会话已复验：`codex exec` 下 `git reset --hard` 被 PreToolUse hook 拒绝（\"Command blocked by PreToolUse hook\"，hook 日志 05:51:15 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并真实执行（05:52:11 decision=allow）。\n2026-11-02（0.166.0 复验，D3 重取）：`codex-cli 0.166.0` 上 hooks.json 两条注册仍被宿主合并执行（输出可见 `hook: PreToolUse` 两次），`codex exec -s danger-full-access` 下 `git reset --hard HEAD` 被拒（宿主打印 `Command blocked by PreToolUse hook: ⛔ HOOK 已拦截…`、hook 日志 02:19:13 decision=deny）、未提交改动保留；同会话 `git status --short` 放行并回显真实输出（02:19:58 decision=allow）。0.166.0 的 release notes 无 hook 协议变更；`codex exec` 默认 read-only 沙箱会先于 hook 拦下写操作，取 D3 证据须显式 `-s danger-full-access`（否则只能得到沙箱拒绝、不能证明 hook 生效）。同轮复核决定**保留双注册**：两套引擎在 6 条样本上判定一致，且注册项 spawn 失败会被宿主静默忽略（单条即单点），详见 references/codex.md。\n2026-11-11 侦察（0.166.0）：Codex 的 PreToolUse hook 只对 Bash 工具触发；apply_patch 在 matcher 写成 apply_patch 与 .* 两种情况下都未调用 hook（探针日志为空），而 apply_patch 的 *** Delete File 实际删掉了文件。因此 apply_patch 删除不在现有 hook 门禁内，approval_policy 保持默认 on-request，未拉满；要覆盖它需要 Codex 上游给 apply_patch 提供可拦截的 hook/策略点。\n2026-11-12 更新（0.167.1）：apply_patch 已是 PreToolUse 的合法 subject（tool_input.command 是 patch 文本），但 hook 必须先由 TUI 的 \"Trust all and continue\" 授信，未授信时静默跳过（fail-open）。当前 magpie 模型走 shell 的 apply_patch CLI，这条路径被已授信的 Bash hook 新规则（*** Delete File / *** Move to）拦住并实测拒绝；原生 apply_patch 工具要在模型目录暴露它时才走 hook，届时需一次性授信并复测。approval_policy 仍未改。\n2026-11-12 授信后复验：TUI 选 Trust all 后 config.toml 出现 pre_tool_use:1:0 的 trusted_hash；用原生 apply_patch 工具执行 *** Delete File: tracked.txt 被 PreToolUse hook 拒绝（Command blocked by PreToolUse hook: apply_patch 删除/移动文件…），文件保留。shell 形态的 apply_patch 由 Bash 规则同样拦截。filesystem.delete 升 D3；apply_patch 的 Update File（覆盖写）不拦，filesystem.write 仍未覆盖。\n2026-11-13 权限决策（最终选 A 改良）：approval_policy=never + sandbox_mode=workspace-write（不放开 full-access），同时 enabled=false 关闭 node_repl 与 unified-computer-use（cua_repl）两个自由 JS 面。原配置下审批不约束 MCP，js 能在工作区内建/删文件且 hook 看不到；关掉这两个入口后，真跑 git reset 与 apply_patch delete 仍被 hook 拒，git status 与工作区写放行，全程无审批，会话 MCP 工具为 NONE。代价是 Codex 的电脑操作/浏览器自动化关闭，回滚 enabled=true。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
@@ -257,7 +257,7 @@
         "filesystem.delete": {
           "enforcement": "hard",
           "verification": {
-            "windows": "D2"
+            "windows": "D3"
           }
         },
         "git.destructive": {
@@ -281,7 +281,7 @@
       },
       "componentInventory": {
         "agent": "codex",
-        "version": "0.166.0（codex-cli）",
+        "version": "0.167.1",
         "adapter": "packages/adapters/codex + packages/codex",
         "hook": "PreToolUse hook (hooks.json；config.toml 内联注册已于 2026-09-30 去重移除)",
         "runtime": "node + powershell hook（应用形态：VS Code 扩展 openai.chatgpt + 本地 server codex.exe）",
@@ -297,7 +297,7 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27（0.2.1-rc.3 复验，D3 重取）：headless profile 默认 route 是 deepseek-official，其 DEEPSEEK_API_KEY 已失效（401），故真实会话用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` 并把 agent-default-model 指向 `command` provider（`deepseek/deepseek-v4.1-flash`）后完成：`git reset --hard` 被门禁拒绝（返回 `Error: 高危：git reset --hard 丢弃工作区改动`、命令未执行、未提交改动保留），同会话 `git status --short` 放行并真实回显。契约层同步复核：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。注：headless 默认组合不含 llm-pi-ai，这是本次需要 overlay 才能用 command 模型的原因。\n2026-11-02（0.2.1-rc.5 复验，D3 重取 + 生产接线修复）：headless profile 现已自带 `llm-pi-ai`（magpie provider）且 `agent-default-model` 指向 `magpie / commandcode/deepseek/deepseek-v4.1-flash`，**无需再打 `--patch` overlay**：`dsh headless <prompt>` 下 `git reset --hard HEAD` 被 pre-execute 门禁拒绝（`Error: 高危：git reset --hard 丢弃工作区改动`）、脏改动保留，同会话 `git status --short` 放行并回显。同轮巡检发现 **desktop profile 的 `cordis.patch.yml` 整段丢了 `deny-risk-commands`**（只剩 llm-pi-ai + agent-default-model，桌面端实际裸奔），已由 `riskguard-wiring-check.ps1 -Fix` 追加注入成功、三个 profile 均 74 条逐条一致；该脚本新增「整段缺失则追加」自愈路径与密封用例 T8。注：`desktop` profile 由 Electron 应用独占管理，CLI 拒绝 `--dump-config`，其生效性只能在应用内或看该 patch 文件本身。",
+      "notes": "pre-execute 门禁 + guard 单调不变量，D2 源码实证 + D3 真实会话拦截记录。\n2026-10-27（0.2.1-rc.3 复验，D3 重取）：headless profile 默认 route 是 deepseek-official，其 DEEPSEEK_API_KEY 已失效（401），故真实会话用 `--patch` 覆盖注入 `@deepseek-ai/dsh-llm-pi-ai` 并把 agent-default-model 指向 `command` provider（`deepseek/deepseek-v4.1-flash`）后完成：`git reset --hard` 被门禁拒绝（返回 `Error: 高危：git reset --hard 丢弃工作区改动`、命令未执行、未提交改动保留），同会话 `git status --short` 放行并真实回显。契约层同步复核：两个 profile 的 `cordis.patch.yml` 74 条规则与单源逐条一致、`packages/dsh` 测试全过。注：headless 默认组合不含 llm-pi-ai，这是本次需要 overlay 才能用 command 模型的原因。\n2026-11-02（0.2.1-rc.5 复验，D3 重取 + 生产接线修复）：headless profile 现已自带 `llm-pi-ai`（magpie provider）且 `agent-default-model` 指向 `magpie / commandcode/deepseek/deepseek-v4.1-flash`，**无需再打 `--patch` overlay**：`dsh headless <prompt>` 下 `git reset --hard HEAD` 被 pre-execute 门禁拒绝（`Error: 高危：git reset --hard 丢弃工作区改动`）、脏改动保留，同会话 `git status --short` 放行并回显。同轮巡检发现 **desktop profile 的 `cordis.patch.yml` 整段丢了 `deny-risk-commands`**（只剩 llm-pi-ai + agent-default-model，桌面端实际裸奔），已由 `riskguard-wiring-check.ps1 -Fix` 追加注入成功、三个 profile 均 74 条逐条一致；该脚本新增「整段缺失则追加」自愈路径与密封用例 T8。注：`desktop` profile 由 Electron 应用独占管理，CLI 拒绝 `--dump-config`，其生效性只能在应用内或看该 patch 文件本身。\n2026-11-12 权限：headless profile 在 cordis.patch.yml 加 sandbox-policy.mode=danger-full-access + approval.policy=never（原默认 workspace-write 在本机 ACL 报 Win32 5，ask 无 answerer 时直接拒绝）；实测 git status 放行、git reset --hard 与 Remove-Item 被 deny-risk-commands 拒。web/desktop profile 未改，仍按默认审批。\n2026-11-12（0.2.2-rc.2 适配 + D3 重取）：① 修 JS 正则故障——`deny-risk-commands` 用 JS `new RegExp(re, 'i')` 编译规则，PCRE 内联标志 `(?m)` 让整行 `apply()` 抛 `SyntaxError: Invalid group`，插件不激活、删除门禁静默 fail-open（启动日志 `dsh: warning: 1 entry did not activate`）；单源两处（`defaultDenyRules()` 与 `assets/dsh/deny-risk-commands.patch.yml`）已去掉内联标志，并新增 `tests/adversarial/dsh-rule-js-compat.test.ts` 逐条编译闸门。② insert id/config 形状在 rc.2 未变（`dsh --profile headless --dump-config` 仍输出 `- id: deny-risk-commands` 与完整 `rules:`）。③ ops-ptc 覆盖面核实：PTC `run_code` 的内层工具调用仍走 `tools/pre-execute` 且名字保持 `pwsh`，不构成绕过；缺口只在 dsh-ops 自己的 `ops_bash`（另一工具名，插件白名单没有），本机 web profile 以 `global.bash: false` + `hidePwsh: false` 规避。④ 真实会话（headless，2026-11-12 05:32/05:34，session `session-be65ba40-c41c-4fa3-931e-32fd47d180ca` / `session-d69f477e-0ec4-420d-ac25-363279ae1769`）：`pwsh` 调 `git reset --hard HEAD` 返回 `Error: 高危：git reset --hard 丢弃工作区改动`、脏改动保留；同会话 `git status --short` 正常返回 ` M tracked.txt`。\n2026-11-12 Web/Desktop D3：web profile 加 sandbox-policy.mode=danger-full-access + approval.policy=never 后，通过真实浏览器会话（session-5a15cdf6-5826-4fa5-996a-ab02408fbf80）执行 `git -C \"…/security/repo\" reset --hard HEAD`，被 deny-risk-commands 拒绝，原因 `高危：git 全局选项后接破坏性子命令（-C 绕过）`；改用 workdir 写法也被拒，`tracked.txt` 的未提交修改保留。Web 与 Desktop 同一套 profile/前端机制，web 覆盖 desktop。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "supported",
@@ -374,7 +374,7 @@
       },
       "componentInventory": {
         "agent": "dsh",
-        "version": "0.2.1-rc.5",
+        "version": "0.2.2-rc.2",
         "adapter": "packages/adapters/dsh + packages/dsh",
         "hook": "tools/pre-execute + guard",
         "runtime": "node",
@@ -390,10 +390,10 @@
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "Windows 真机会话（2026-11-08，Cursor 3.29.9 桌面 + cursor-agent 2026.11.05-86047df）：preToolUse hook 对 git reset --hard 硬拦、安全命令放行，--force 下仍生效。边界：beforeShellExecution 只接审批层（--force 可绕过，不作为硬闸门）；failClosed 未启用（ps1 引擎以空输出表示放行，崩溃/超时因此 fail-open；非法 JSON 由 Cursor 在 preToolUse 上按拦截处理）；非 shell 工具（Delete/Write）仍只有适配器 D2 单元测试。",
+      "notes": "Windows 真机会话（2026-11-08，Cursor 3.29.9 桌面 + cursor-agent 2026.11.05-86047df）：preToolUse hook 对 git reset --hard 硬拦、安全命令放行，--force 下仍生效。边界：beforeShellExecution 只接审批层（--force 可绕过，不作为硬闸门）；failClosed 未启用（ps1 引擎以空输出表示放行，崩溃/超时因此 fail-open；非法 JSON 由 Cursor 在 preToolUse 上按拦截处理）；非 shell 工具（Delete/Write）仍只有适配器 D2 单元测试。\n2026-11-11 Windows D3（Cursor 3.29.9 / cursor-agent 2026.11.05-86047df）：~/.cursor/hooks.json 的 preToolUse matcher 扩为 Shell|Delete，改由 cursor-riskguard-adapter.ps1 适配 Cursor 的 {permission:deny,agent_message} 协议；原生 Delete 工具（tool_input.file_path）实测被拒且文件保留，Shell 危险命令仍由共享 ps1 引擎拒绝，安全命令放行。Delete 工具无法走回收站，故适配器对 Delete 一律拒绝并提示改用 shell 回收站命令。--force / approvalMode=unrestricted 下 preToolUse 仍是硬闸门。",
       "surfaces": {
         "shell": "supported",
-        "filesystem": "unknown",
+        "filesystem": "supported",
         "git": "unknown",
         "mcp": "unknown",
         "network": "unknown"
@@ -444,27 +444,33 @@
           "verification": {
             "windows": "D0"
           }
+        },
+        "filesystem.delete": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
         }
       },
       "componentInventory": {
         "agent": "cursor",
         "version": "3.29.9（桌面）/ 2026.11.05-86047df（cursor-agent）",
         "adapter": "packages/adapters/cursor",
-        "hook": "preToolUse hook（~/.cursor/hooks.json，matcher Shell）",
+        "hook": "preToolUse hook（Shell|Delete，Cursor adapter）",
         "runtime": "powershell hook（共享 ps1 规则引擎）+ node 适配器（非 shell 工具）",
         "policy": "default-policy"
       }
     },
     "windsurf": {
-      "display": "Windsurf",
-      "integration": "pre_run_command hook",
-      "enforcement": "hard",
+      "display": "Devin (ex-Windsurf)",
+      "integration": "PreToolUse hook (matcher exec)",
+      "enforcement": "soft",
       "verification": {
         "windows": "D2",
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "adapter 已实现，D1/D2（单元测试）；无真实 Agent 会话（D3 待补）。⚠ Restricted Mode 下 hooks 不加载：Restricted Mode ≠ RiskGuard ACTIVE。",
+      "notes": "2026-11-13：Windsurf 已更名 Devin（Cascade 2026-07-01 停用），新契约为 `PreToolUse` + matcher `exec`。Devin CLI 3000.12.57 已装，用户已 `auth login` 成功；用户级 `%APPDATA%\\devin\\config.json` 与项目 `.devin/hooks.v1.json` 都已接线（`~/.devin/hooks/devin-riskguard-adapter.ps1` → 共享引擎），离线 payload deny/allow 3/3。但真实 `devin -p` 复验发现：`--permission-mode dangerous` 下 hook 已返回 `{\"decision\":\"block\"}` + exit 2（适配器日志有 deny），命令仍被执行；改用 auto/smart 又在 print 模式被权限确认提前拒绝，hook 没机会跑。即 CLI 当前无法同时做到“无审批 + 硬拦截”，所以维持 D2，不报 D3。需要等 Devin 修复 dangerous 模式忽略 hook，或改用 Desktop 交互模式取证。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -476,7 +482,7 @@
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
         "hardDeny": "supported",
-        "failMode": "unknown"
+        "failMode": "fail-open"
       },
       "sandbox": {
         "available": "unknown",
@@ -494,7 +500,7 @@
         "userCanDisable": "supported",
         "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "hookFailureSemantics": "fail-open",
       "conditionalAvailability": [
         {
           "feature": "hook",
@@ -508,7 +514,7 @@
       ],
       "capabilities": {
         "shell.execute": {
-          "enforcement": "hard",
+          "enforcement": "soft",
           "verification": {
             "windows": "D2"
           }
@@ -522,9 +528,9 @@
       },
       "componentInventory": {
         "agent": "windsurf",
-        "version": "unknown",
-        "adapter": "packages/adapters/windsurf",
-        "hook": "pre_run_command hook",
+        "version": "3000.12.57 (Devin CLI)",
+        "adapter": "assets/hooks/devin-riskguard-adapter.ps1",
+        "hook": "PreToolUse hook (matcher exec)",
         "runtime": "node",
         "policy": "default-policy"
       }
@@ -534,11 +540,11 @@
       "integration": "preToolUse hook + policy.d machine policy",
       "enforcement": "hard",
       "verification": {
-        "windows": "D2",
+        "windows": "D3",
         "macos": "D2",
         "linux": "D2"
       },
-      "notes": "adapter 已实现（D1/D2 单测，2026-09 官方 hooks-reference 核查）。真实 D3 待本机安装 Copilot CLI（当前 SKIP）；copilot-cli issue #3874（2026-06）显示 preToolUse deny 在部分版本存在不阻断回归 → failMode 记 unknown，不标 D3。machine policy（Layer B）需管理员权限：policy.d + HKLM。",
+      "notes": "adapter 已实现（D1/D2 单测，2026-09 官方 hooks-reference 核查）。真实 D3 待本机安装 Copilot CLI（当前 SKIP）；copilot-cli issue #3874（2026-06）显示 preToolUse deny 在部分版本存在不阻断回归 → failMode 记 unknown，不标 D3。machine policy（Layer B）需管理员权限：policy.d + HKLM。\n2026-11-12 Windows D3（Copilot CLI 1.0.109）：~/.copilot/hooks/riskguard.json 用 PascalCase PreToolUse（camelCase 的 payload 是 toolName/toolArgs，引擎读不到），适配层 copilot-riskguard-adapter.ps1 输出顶层 permissionDecision + exit 2；真实 copilot -p 会话中 git reset --hard 在 --allow-all-tools 与 --yolo 下都被拒、脏改动保留，git status 放行；移走 hook 的负向对照里命令真的执行。命令型 hook 崩溃/非零退出/exit 2 为 fail-closed（官方文档称超时 fail-open，未实测）。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -550,7 +556,7 @@
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
         "hardDeny": "supported",
-        "failMode": "unknown"
+        "failMode": "fail-closed"
       },
       "sandbox": {
         "available": "unknown",
@@ -569,7 +575,7 @@
         "userCanDisable": "supported",
         "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "hookFailureSemantics": "fail-closed",
       "conditionalAvailability": [],
       "securityBoundaries": [
         "L0",
@@ -579,7 +585,7 @@
         "shell.execute": {
           "enforcement": "hard",
           "verification": {
-            "windows": "D2"
+            "windows": "D3"
           }
         },
         "filesystem.write": {
@@ -597,9 +603,9 @@
       },
       "componentInventory": {
         "agent": "copilot",
-        "version": "unknown",
+        "version": "1.0.109",
         "adapter": "packages/adapters/copilot",
-        "hook": "preToolUse hook + policy.d",
+        "hook": "preToolUse hook（PreToolUse，PascalCase）",
         "runtime": "node",
         "policy": "default-policy"
       }
@@ -675,7 +681,7 @@
         "macos": "D0",
         "linux": "D0"
       },
-      "notes": "CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎，与 claude/codex/agy 同一单源）。**与其余 Agent 的关键差别**：WorkBuddy 自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），把删除强制改道回收站；所以接线**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（把「永久删除」类拦截委派给下游 shim），否则会出现「hook 拦下 → 命令不执行 → shim 没机会改道」的死锁；且 hook 文案建议的 VB 回收站路径又被平台硬编码黑名单（Add-Type / New-Object -ComObject / Reflection）拦住。委派后仍拦：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/cleanmgr/$Recycle.Bin）；Clear-Content 显式排除。D2 = 自动化判定实测（tests/adapter/workbuddy-injection.test.ts 钉住注入形状与委派矩阵）；**D3 已取**（2026-09-28 真实 WorkBuddy 会话，conversationId a051ea4d-f94d-4eb8-847a-431e8a3bb9b6）：hook 日志 decision=deny 两条（shred 06:00:52、Clear-Content 06:01:56，均为委派后仍拦的不可逆操作）+ decision=allow 多条（python 分析 / ls / 回收站只读盘点）；委派链路端到端实证——3 个 rm 经 [delete-exempted:RG_ALLOW_DELETE] 放行，7 个测试文件全部落进回收站（$I 元数据原路径/大小/删除时间逐一吻合），永久删除实际发生 0 起。会话自产报告与复现材料入仓 tasks/orchestrator/WORKBUDDY_D3_SESSION_20260928.md 等三件。",
+      "notes": "CC 兼容 PreToolUse（~/.workbuddy/settings.json）→ dangerous-commands.ps1（ps1 规则引擎，与 claude/codex/agy 同一单源）。**与其余 Agent 的关键差别**：WorkBuddy 自带 safe-delete shim（bash safe-bin/*、Node shim、Python sitecustomize.py、覆写 Remove-Item），把删除强制改道回收站；所以接线**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（把「永久删除」类拦截委派给下游 shim），否则会出现「hook 拦下 → 命令不执行 → shim 没机会改道」的死锁；且 hook 文案建议的 VB 回收站路径又被平台硬编码黑名单（Add-Type / New-Object -ComObject / Reflection）拦住。委派后仍拦：rm -rf /、系统目录、shred、wmic shadowcopy、回收站清空族（Clear-RecycleBin/cleanmgr/$Recycle.Bin）；Clear-Content 显式排除。D2 = 自动化判定实测（tests/adapter/workbuddy-injection.test.ts 钉住注入形状与委派矩阵）；**D3 已取**（2026-09-28 真实 WorkBuddy 会话，conversationId a051ea4d-f94d-4eb8-847a-431e8a3bb9b6）：hook 日志 decision=deny 两条（shred 06:00:52、Clear-Content 06:01:56，均为委派后仍拦的不可逆操作）+ decision=allow 多条（python 分析 / ls / 回收站只读盘点）；委派链路端到端实证——3 个 rm 经 [delete-exempted:RG_ALLOW_DELETE] 放行，7 个测试文件全部落进回收站（$I 元数据原路径/大小/删除时间逐一吻合），永久删除实际发生 0 起。会话自产报告与复现材料入仓 tasks/orchestrator/WORKBUDDY_D3_SESSION_20260928.md 等三件。\n2026-11-12：~/.workbuddy/settings.json 加 permissions.defaultMode=bypassPermissions（备份在 subagents/workbuddy/backup/）；原文件无 permission/approval 键。桌面端未运行、内置 CLI 需认证，本次没有新的端到端会话；2026-09-28 的 D3 仍有效。\n2026-11-12 真实桌面会话（D3）：model deepseek-v4.1-flash，conversation b0762c0d-08a0-4c5d-9614-de79fe6b2300，request 01a1cfd3a472748cb139527c2b749883。Bash `git reset --hard HEAD` 被 PreToolUse hook 拒绝（原文 `⛔ HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止`），同会话 `git status`、`git log` 正常执行；WorkBuddy 明确表示不绕过 hook。运行在 permissions.defaultMode=bypassPermissions 下。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -734,11 +740,11 @@
       "integration": "PreToolUse hook",
       "enforcement": "soft",
       "verification": {
-        "windows": "D1",
+        "windows": "D3",
         "macos": "D1",
         "linux": "D1"
       },
-      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。",
+      "notes": "adapter 已实现但 Grok hook 默认为 fail-open，只能作为软约束（Rules/Sandbox 兜底）。\n2026-11-13 Windows D3（xAI Grok Build 1.0.77）：~/.grok/hooks/riskguard.json 的 PreToolUse（无 matcher）→ grok-riskguard-adapter.ps1 → 共享 ps1 引擎；`grok --always-approve -p` 真实会话里 `git reset --hard HEAD` 被拒（reason `git 不可逆操作…`），脏改动与未跟踪文件保留；`git status --short` 放行。适配器曾因把 payload 变量命名为 PowerShell 自动变量 `$input` 导致 stdin 被吞、每次调用都 fail-closed 空输入，已改名 `$toolInputData`。vendor 合同对崩溃/超时仍是 fail-open，所以整体 enforcement 记 soft。Windsurf 是 GUI IDE、无 CLI，需账号登录，未安装未验证。",
       "surfaces": {
         "shell": "supported",
         "filesystem": "unknown",
@@ -777,13 +783,13 @@
         "shell.execute": {
           "enforcement": "soft",
           "verification": {
-            "windows": "D1"
+            "windows": "D3"
           }
         }
       },
       "componentInventory": {
         "agent": "grok",
-        "version": "unknown",
+        "version": "1.0.77",
         "adapter": "packages/adapters/grok",
         "hook": "PreToolUse hook (fail-open)",
         "runtime": "node",
@@ -792,52 +798,378 @@
     },
     "pi": {
       "display": "Pi",
-      "integration": "none",
-      "enforcement": "none",
+      "integration": "tool_call extension (~/.pi/agent/extensions)",
+      "enforcement": "hard",
       "verification": {
-        "windows": "D0",
-        "macos": "D0",
-        "linux": "D0"
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
       },
-      "notes": "无实现（adapter 目录为空），Unsupported。",
+      "notes": "2026-11-11 Windows 实机 D3（pi 1.5.2）：~/.pi/agent/extensions/riskguard.ts 在 pi.on('tool_call') 里把 bash 命令交给 ~/.risk-guard/riskguard-bridge.mjs，再由同一份 assets/hooks/dangerous-commands.ps1 判 deny；返回 {block:true,reason}。实测 `pi -p \"git reset --hard HEAD\"` 被拒绝、未提交改动保留，`git status --short` 正常放行。桥在规则引擎异常时返回 block（fail-closed）。只覆盖 shell 工具；write/edit 与 MCP 未接。",
       "surfaces": {
-        "shell": "not-applicable",
-        "filesystem": "not-applicable",
-        "git": "not-applicable",
-        "mcp": "not-applicable",
-        "network": "not-applicable"
-      },
-      "enforcementDetail": {
-        "preExecutionHook": "not-applicable",
-        "postExecutionHook": "not-applicable",
-        "hardDeny": "not-applicable",
-        "failMode": "not-applicable"
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
       },
       "sandbox": {
-        "available": "not-applicable",
-        "osEnforced": "not-applicable"
+        "available": "unknown",
+        "osEnforced": "unknown"
       },
       "policy": {
-        "userLevel": "not-applicable",
-        "systemLevel": "not-applicable",
-        "enterpriseLevel": "not-applicable",
-        "policyScope": []
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
       },
       "bypass": {
-        "userCanDisable": "not-applicable",
-        "agentCanBypass": "not-applicable"
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
       },
-      "hookFailureSemantics": "unknown",
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "hookFailureSemantics": "fail-closed",
       "conditionalAvailability": [],
-      "securityBoundaries": [],
-      "capabilities": {},
+      "securityBoundaries": [
+        "L0",
+        "L1",
+        "L2"
+      ],
       "componentInventory": {
         "agent": "pi",
-        "version": "unknown",
-        "adapter": "none",
-        "hook": "none",
-        "runtime": "none",
-        "policy": "none"
+        "version": "1.5.2",
+        "adapter": "assets/pi/riskguard-extension.ts + assets/shared/riskguard-bridge.mjs",
+        "hook": "tool_call extension",
+        "runtime": "node",
+        "policy": "default-policy"
+      }
+    },
+    "omp": {
+      "display": "Oh My Pi (omp)",
+      "integration": "tool_call extension (~/.omp/agent/hooks/pre)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（omp 18.18.8，Bun 1.4.4 运行时）：omp 的原生发现只扫 ~/.omp/agent/hooks/pre|post/*.ts，riskguard.ts 与 Pi 共用同一扩展（pi.on('tool_call') → 桥 → 同一 ps1 引擎）。实测 `omp -p \"git reset --hard HEAD\"` 被 block、未提交改动保留，`git status --short` 放行。桥异常时 fail-closed。只覆盖 shell；omp 启动时自带的一批 MCP 目录不在门禁范围。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-closed"
+      },
+      "hookFailureSemantics": "fail-closed",
+      "conditionalAvailability": [],
+      "securityBoundaries": [
+        "L0",
+        "L1",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "omp",
+        "version": "18.18.8",
+        "adapter": "assets/pi/riskguard-extension.ts + assets/shared/riskguard-bridge.mjs",
+        "hook": "tool_call extension",
+        "runtime": "node (hosted by omp/Bun)",
+        "policy": "default-policy"
+      }
+    },
+    "kimi-code": {
+      "display": "Kimi Code",
+      "integration": "PreToolUse hook ([[hooks]] in config.toml)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（kimi 2.5.3）：~/.kimi-code/config.toml 的 [[hooks]] PreToolUse 调 ~/.risk-guard/riskguard-bridge.mjs（桥读 stdin 事件并转给同一 ps1 引擎，deny 时 exit 2 + stderr）。实测 `kimi -p \"git reset --hard HEAD\"` 显示 HOOK 已拦截、未提交改动保留，`git status --short` 放行。官方语义是 hook 崩溃/超时/非 0/2 退出码一律 fail-open（文档明示），所以这是「命中即硬拒 + 故障开放」；已知桌面端 1.1.0 不执行 config.toml 的 [[hooks]]（MoonshotAI/kimi-code#4254），CLI 正常。只覆盖 shell 工具。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-open"
+      },
+      "hookFailureSemantics": "fail-open",
+      "conditionalAvailability": [
+        {
+          "feature": "hook",
+          "condition": "Kimi Code CLI（桌面端 1.1.0 曾不执行 config.toml 的 [[hooks]]，见 issue #4254）",
+          "state": "supported"
+        }
+      ],
+      "securityBoundaries": [
+        "L0",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "kimi-code",
+        "version": "2.5.3",
+        "adapter": "assets/shared/riskguard-bridge.mjs + assets/hooks/dangerous-commands.ps1",
+        "hook": "PreToolUse hook ([[hooks]])",
+        "runtime": "node bridge",
+        "policy": "default-policy"
+      }
+    },
+    "minimax-code": {
+      "display": "MiniMax Code",
+      "integration": "PreToolUse hook (~/.minimax/hooks.json)",
+      "enforcement": "hard",
+      "verification": {
+        "windows": "D3",
+        "macos": "D1",
+        "linux": "D1"
+      },
+      "notes": "2026-11-11 Windows 实机 D3（mcode 0.7.6）：用户级 ~/.minimax/hooks.json 的 PreToolUse matcher `bash|shell|terminal` 调 ~/.risk-guard/riskguard-bridge.mjs（deny 时 exit 2 + stderr，MiniMax 把 stderr 作为拒绝原因）。实测 `mcode exec ... \"git reset --hard HEAD\"` 被拒、未提交改动保留，`git status --short` 放行。用户 hooks.json 必须带顶层 \"enabled\": true。官方语义：非 0/2 退出码与超时都按未运行处理（fail-open），故同为「命中即硬拒 + 故障开放」。只覆盖 shell 工具；Desktop 与 TUI 都读该文件。",
+      "surfaces": {
+        "shell": "supported",
+        "filesystem": "unknown",
+        "git": "unknown",
+        "mcp": "unknown",
+        "network": "unknown"
+      },
+      "sandbox": {
+        "available": "unknown",
+        "osEnforced": "unknown"
+      },
+      "policy": {
+        "userLevel": "supported",
+        "systemLevel": "unknown",
+        "enterpriseLevel": "unknown",
+        "policyScope": [
+          "user"
+        ]
+      },
+      "bypass": {
+        "userCanDisable": "supported",
+        "agentCanBypass": "unknown"
+      },
+      "capabilities": {
+        "shell.execute": {
+          "enforcement": "hard",
+          "verification": {
+            "windows": "D3"
+          }
+        },
+        "filesystem.write": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "filesystem.delete": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "git.destructive": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "mcp.invoke": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        },
+        "network.connect": {
+          "enforcement": "unknown",
+          "verification": {
+            "windows": "D0"
+          }
+        }
+      },
+      "enforcementDetail": {
+        "preExecutionHook": "supported",
+        "postExecutionHook": "unsupported",
+        "hardDeny": "supported",
+        "failMode": "fail-open"
+      },
+      "hookFailureSemantics": "fail-open",
+      "conditionalAvailability": [],
+      "securityBoundaries": [
+        "L0",
+        "L2"
+      ],
+      "componentInventory": {
+        "agent": "minimax-code",
+        "version": "0.7.6",
+        "adapter": "assets/shared/riskguard-bridge.mjs + assets/hooks/dangerous-commands.ps1",
+        "hook": "PreToolUse hook (hooks.json)",
+        "runtime": "node bridge",
+        "policy": "default-policy"
       }
     }
   }

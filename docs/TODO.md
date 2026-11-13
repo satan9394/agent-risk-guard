@@ -25,6 +25,25 @@
 - [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
 - [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
 
+## DSH 覆盖边界（2026-11-12 登记）
+
+- [x] **dsh-ops 的 `ops_bash` 白名单缺口（2026-11-12 已补判据）**：原判据只匹配 `exec.name` 为 `pwsh` / `bash`
+  的调用，dsh-ops 启用 bash 时发布的 `ops_bash`（自带 MSYS bash）不过闸。已把插件判据改成 fail-closed 结构性判据：
+  只要 `arguments.command` 是字符串就按执行器处理，例外表默认只有 `str_replace_editor`（它的 `command` 是编辑动作名）；
+  实测 rc.2 + dsh-ops 里带 `command` 字符串的工具只有 pwsh / bash / 持久化 shell / `ops_bash` / 该编辑器。
+  16 条用例矩阵覆盖 pwsh、bash、sh、`ops_bash`、`pwsh_persistent`、`bash_persistent`、未知同名工具、编辑器误杀、
+  无 `command` 参数、`arguments` 为 JSON 字符串，全 PASS。插件同时从 `file:`（复制）改成 `link:`（junction），
+  避免「改了源码、profile 跑旧副本」的漂移。
+  本机仍保持 `global.bash: false` + `hidePwsh: false`；**恢复 `ops_bash` 现在只剩一个开关决定**，
+  不再是门禁缺口（真跑一次 `ops_bash` 的拒/放仍待取证）。
+- [x] **PTC 内层调用是否绕过门禁（2026-11-12 源码核实）**：不绕过。`run_code` 内的 `tools.pwsh(...)`
+  走同一个工具管线 —— `@deepseek-ai/dsh-tools` 的 `pipeline.js` 在派发前执行
+  `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`；`@deepseek-ai/dsh-tool-executor-ptc` 直接 import
+  `ToolExecutionPipeline` / `executeToolBatch` 并构造同一个 pipeline（`executor.prepare(input)`），工具名保持 `pwsh`。
+  本轮**未**单独跑 PTC 会话取证：`dsh headless` 用的 headless profile 没有 dsh-ops（无 `run_code`），
+  而 web profile 的 ops-ptc 只能从 GUI 驱动；结论基于 0.2.2-rc.2 安装包源码。真实 PTC 会话复验仍待一次
+  「web profile + ops-ptc」的会话。
+
 ## 已知过拦（登记延后，不开新轮）
 
 > 项目停止规则：**只有安全方向（放松 / fail-open / 丢拦截）才开新轮，过拦与边角一律登记延后。**
@@ -164,6 +183,11 @@
   的机器）vs `pwsh`（本机，规避 5.1 编码类问题）；guard 名 `riskguard-dangerous-commands` vs
   `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；
   若将来要统一，先确认新机器的 pwsh 可用性再动。
+
+- [ ] **`riskguard-wiring-check.ps1 -Fix` 不能给没有 `# N3 预算闸门` 标记的 dsh profile 追加新规则**
+      （2026-11-11 加 `git -C` 伞形规则时暴露）：desktop/headless 两份 profile 命中「缺 1 条」但
+      没有同位次可替换的条目，兜底重组又要求 N3 标记，只能手工插入。要么给兜底加「按
+      deny-risk-commands 规则块末尾插入」，要么在巡检里明确提示「需人工插入」并给出插入点。
 
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 

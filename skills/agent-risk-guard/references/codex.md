@@ -80,3 +80,31 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
 - 用户级 hooks 默认加载；托管环境可用 `requirements.toml` 的 `[features].hooks` 强制。
 - `command_windows` 是 Windows 专用命令覆盖，`command` 为默认（macOS/Linux）。
 - Codex 会在运行时写 config.toml（如会话状态），改完复查 approval_policy 是否还在。
+
+## apply_patch 的 hook 需要授信（2026-11-12 更新，0.167.1）
+
+- 0.167.1 起 `apply_patch` **是** PreToolUse 的合法 subject：`tool_name: "apply_patch"`，
+  `tool_input.command` 是整段 patch 文本（`*** Begin Patch ... *** Delete File: ...`）。
+- 但 hook 必须先在 Codex TUI 里点 “Trust all and continue” 授信；未授信的条目会被**静默跳过**
+  （fail-open），表现为“hook 一行都不打印、文件照样被删”。之前 0.166.0 的“永不触发”就是这个原因，
+  不是事件缺失。
+- 当前 magpie 模型没有原生 `apply_patch` 工具，会走 shell 的 `apply_patch` CLI；这条路径由已授信的
+  Bash hook 管——引擎新增 `*** Delete File:` / `*** Move to:` 规则后，实测 `codex exec` 的删除被拒、
+  文件保留（2026-11-12）。
+- 原生工具路径要启用，需要在 `hooks.json` 加 `matcher: "apply_patch"` 的条目，再由用户 TUI 授信一次；
+  每次改该条目都要重新授信并复测 deny，不能只看配置存在。**2026-11-12 已授信并复验**：
+  `config.toml` 出现 `pre_tool_use:1:0`，原生 `*** Delete File` 被拒、文件保留；`Update File` 放行。
+- `approval_policy` 仍保持默认 `on-request`；不要用 `never` 换“少弹窗”。
+- 别用「sandbox=workspace-write 能挡删除」当证据：它允许删工作区内文件，挡不住这次的问题。
+
+## 权限决策：A 改良（2026-11-13，最终）
+
+- 配置：`approval_policy="never"` + `sandbox_mode="workspace-write"`，并 `enabled=false` 关闭
+  `node_repl` 与 `unified-computer-use`（注入 `cua_repl`）。
+- 为什么不能只开 `never`：审批不管 MCP；原配置下 `js` 工具能在工作区内建/删文件，hook 看不到也不弹窗。
+  开 `danger-full-access` 会把这条路径放大到工作区外，所以不采用。
+- 关掉两个自由 JS 入口后，MCP 工具集会变成 `NONE`；Bash 与 apply_patch 的 hook 仍硬拦。
+- 真跑验证：`git reset --hard` 被拒、原生 apply_patch `*** Delete File` 被拒；`git status` 与工作区内建文件
+  放行，全程无审批。
+- 代价：Codex 的电脑操作/浏览器自动化随之关闭；回滚把两处 `enabled` 改回 `true` 即可。
+- 每次改 `hooks.json` 的 hook 条目仍会让对应授信失效，需要 TUI 重新授信并复测 deny。

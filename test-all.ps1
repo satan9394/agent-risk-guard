@@ -43,6 +43,7 @@ Run-Test "opencode guard V2 entrypoint (id + setup)" @("$ROOT\tests\adapter\open
 Run-Test "trash/windows (D3 real)" @("$ROOT\packages\trash\test\trash.windows.test.ts")
 Run-Test "adversarial corpus (D4)" @("$ROOT\tests\adversarial\adversarial-corpus.test.ts")
 Run-Test "rule alignment (single source)" @("$ROOT\tests\adversarial\rule-alignment.test.ts")
+Run-Test "dsh rule JS-compat (PCRE-free)" @("$ROOT\tests\adversarial\dsh-rule-js-compat.test.ts")
 Run-Test "installer M6 (discovery/deploy/backup/doctor)" @("$ROOT\packages\installer\test\installer.test.ts")
 Run-Test "installer opencode V1/V2 config mode" @("$ROOT\packages\installer\test\opencode-config-mode.test.ts")
 Run-Test "installer discovery --home isolation" @("$ROOT\packages\installer\test\discovery-home-isolation.test.ts")

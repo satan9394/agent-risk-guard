@@ -22,12 +22,15 @@
 | codex | hard | fail-closed | user | supported | unknown | fail-closed | L0,L2 | — |
 | dsh | hard | fail-closed | user | supported | unsupported | fail-closed | L0,L2,L3 | — |
 | cursor | hard | fail-open | user | supported | unknown | fail-open | L0,L2 | — |
-| windsurf | hard | unknown | user | supported | unknown | unknown | L0,L2 | hook:supported@Restricted Mode disabled |
-| copilot | hard | unknown | user,machine | supported | unknown | unknown | L0,L2 | — |
+| windsurf | soft | fail-open | user | supported | unknown | fail-open | L0,L2 | hook:supported@Restricted Mode disabled |
+| copilot | hard | fail-closed | user,machine | supported | unknown | fail-closed | L0,L2 | — |
 | agy | hard | fail-closed | user | supported | unknown | fail-closed | L0,L2 | — |
 | workbuddy | soft | fail-closed | user | supported | unknown | fail-closed | L2 | undefined:undefined@undefined |
 | grok | soft | fail-open | user | supported | unknown | fail-open | L0 | — |
-| pi | none | unknown | — | not-applicable | not-applicable | unknown | — | — |
+| pi | hard | fail-closed | user | supported | unknown | fail-closed | L0,L1,L2 | — |
+| omp | hard | fail-closed | user | supported | unknown | fail-closed | L0,L1,L2 | — |
+| kimi-code | hard | fail-open | user | supported | unknown | fail-open | L0,L2 | hook:supported@Kimi Code CLI（桌面端 1.1.0 曾不执行 config.toml 的 [[hooks]]，见 issue #4254） |
+| minimax-code | hard | fail-open | user | supported | unknown | fail-open | L0,L2 | — |
 
 ## Capability Matrix（per-surface 证据）
 
@@ -47,7 +50,7 @@
 |  | network.connect | unknown | D0 | — | — |
 | codex | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | hard | D2 | — | — |
-|  | filesystem.delete | hard | D2 | — | — |
+|  | filesystem.delete | hard | D3 | — | — |
 |  | git.destructive | hard | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 |  | network.connect | unknown | D0 | — | — |
@@ -60,15 +63,39 @@
 | cursor | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
-| windsurf | shell.execute | hard | D2 | — | — |
+|  | filesystem.delete | hard | D3 | — | — |
+| windsurf | shell.execute | soft | D2 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
-| copilot | shell.execute | hard | D2 | — | — |
+| copilot | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | mcp.invoke | unknown | D0 | — | — |
 | agy | shell.execute | hard | D3 | — | — |
 | workbuddy | shell.execute | supported | D3 | — | — |
-| grok | shell.execute | soft | D1 | — | — |
-| pi | — | — | — | — | — |
+| grok | shell.execute | soft | D3 | — | — |
+| pi | shell.execute | hard | D3 | — | — |
+|  | filesystem.write | unknown | D0 | — | — |
+|  | filesystem.delete | unknown | D0 | — | — |
+|  | git.destructive | unknown | D0 | — | — |
+|  | mcp.invoke | unknown | D0 | — | — |
+|  | network.connect | unknown | D0 | — | — |
+| omp | shell.execute | hard | D3 | — | — |
+|  | filesystem.write | unknown | D0 | — | — |
+|  | filesystem.delete | unknown | D0 | — | — |
+|  | git.destructive | unknown | D0 | — | — |
+|  | mcp.invoke | unknown | D0 | — | — |
+|  | network.connect | unknown | D0 | — | — |
+| kimi-code | shell.execute | hard | D3 | — | — |
+|  | filesystem.write | unknown | D0 | — | — |
+|  | filesystem.delete | unknown | D0 | — | — |
+|  | git.destructive | unknown | D0 | — | — |
+|  | mcp.invoke | unknown | D0 | — | — |
+|  | network.connect | unknown | D0 | — | — |
+| minimax-code | shell.execute | hard | D3 | — | — |
+|  | filesystem.write | unknown | D0 | — | — |
+|  | filesystem.delete | unknown | D0 | — | — |
+|  | git.destructive | unknown | D0 | — | — |
+|  | mcp.invoke | unknown | D0 | — | — |
+|  | network.connect | unknown | D0 | — | — |
 
 ## Surface 覆盖（EvidenceState：supported / unsupported / unknown / not-applicable）
 
@@ -78,13 +105,16 @@
 | opencode | supported | supported | supported | unknown | unknown |
 | codex | supported | supported | supported | unknown | unknown |
 | dsh | supported | supported | supported | unknown | unknown |
-| cursor | supported | unknown | unknown | unknown | unknown |
+| cursor | supported | supported | unknown | unknown | unknown |
 | windsurf | supported | unknown | unknown | unknown | unknown |
 | copilot | supported | unknown | unknown | unknown | unknown |
 | agy | supported | unknown | unknown | unknown | unknown |
 | workbuddy | supported | unknown | unknown | unknown | unknown |
 | grok | supported | unknown | unknown | unknown | unknown |
-| pi | not-applicable | not-applicable | not-applicable | not-applicable | not-applicable |
+| pi | supported | unknown | unknown | unknown | unknown |
+| omp | supported | unknown | unknown | unknown | unknown |
+| kimi-code | supported | unknown | unknown | unknown | unknown |
+| minimax-code | supported | unknown | unknown | unknown | unknown |
 
 ## 说明
 

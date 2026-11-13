@@ -101,12 +101,18 @@ node bin/riskguard.mjs install --dry-run
 | **Claude Code** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
 | **OpenCode** | `tool.execute.before` 插件 | 机器硬门禁 | ✅ 真实会话已验证 |
 | **Antigravity CLI** | `PreToolUse` hook | 机器硬门禁 | ✅ 真实会话已验证 |
-| **WorkBuddy (CodeBuddy)** | `PreToolUse` hook（Claude Code 兼容） | 机器硬门禁——**删除委派**给平台自带 safe-delete（改道回收站），不可逆操作仍拦 | ✅ 真实会话已验证（D3，2026-09-28） |
-| **Codex** | hook + 应用策略/沙箱层 | **混合**——应用形态下拦住命令的是 Codex 自身的策略层，CLI 侧 hook 另有实测 | 🟡 部分验证 |
-| **DeepSeek Harness** | profile 注入的规则补丁 | **规则（正则）层**——`@riskguard/dsh` 插件已实现且有测试，但**未接入任何 profile** | 🟡 已验证（非插件） |
-| **Cursor** | `preToolUse` hook（`~/.cursor/hooks.json`） | 机器硬门禁（仅在**shell 面**：`Shell` 工具） | ✅ 真实会话已验证（D3，2026-11-08） |
-| **Windsurf / Grok** | adapter | 无真实会话验证 | ⚪ 仅实现 |
-| **Pi 及其他** | — | — | ⚪ 未覆盖 |
+| **WorkBuddy (CodeBuddy)** | `PreToolUse` hook（Claude Code 兼容） | 机器硬门禁——**删除委派**给平台自带 safe-delete（改道回收站），不可逆操作仍拦 | ✅ 真实会话已验证（D3，2026-09-28 / 2026-11-12） |
+| **Codex** | `hooks.json` PreToolUse（Bash + apply_patch） | 机器硬门禁（原生 apply_patch 已授信；`approval_policy=never` + `workspace-write`，`node_repl`/`cua_repl` 已关） | ✅ 真实会话已验证（D3，2026-11-13） |
+| **DeepSeek Harness** | profile 注入的 `deny-risk-commands` | 机器规则层（headless + web 已设 `danger-full-access` + `approval: never`；desktop 同机制） | ✅ 真实会话已验证（D3，2026-11-12） |
+| **Cursor** | `preToolUse` hook（`~/.cursor/hooks.json`） | 机器硬门禁（`Shell` + 原生 `Delete`） | ✅ 真实会话已验证（D3，2026-11-11） |
+| **Pi** | `tool_call` 扩展（`~/.pi/agent/extensions/riskguard.ts`）→ 共用规则引擎 | 机器硬门禁（shell 面） | ✅ 真实会话已验证（D3，2026-11-11） |
+| **Oh My Pi (omp)** | `tool_call` 扩展（`~/.omp/agent/hooks/pre/riskguard.ts`）→ 共用规则引擎 | 机器硬门禁（shell 面） | ✅ 真实会话已验证（D3，2026-11-11） |
+| **Kimi Code** | `[[hooks]]` PreToolUse（`~/.kimi-code/config.toml`）→ 共用规则引擎 | 机器硬门禁（命中即拒；hook 故障 fail-open） | ✅ 真实会话已验证（D3，2026-11-11） |
+| **MiniMax Code** | PreToolUse（`~/.minimax/hooks.json`）→ 共用规则引擎 | 机器硬门禁（命中即拒；hook 故障 fail-open） | ✅ 真实会话已验证（D3，2026-11-11） |
+| **GitHub Copilot CLI** | `~/.copilot/hooks/riskguard.json` 的 `PreToolUse`（PascalCase）→ 共用规则引擎 | 机器硬门禁（hook 崩溃/非零退出 fail-closed） | ✅ 真实会话已验证（D3，2026-11-12） |
+| **Grok CLI** | `~/.grok/hooks/riskguard.json` 的 `PreToolUse` → 共享规则引擎 | 机器硬门禁（shell；崩溃/超时按 vendor 合同 fail-open） | ✅ 真实会话已验证（D3，2026-11-13） |
+| **Devin (ex-Windsurf)** | `PreToolUse` hook（`matcher: exec`，用户级 `%APPDATA%\devin\config.json`） | hook 已接线；CLI 3000.12.57 的 `--permission-mode dangerous` 会忽略 hook deny | 🟡 D2（等 Devin 修复 / Desktop 交互复验） |
+| **其他** | — | — | ⚪ 未覆盖 |
 
 > **"Supported" 不代表同等安全等级。** 上表刻意区分"由谁拦的"：Codex 那一行真正拦住命令的是它自己的策略层，
 > DSH 那一行生效的是规则补丁而不是插件——这两处最容易误读。
