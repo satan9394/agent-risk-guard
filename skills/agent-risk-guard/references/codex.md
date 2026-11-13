@@ -96,3 +96,12 @@ hooks 在 Windows 已支持（PR #17268），但 **issue #24453**（2026-05）�
   `config.toml` 出现 `pre_tool_use:1:0`，原生 `*** Delete File` 被拒、文件保留；`Update File` 放行。
 - `approval_policy` 仍保持默认 `on-request`；不要用 `never` 换“少弹窗”。
 - 别用「sandbox=workspace-write 能挡删除」当证据：它允许删工作区内文件，挡不住这次的问题。
+
+## 权限决策：保持 `on-request`（2026-11-13）
+
+- 要「完全不弹窗」只能 `approval_policy=never` + `sandbox_mode=danger-full-access`；实测该组合下 MCP `js`
+  能直接写/删文件，hook 看不到（默认策略下同一代码报 `EPERM`）——**沙箱才是 js 的边界**。
+- 关 `node_repl` 不划算：2555 次调用（53% MCP，含 403 次文件读写、645 次 computer-use），且 `cua_repl`
+  由 App 注入、不在 `config.toml`，关不干净。
+- 弹窗成本低：命令历史 22226 completed / 12 declined；App 已有 193 条 `never`+full-access 会话。
+- 结论：Codex 保留审批；Bash/apply_patch 仍由 hook 硬拦。要改这个决定，先把 MCP `js` 接进可拦截的策略点。

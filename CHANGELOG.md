@@ -15,6 +15,11 @@
 
 ### Changed
 
+- **Codex 权限决策：保持 on-request（2026-11-13）**：`never`+`danger-full-access` 下 MCP `js` 可绕过
+  hook 直接写/删文件（默认沙箱下是 `EPERM`），且 `node_repl` 占 MCP 调用 53%、`cua_repl` 由 App 注入
+  关不掉；命令历史 22226 completed / 12 declined，提示成本低。故不改 `config.toml`，Bash/apply_patch
+  仍由 hook 硬拦，审批保留为 MCP 侧唯一边界。
+
 - **Grok CLI 接入并达到 D3（2026-11-13）**：安装 xAI Grok Build 1.0.77（npm `@xai-official/grok`），
   `~/.grok/hooks/riskguard.json` 的 PreToolUse → `grok-riskguard-adapter.ps1` → 共享 ps1 引擎；
   deny 用 `{"decision":"deny","reason":...}` + exit 2。真实 `grok --always-approve -p` 会话里
