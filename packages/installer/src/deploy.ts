@@ -39,7 +39,7 @@ export function defaultDenyRules(): GuardRules {
     '\\bgit\\s+clean\\b', '\\bgit\\s+reset\\b.*--hard',
     // 2026-11-11：git 全局选项（-C/-c/--git-dir=…）出现在子命令前时上面两条会失效
     // （omp 实测 `git -C <repo> reset --hard` 被放过并丢了改动）。补一条伞形规则，与 dsh patch 逐条一致。
-    '\\bgit\\s+(?:-C\\s+(?:"[^"]*"|\\S+)\\s+|-c\\s+\\S+\\s+|--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\\S+\\s+)+(?:clean|reset|checkout|restore|switch|worktree|stash|branch|update-ref|filter-branch|rm)\\b',
+    '\\bgit\\s+(?:(?:-C\\s+(?:"[^"]*"|\\S+))|(?:-c\\s+\\S+)|(?:--(?:git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=\\S+))\\s+(?:clean|reset|checkout|restore|switch|worktree|stash|branch|update-ref|filter-branch|rm)\\b',
     // 2026-11-12：apply_patch 的删除/移动（原生工具或 shell 调 apply_patch CLI）
     // ⚠️ 必须写成 JS 合法正则：这条规则同时下发 DSH（插件用 `new RegExp(re, 'i')` 编译）、
     //    Claude Code 的 filter matcher 与 OpenCode 插件。PCRE 内联标志 `(?m)` 会让 DSH 插件

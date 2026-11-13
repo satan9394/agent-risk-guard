@@ -71,7 +71,7 @@
 |  | mcp.invoke | unknown | D0 | — | — |
 | agy | shell.execute | hard | D3 | — | — |
 | workbuddy | shell.execute | supported | D3 | — | — |
-| grok | shell.execute | hard | D3 | — | — |
+| grok | shell.execute | soft | D3 | — | — |
 | pi | shell.execute | hard | D3 | — | — |
 |  | filesystem.write | unknown | D0 | — | — |
 |  | filesystem.delete | unknown | D0 | — | — |

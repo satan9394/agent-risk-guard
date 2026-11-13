@@ -755,7 +755,7 @@
       "enforcementDetail": {
         "preExecutionHook": "supported",
         "postExecutionHook": "unsupported",
-        "hardDeny": "supported",
+        "hardDeny": "unsupported",
         "failMode": "fail-open"
       },
       "sandbox": {
@@ -781,7 +781,7 @@
       ],
       "capabilities": {
         "shell.execute": {
-          "enforcement": "hard",
+          "enforcement": "soft",
           "verification": {
             "windows": "D3"
           }
