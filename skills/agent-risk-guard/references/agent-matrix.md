@@ -32,7 +32,7 @@
 | Grok CLI | `~/.grok/hooks/` | ✅ | ✅ PreToolUse（**D3 2026-11-13**） | ✅ | — | 中（vendor 崩溃/超时 fail-open） | copilot-goose-grok.md |
 | Hermes Agent | `~/.hermes/` | ✅ | ✅ PreToolUse | ✅ | — | 中 | copilot-goose-grok.md |
 | Copilot CLI | `~/.copilot/` | ✅ | ✅ | ✅ | — | 中 | copilot-goose-grok.md |
-| Windsurf | `.windsurfrules` + `.codeiumignore` | ✅ | ❌ | ❌ | ❌ | **低（无 hooks）** | windsurf-zed-warp.md |
+| Windsurf → Devin | `%APPDATA%\devin\config.json` 或 `.devin/hooks.v1.json` | ✅ | ✅ PreToolUse(exec)（**D2**：dangerous 模式不触发 hook） | ✅ | — | **低（print 模式要么被审批拦、要么 hook 不跑）** | windsurf-zed-warp.md |
 | Zed | 项目设置 | ✅ | ❌ | ✅(deny) | — | 中 | windsurf-zed-warp.md |
 | Warp | 项目设置 | ✅ | ❌ | ✅(deny) | — | 中 | windsurf-zed-warp.md |
 | Pi | `~/.pi/agent/` | ✅ | ✅ tool_call 扩展（**硬拦，D3 2026-11-11**） | ❌ | ❌ | 中（只拦 shell；无沙箱） | pi-aider.md |
@@ -60,7 +60,7 @@
 ## 注意事项
 
 - **Antigravity CLI (agy)**：hook 走 `~/.gemini/config/hooks.json` 的 PreToolUse `run_command` 事件（工具名为 shell.execute / CommandLine），用 `scripts/agy-dangerous-commands.ps1` 适配器翻译到规则引擎（引擎按优先级探测：`RISKGUARD_AGY_ENGINE` → 适配器**同目录** `dangerous-commands.ps1` → `~/.codex/hooks/`）。**last verified：agy 1.4.12（Windows，2026-11-02）**——`agy -p` 真实会话 `git reset --hard` 被 deny、脏改动保留、`git status --short` 放行；更早证据：1.4.8（2026-10-27）、1.2.7（2026-09-21）与 1.1.27（2026-09-06）同样通过。适配器 fail-closed（规则引擎缺失/输出不可解析一律 deny，绝不静默放行）。⚠️ 测法提示：用「把文件永久删掉」类提示词会被模型在**规则层**直接拒绝（零工具调用），那是 soft 遵循、**不构成硬拦截证据**；须用模型不认为该拒绝的命令（如 git reset）方能触发钩子。
-- **本机实测版本（2026-11-02；DSH 2026-11-12 更新）**：Claude Code **2.1.316** / OpenCode **2.2.5** / Codex CLI **0.166.0** / DeepSeek Harness **0.2.2-rc.2** / agy **1.4.12**，四端均重取真实会话；WorkBuddy 本机已卸载，D3 证据沿用 2026-09-28（5.6.2）。版本号每次以 `--version` 为准，本行只是时间戳。
+- **本机实测版本（2026-11-17 全量重取）**：Claude Code **2.1.326** / OpenCode **2.3.0** / Codex CLI **0.169.0** / DeepSeek Harness **0.2.2-rc.3** / agy **1.5.10** / Cursor **3.29.9（桌面）+ cursor-agent 2026.11.13-eacade1** / Copilot CLI **1.0.112** / Grok **1.0.88** / Pi **1.5.2** / omp **18.22.0** / Kimi Code **2.6.2** / MiniMax Code **0.7.7** / Devin **3000.12.57（D2）** / WorkBuddy **5.9.3（D3 证据仍属 5.6.2，未取新会话）**。版本号每次以 `--version` 为准，本行只是时间戳。`riskguard doctor` / `status` 现已覆盖**全部 14 端**（2026-11-17 起；此前只有 6 端，其余 8 端已安装却一行都不输出）。
 - 配置管理器（cc-switch 等）会回写 Claude Code 的 settings.json，改 hooks 后需复查。
 - Codex hooks 在原生 Windows 有 bug（#24453），配置后必须真实会话实测。
 - macOS 沙箱用 Seatbelt、Linux 用 bubblewrap、Windows（Codex）用受限令牌/ACL。

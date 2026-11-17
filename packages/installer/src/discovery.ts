@@ -28,6 +28,12 @@ export interface AgentDescriptor {
   /** 判断是否安装：任一路径存在即 installed */
   probePaths: string[];
   probeAbs?: string[];
+  /**
+   * 2026-11-17：documented-only —— 只登记「这端存在、机制是什么」，**不承诺门禁**。
+   * doctor 遇到「已检测到但没有探测分支」的 documented-only 端，必须**明确输出一行**说明未支持，
+   * 不能静默不输出（那正是 2026-09-21 agy / 2026-11-17 八端「已装却一行都没有」的坑）。
+   */
+  documentedOnly?: boolean;
   /** 描述文件（供 doctor 展示） */
   notes?: string;
 }
@@ -59,49 +65,87 @@ export const AGENT_REGISTRY: AgentDescriptor[] = [
     notes: 'TS 插件（V2: ctx.tool.hook execute.before；V1: tool.before/after）+ AGENTS.md rules',
   },
   {
+    // 2026-11-17：Cursor 的 hook 落点是 **home 相对的 `~/.cursor`**（hooks.json 在里面），
+    // 旧探针只认 `%APPDATA%/Cursor/User`（桌面安装目录），于是「已接线的 cursor」在 doctor 里
+    // 判不出来。两处都探：`.cursor` 命中即说明 hooks 目录存在。
     id: 'cursor', display: 'Cursor', mechanisms: ['hooks', 'rules'],
-    configRel: [], configAbs: ['%APPDATA%/Cursor/User', '%APPDATA%/Cursor'],
-    probePaths: [], probeAbs: ['%APPDATA%/Cursor/User'],
-    notes: 'preToolUse hooks（.cursor/hooks/）+ .cursor/rules',
+    configRel: ['.cursor'], configAbs: ['%APPDATA%/Cursor/User', '%APPDATA%/Cursor'],
+    probePaths: ['.cursor'], probeAbs: ['%APPDATA%/Cursor/User'],
+    notes: 'preToolUse hooks（~/.cursor/hooks.json → cursor-riskguard-adapter.ps1）+ .cursor/rules',
   },
   {
-    id: 'windsurf', display: 'Windsurf', mechanisms: ['hooks'],
-    configRel: [], configAbs: ['%APPDATA%/Windsurf', '%LOCALAPPDATA%/Windsurf'],
-    probePaths: [], probeAbs: ['%APPDATA%/Windsurf'],
-    notes: 'Cascade hooks（pre_run_command exit 2 阻断）',
+    // compatibility.json 的键仍是 windsurf（历史 id）；产品已更名 Devin（Cascade 2026-07-01 停用），
+    // 新契约是 PreToolUse + matcher exec，配置在 `%APPDATA%\devin\config.json` 或 `.devin/hooks.v1.json`。
+    id: 'windsurf', display: 'Devin (ex-Windsurf)', mechanisms: ['hooks'],
+    configRel: ['.devin'], configAbs: ['%APPDATA%/devin', '%APPDATA%/Windsurf', '%LOCALAPPDATA%/Windsurf'],
+    probePaths: ['.devin'], probeAbs: ['%APPDATA%/devin'],
+    notes: 'Devin CLI/Desktop PreToolUse(matcher exec) → devin-riskguard-adapter.ps1；Cascade 已停用',
   },
   {
     id: 'grok', display: 'Grok CLI', mechanisms: ['hooks'],
-    configRel: [], configAbs: ['%APPDATA%/Grok', '%LOCALAPPDATA%/Grok'],
-    probePaths: [], probeAbs: ['%APPDATA%/Grok'],
-    notes: 'PreToolUse hook（agent-deny）；stdout JSON + exit 2',
+    configRel: ['.grok'], configAbs: ['%APPDATA%/Grok', '%LOCALAPPDATA%/Grok'],
+    probePaths: ['.grok'], probeAbs: ['%APPDATA%/Grok'],
+    notes: 'PreToolUse hook（~/.grok/hooks/riskguard.json）；stdout JSON + exit 2，vendor 侧 fail-open',
   },
   {
-    id: 'claude-code-copilot', display: 'Copilot CLI（CC 内核）', mechanisms: ['hooks', 'sandbox'],
-    configRel: [], configAbs: ['%APPDATA%/github-copilot-cli'],
-    probePaths: [], probeAbs: ['%APPDATA%/github-copilot-cli'],
-    notes: '复用 Claude Code hooks/permissions（文档 §10.2）',
+    // 旧 id `claude-code-copilot`（按「CC 内核」猜的 %APPDATA%/github-copilot-cli）已废弃：
+    // 真实落点是 `~/.copilot`（hooks/riskguard.json）。id 改成 compatibility.json 的 `copilot`。
+    id: 'copilot', display: 'GitHub Copilot CLI', mechanisms: ['hooks', 'sandbox'],
+    configRel: ['.copilot'], configAbs: ['%APPDATA%/github-copilot-cli'],
+    probePaths: ['.copilot'], probeAbs: ['%APPDATA%/github-copilot-cli'],
+    notes: 'PreToolUse hook（~/.copilot/hooks/riskguard.json，PascalCase）+ policy.d 机器策略',
+  },
+  {
+    id: 'dsh', display: 'DeepSeek Harness', mechanisms: ['plugin', 'policy'],
+    configRel: ['.dsh'], probePaths: ['.dsh'],
+    notes: 'pre-execute 门禁（~/.dsh/profiles/*/cordis.patch.yml 的 deny-risk-commands）',
+  },
+  {
+    id: 'pi', display: 'Pi', mechanisms: ['plugin'],
+    configRel: ['.pi'], probePaths: ['.pi'],
+    notes: 'tool_call 扩展（~/.pi/agent/extensions/riskguard.ts → shared bridge → ps1 引擎）',
+  },
+  {
+    id: 'omp', display: 'Oh My Pi (omp)', mechanisms: ['plugin'],
+    configRel: ['.omp'], probePaths: ['.omp'],
+    notes: 'tool_call 扩展（~/.omp/agent/hooks/pre/riskguard.ts → shared bridge → ps1 引擎）',
+  },
+  {
+    id: 'kimi-code', display: 'Kimi Code', mechanisms: ['hooks'],
+    configRel: ['.kimi-code'], probePaths: ['.kimi-code'],
+    notes: 'PreToolUse hook（~/.kimi-code/config.toml 的 [[hooks]] → shared bridge）；vendor 侧 fail-open',
+  },
+  {
+    id: 'minimax-code', display: 'MiniMax Code', mechanisms: ['hooks'],
+    configRel: ['.minimax', '.minimax-code'], probePaths: ['.minimax', '.minimax-code'],
+    notes: 'PreToolUse hook（~/.minimax/hooks.json，需 enabled:true → shared bridge）；vendor 侧 fail-open',
   },
   {
     id: 'hermes', display: 'Hermes', mechanisms: ['hooks'],
-    configRel: [], configAbs: ['%LOCALAPPDATA%/Hermes'],
-    probePaths: [], probeAbs: ['%LOCALAPPDATA%/Hermes'],
-    notes: 'Claude Code 兼容 hooks（工具拦截）',
+    // 2026-11-17：探针改成 home 相对（本机真实落点是 `~/.hermes`，旧的 `%LOCALAPPDATA%/Hermes`
+    // 只是残留；home 相对还顺带让 `--home <fake>` 的密闭测试对 Hermes 生效）。
+    configRel: ['.hermes'], configAbs: ['%LOCALAPPDATA%/Hermes'],
+    probePaths: ['.hermes'], probeAbs: ['%LOCALAPPDATA%/Hermes'],
+    documentedOnly: true,
+    notes: 'documented-only：Claude Code 兼容 hooks 的传闻尚未实测；本机只有 2026-06 的残留配置目录',
   },
   {
     id: 'cline', display: 'Cline（VSCode 扩展）', mechanisms: ['rules'],
     configRel: [], configAbs: ['%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev'],
     probePaths: [], probeAbs: ['%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev'],
+    documentedOnly: true,
     notes: 'rules 文件（cline rules）+ settings',
   },
   {
     id: 'aider', display: 'Aider', mechanisms: ['rules'],
     configRel: ['.aider.conf.yml', '.config/aider'], probePaths: ['.aider.conf.yml'],
+    documentedOnly: true,
     notes: 'aider.conf.yml 读规则；补丁格式写入（无删除原语）',
   },
   {
     id: 'goose', display: 'Goose', mechanisms: ['plugin'],
     configRel: ['.config/goose'], probePaths: ['.config/goose'],
+    documentedOnly: true,
     notes: 'goose.conf extensions（MCP/插件）',
   },
   {

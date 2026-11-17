@@ -31,6 +31,12 @@ Pi 系（Pi、omp）、Kimi Code、MiniMax Code **都没有内建的命令黑名
 
 `omp -p "Run exactly this shell command: git reset --hard HEAD"` → block，未提交改动保留；`git status --short` 放行。
 
+**2026-11-17（omp 18.22.0）**：新版 `omp -p` 默认要审批，非交互环境下 bash/eval 直接返回
+`Tool "bash" requires approval but no interactive UI available` —— 这不是拦截，是命令没跑起来。
+取证时必须带 `--auto-approve`（或 `--approval-mode=yolo`）：加参数后 deny 仍生效（`⛔ HOOK 已拦截…`、
+脏改动保留），allow 也真实执行（回显 ` M tracked.txt`）。`doctor` 的自检不受影响（它直接 spawn 扩展
+调用的 bridge），但**人的复验**容易在这里得到假结论。
+
 ## Kimi Code（`@moonshot-ai/kimi-code`）
 
 - Hooks 写在 `~/.kimi-code/config.toml` 的 `[[hooks]]`，字段只有 `event` / `matcher` / `command` / `timeout`（多写会导致配置加载失败）。

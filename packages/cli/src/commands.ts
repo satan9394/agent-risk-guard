@@ -28,7 +28,7 @@ import { saveManifest, loadManifest, removeManifest, hasManifest, type AgentMani
 import { readConfig, describeReadFailure, type ConfigReadResult } from '../../installer/src/config-read.ts';
 import { sha256File } from '../../installer/src/hash.ts';
 import { InstallTransaction } from '../../installer/src/transaction.ts';
-import { probeAgentRuntime } from '../../installer/src/runtime-probe.ts';
+import { probeAgentRuntime, HOOK_FILE_AGENT_IDS } from '../../installer/src/runtime-probe.ts';
 import { installRuntime, verifyRuntime, runtimeVersionDir, isRuntimeInstalled } from './runtime-install.ts';
 import { PRODUCT_VERSION } from '../../core/src/version.ts';
 
@@ -143,6 +143,10 @@ function doctorFixHint(id: string, kind: 'config' | 'wiring' | 'dsh' | 'runtime'
   // WorkBuddy：可 CLI 安装，但**必须**让 hook 以 RG_ALLOW_DELETE=1 运行（平台自带 safe-delete shim）。
   // 手工把前缀去掉会退回「hook 拦删除 → 命令不执行 → shim 无机会改道」的死锁，所以这里显式说清。
   if (id === 'workbuddy') return '重跑: node bin/riskguard.mjs install --agent workbuddy（生成的接线已带 RG_ALLOW_DELETE=1 前缀；请勿手工改成裸 powershell —— WorkBuddy 自带 safe-delete shim，去掉前缀会与它死锁），再重跑: node bin/riskguard.mjs doctor';
+  // 2026-11-17：cursor / copilot / grok / devin / pi / omp / kimi-code / minimax-code 的接线由
+  // `scripts/riskguard-wiring-check.ps1 -Fix` 从单源刷新（本 CLI 的 install 不覆盖它们）。
+  // 指到 `install --agent <id>` 是误导 —— 那条命令不会去动这些 Agent 的 hook 配置。
+  if (HOOK_FILE_AGENT_IDS.includes(id)) return `运行: pwsh -File scripts\\riskguard-wiring-check.ps1 -Fix（从单源刷新适配器/bridge 与 hook 配置），再重跑: node bin/riskguard.mjs doctor`;
   return `重跑: node bin/riskguard.mjs install --agent ${id}`;
 }
 
@@ -157,7 +161,7 @@ export function cmdDetect(opts: { home?: string; json?: boolean }): string {
     // —— T7：遍历全部 AGENT_REGISTRY（含 agy），--json 也全量 ——
     const map: Record<string, boolean> = {};
     for (const a of agents) map[a.id] = a.installed;
-    map['dsh'] = dsh; // dsh 不在 registry；单独探测
+    map['dsh'] = dsh; // 2026-11-17：dsh 已进 registry，这里仍用 detectDsh 的「profiles 级」判据覆盖一次（更严）
     return JSON.stringify(map, null, 2);
   }
   const lines = ['RiskGuard Agent Detection', ''];
@@ -671,7 +675,8 @@ export async function cmdStatus(opts: { home?: string }): Promise<string> {
   const home = HOMES.get(opts.home);
   const lines = ['Agent RiskGuard Status', '',
     'Runtime state  — 这台机器上 RiskGuard 当前实际状态（非产品能力等级）', 'Capability     —  RiskGuard 对该 Agent 理论/实测支持等级（D0–D4）', ''];
-  const order = ['claude-code', 'opencode', 'codex', 'dsh', 'workbuddy'];
+  // 2026-11-17：本机 14 端全部接线，status 也要全列（此前只有 5 端，agy 与其余 8 端在 status 里根本不出现）
+  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy', 'workbuddy', 'cursor', 'copilot', 'grok', 'windsurf', 'pi', 'omp', 'kimi-code', 'minimax-code'];
   for (const id of order) {
     const c = compat.agents[id];
     // ACTIVE 必须经完整 runtime self-test（deep）
@@ -722,7 +727,7 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
   // 2026-09-21：加入 agy —— 此前它既不在 order 里、也没有 runtime-probe 分支，
   //   于是「已安装的 agy」在 doctor 输出里**一行都没有**（SKIP 只在未安装时才打），
   //   新鲜度校验永远走不到。凡是能接线的 Agent 都必须在 order 里出现。
-  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy', 'workbuddy'];
+  const order = ['claude-code', 'codex', 'opencode', 'dsh', 'agy', 'workbuddy', 'cursor', 'copilot', 'grok', 'windsurf', 'pi', 'omp', 'kimi-code', 'minimax-code'];
   const counts = { pass: 0, warn: 0, fail: 0, skip: 0 };
 
   /** 记一条 FAIL：行尾追加可执行修复提示（原 FAIL 行文本保持原样，仅追加） */
@@ -801,12 +806,29 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
         lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
         checks.push({ level: 'WARN', agent: id, message: msg });
       } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} PreToolUse hook + safe-delete delegation self-test`); checks.push({ level: 'PASS', agent: id, message: 'PreToolUse hook + safe-delete delegation self-test' }); }
+    } else if (HOOK_FILE_AGENT_IDS.includes(id)) {
+      // 2026-11-17：cursor / copilot / grok / devin(windsurf) / pi / omp / kimi-code / minimax-code。
+      // 这 8 端此前既不在 order、也没有 runtime-probe 分支 —— 已安装却在 doctor 里一行都不输出
+      // （与 2026-09-21 agy 同一个坑）。现在统一按「配置接线 + 产物在位 + 实弹 self-test」判定。
+      if (!probe.configValid) { fail(id, 'hook 配置损坏', 'config'); }
+      else if (!probe.wired) { fail(id, 'RiskGuard 适配器/bridge 未注册', 'wiring'); }
+      else if (!probe.hookTargetExists) { fail(id, '适配器/bridge 文件缺失', 'wiring'); }
+      else if (!probe.runtimeAvailable) { fail(id, '运行时不可用', 'runtime'); }
+      else if (!probe.selfTestPassed) { fail(id, 'runtime self-test 未通过', 'wiring'); }
+      else if (probe.hookScriptFreshness === false) {
+        counts.warn++;
+        const msg = '适配器/bridge 与仓库单源不一致（可能陈旧，详情见 --verbose）';
+        lines.push(`WARN  ${id.padEnd(14)} ${msg}`);
+        checks.push({ level: 'WARN', agent: id, message: msg });
+      } else { counts.pass++; lines.push(`PASS  ${id.padEnd(14)} hook 适配器 + runtime self-test`); checks.push({ level: 'PASS', agent: id, message: 'hook 适配器 + runtime self-test' }); }
     }
     lines.push(`       runtime verification: ${probe.verificationMode}`);
     if (opts.verbose) for (const e of probe.evidence) lines.push(`        → ${e}`);
   }
   // 其它 registry agent（未纳入 probe 的）→ SKIP（未装）。判定与 order 共用同一列表，
   // 避免「加了 order 忘了这里」导致该 agent 又变成一行都不输出。
+  // 2026-11-17：**已检测到**但没探测分支的，也必须出一行（documented-only 明确写「未支持」）——
+  // 静默不输出等于让「装了却没被管」看起来像「没装」。
   for (const desc of AGENT_REGISTRY) {
     if (order.includes(desc.id)) continue;
     const inst = detectAgent(desc, { home });
@@ -814,6 +836,13 @@ export async function cmdDoctor(opts: { home?: string; verbose?: boolean; json?:
       counts.skip++;
       lines.push(`SKIP  ${desc.id.padEnd(14)} agent 未安装`);
       checks.push({ level: 'SKIP', agent: desc.id, message: 'agent 未安装' });
+    } else {
+      counts.skip++;
+      const msg = desc.documentedOnly
+        ? '仅登记机制，本版本未提供门禁探测/接线（documented-only）'
+        : '已检测到，但本版本没有该端的探测分支';
+      lines.push(`SKIP  ${desc.id.padEnd(14)} ${msg}`);
+      checks.push({ level: 'SKIP', agent: desc.id, message: msg });
     }
   }
   lines.push('');

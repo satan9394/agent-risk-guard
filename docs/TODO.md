@@ -197,3 +197,24 @@
 - hash-chain 审计账本（防篡改日志链）
 - prompt injection 检测（工具输出 / 抓取内容扫描）
 - OS 级沙箱指引（Windows 可行方案：受限账号 / WSL 容器）
+
+## 2026-11-17 全端适配（本机 14 端）后新登记
+
+- [x] **doctor / status 的 8 端覆盖缺口（已修）**：cursor / copilot / grok / devin / pi / omp / kimi-code /
+  minimax-code 此前已安装却在 `doctor` 与 `status` 里一行都不输出（order 只有 6 端、runtime-probe 无分支）。
+  现由 `HOOK_FILE_AGENTS` 一张表统一探测，`packages/installer/test/doctor-agent-coverage.test.ts` 钉住
+  「compatibility.json 每个 Agent 都要有一行」，且已验证回退会让测试变红。
+- [x] **Claude Code `unrecognized_model` 的结论纠正（已改文档）**：那是诊断标记不是拒绝。
+  2.1.326 上默认 `workbuddy/deepseek-v4.1-flash[1m]` 确实发到了 provider（回 429 配额），
+  「2.1.316 拒绝运行」的说法不再成立。**未改用户模型偏好**（现在仍是 workbuddy/…，属用户选择）。
+- [ ] **WorkBuddy 5.9.3 的 D3 待取**：桌面应用无 CLI 可驱动，本轮只做到「版本登记 + 接线巡检 + 委派
+  模式 self-test PASS」。按硬约束 5，D3 证据仍属 5.6.2（2026-11-12 会话）。要升版本证据需一次人工桌面会话
+  （prompt：`git reset --hard HEAD`，期望 `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活）。
+- [ ] **Devin（原 Windsurf）升 D3 的两条路**：① Desktop 交互模式取证；② 等 vendor 修复
+  `--permission-mode dangerous` 不触发 hook（2026-11-17 复验：适配器日志零记录、命令真执行）。
+  print 模式下 `smart` 会先被审批层拒绝，`dangerous` 又不跑 hook —— 目前没有第三条路。
+- [ ] **omp 18.22.0 的取证陷阱（已在 references 记录）**：`omp -p` 默认要审批，非交互环境直接报
+  `requires approval but no interactive UI available`。复验必须带 `--auto-approve`（或 `--approval-mode=yolo`），
+  否则会把「没跑起来」误读成「被拦住了」。若哪天 omp 改了默认值，本条要重新确认。
+- [ ] **Codex `hooks.json` 双注册仍未合并**（2026-11-02 起的旧账）：ps1 + `_riskguard` node 两条，每次 Bash 跑两遍。
+  结论仍是「合并无收益」，但两处脚本都要跟单源走，别只刷新一处。

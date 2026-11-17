@@ -15,6 +15,40 @@
 
 ### Changed
 
+- **全端适配刷新：本机 14 端逐个重取 D3 + `doctor` / `status` 覆盖全部已装 Agent（2026-11-17）**。
+  版本漂移（`--version` 实测）：Claude Code 2.1.316→**2.1.326**、OpenCode 2.2.5→**2.3.0**、
+  Codex 0.167.1→**0.169.0**、DSH 0.2.2-rc.2→**0.2.2-rc.3**、agy 1.4.12→**1.5.10**、
+  Copilot 1.0.109→**1.0.112**、Grok 1.0.77→**1.0.88**、omp 18.18.8→**18.22.0**、
+  Kimi Code 2.5.3→**2.6.2**、MiniMax Code 0.7.6→**0.7.7**、cursor-agent 2026.11.05→**2026.11.13**、
+  WorkBuddy 5.6.2→**5.9.3**；Pi 1.5.2 与 Devin 3000.12.57 未变。12 端在本机真机上重取了
+  「deny + 脏改动存活」与「allow + 真实执行」，Devin 维持 D2，WorkBuddy 的 D3 证据仍属 5.6.2
+  （桌面应用，需一次人工会话）。
+- **`doctor` / `status` 的覆盖缺口（本轮真正的代码缺陷）**：cursor / copilot / grok / devin / pi / omp /
+  kimi-code / minimax-code 早已接线且 D3 在案，但 `cmdDoctor` 的 `order` 只有 6 端、`runtime-probe` 也没有
+  分支 —— **已安装却在 doctor/status 里一行都不输出**（与 2026-09-21 agy 同一个坑）。
+  现在新增 `HOOK_FILE_AGENTS` 一张表统一探测这 8 端（配置接线 + 产物在位 + 单源 hash 新鲜度 + 实弹
+  self-test，按 cursor / permissionDecision / grok / devin / bridge 五种协议分别断言 deny 判据），
+  `discovery.ts` 的注册表补齐到 14 端并修正 copilot / grok / cursor / devin 的探针路径，
+  `docs/adding-an-agent.md` 增 §2.5 记下「三张登记表」。
+  结果：`node bin/riskguard.mjs doctor` = **14 PASS / 0 WARN / 0 FAIL / 4 SKIP**（SKIP 为未安装的
+  cline/aider/goose，加上 documented-only 的 hermes），`status` 同样 14 行。
+- **documented-only 也不再静默**：本机 `~/.hermes` 是 2026-06 的残留配置目录（无 CLI），旧注册表探的是
+  `%LOCALAPPDATA%/Hermes`，判「已安装」却因为不在 `order` 里一行都不输出。现在探针改成 home 相对的
+  `~/.hermes`，`AgentDescriptor` 新增 `documentedOnly` 标记；「已检测到但没有探测分支」时 doctor 必须输出
+  「仅登记机制，本版本未提供门禁探测/接线」，由测试第 7 条钉住。
+- **同一台机器两个真相（已修）**：WorkBuddy 没有 install manifest，状态判定掉到
+  `!manifestPresent → DETECTED`，于是 `doctor` 说 PASS、`status` 说「agent present, RiskGuard not installed」。
+  现在它与 agy / hook 文件型 Agent 同口径：deep self-test 通过即 `ACTIVE`。
+- **docs/TODO 的一处过期结论已纠正**：`[claude-code:unrecognized_model]` 是诊断标记而非拒绝。
+  2.1.326 上本机默认模型 `workbuddy/deepseek-v4.1-flash[1m]` 确实发到了 provider（回的是 WorkBuddy 的
+  429 配额错误），「2.1.316 判为 unrecognized_model 拒绝运行」在 2.1.326 上不再复现。取证时仍建议
+  显式 `--model auto/deepseek-v4.1-flash`（配额原因，与门禁无关）。
+- 新增回归测试 `packages/installer/test/doctor-agent-coverage.test.ts`（**7 条**）：钉住
+  「compatibility.json 每个 Agent 都要在 doctor 输出里有一行」「已检测到但没有探测分支的端必须出一行
+  （documented-only 不许静默）」「空 home 不许出现 PASS」「配置指向不存在的适配器要 BROKEN」
+  「minimax 缺 enabled:true 要点名」。
+  已验证回退（把 `order` 砍回 6 端）会让其中一条**变红**。
+
 - **Codex 权限决策：A 改良（2026-11-13）**：`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，
   并关闭 `node_repl` / `unified-computer-use`（`cua_repl`）两个自由 JS 面。审批本来就不管 MCP，原配置下
   `js` 能在工作区内建/删文件且 hook 不可见；关掉入口后 MCP 工具为 `NONE`，`git reset` 与 apply_patch
