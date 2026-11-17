@@ -48,6 +48,13 @@
   （documented-only 不许静默）」「空 home 不许出现 PASS」「配置指向不存在的适配器要 BROKEN」
   「minimax 缺 enabled:true 要点名」。
   已验证回退（把 `order` 砍回 6 端）会让其中一条**变红**。
+- **密封测试的 Cursor 断言早就不符（已修）**：`tasks/orchestrator/rg-wiring-check-sealed-test.ps1`
+  的 T9d / T9g / T10c 还停在 2026-11-08 的旧契约（`matcher` 恰好是 `Shell`、`command` 指向
+  `dangerous-commands.ps1`）。2026-11-11 起 Cursor 改走 `cursor-riskguard-adapter.ps1` +
+  `matcher: Shell|Delete`，于是这三条从此**一直红着**（本轮实跑 60 pass / 3 fail）。
+  现在断言改为「matcher 同时覆盖 Shell 与 Delete」「command 指向 cursor 适配器」，
+  并新增 T9h2（适配器副本确实落到 `~/.cursor/hooks/`）。实跑：**64 pass / 0 fail**。
+  教训：改生产接线时，配套密封测试里的**具体取值断言**要一起改，否则它会静静变红而不是拦住你。
 
 - **Codex 权限决策：A 改良（2026-11-13）**：`approval_policy="never"` + 保留 `sandbox_mode="workspace-write"`，
   并关闭 `node_repl` / `unified-computer-use`（`cua_repl`）两个自由 JS 面。审批本来就不管 MCP，原配置下

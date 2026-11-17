@@ -77,6 +77,8 @@ documented-only 的残留配置目录，明确写「未提供门禁」而不是�
 4. **本地残留分支**（远端已删，仓库 guard 拦 `git branch -D`，需人工删）：`pr51-review`、`merge-test`、
    `fix/agent-upgrade-20261027`、`docs/dsh-d3-20261027`、`docs/session-handover-20261027`。
 5. **`AGENTS.md` 与 `CLAUDE.md` 的工作区改动**（`M AGENTS.md` / `D CLAUDE.md`）是别人留下的，本段未动。
+6. **密封测试已修好并纳入交接清单**（原先 T9d/T9g/T10c 三条一直红，见 CHANGELOG）。以后改 Cursor
+   接线时要同步改这三条里的具体取值断言；交接清单已加 `rg-wiring-check-sealed-test.ps1`（期望 64/64）。
 
 ## 3. 复验清单
 
@@ -92,6 +94,7 @@ node --test packages/installer/test/doctor-agent-coverage.test.ts      # 期望 
 & .\test-all.ps1                             # 期望 exit 0
 
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\riskguard-wiring-check.ps1   # 期望 exit 0
+pwsh -NoProfile -ExecutionPolicy Bypass -File tasks\orchestrator\rg-wiring-check-sealed-test.ps1   # 期望 64/64
 node scripts/generate-agent-security-matrix.ts --check
 node scripts/check-compatibility-docs.ts
 node scripts/check-decisions-log.ts

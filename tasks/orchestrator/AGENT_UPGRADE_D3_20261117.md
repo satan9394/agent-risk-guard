@@ -284,4 +284,18 @@ Summary: 14 PASS / 0 WARN / 0 FAIL / 4 SKIP
 | `node scripts/generate-agent-security-matrix.ts --check` | exit 0 |
 | `node scripts/check-compatibility-docs.ts` | exit 0 |
 | `node scripts/check-decisions-log.ts` | exit 0 |
-| `pwsh scripts\riskguard-wiring-check.ps1` | exit 0（全端 [OK]） |
+| `pwsh scripts\riskguard-wiring-check.ps1` | exit 0（53 项 [OK]、0 项异常） |
+| `pwsh tasks\orchestrator\rg-wiring-check-sealed-test.ps1` | **64 pass / 0 fail**（修前 60 pass / 3 fail，见 §6） |
+
+## 6. 顺带修掉：密封测试的 Cursor 断言一直红着
+
+实跑密封测试得到 `60 pass / 3 fail`，失败全在 Cursor 段：
+
+- `T9d matcher is Shell` —— 2026-11-11 起真实接线是 `matcher: Shell|Delete`；
+- `T9g command points at cursor hook copy` —— 真实接线指向 `cursor-riskguard-adapter.ps1`；
+- `T10c cursor guard entry added` —— 合并后应匹配适配器，不是 `dangerous-commands`。
+
+即：2026-11-11 把 Cursor 从「直连 ps1」改成「适配器 + Delete」时，**生产接线改了、密封测试没改**，
+这三条从此静静变红，而交接单仍写着 63/63。现在已把断言改成当前契约，并补一条 T9h2
+（适配器副本必须落到 `~/.cursor/hooks/`），实跑 **64 pass / 0 fail**。
+判据没有放松：timeout ≥ 10、`failClosed=false`、用户已有条目保留、坏 JSON 不覆盖，全部照旧。
