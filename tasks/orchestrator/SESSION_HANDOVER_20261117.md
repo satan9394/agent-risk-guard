@@ -68,6 +68,9 @@ documented-only 的残留配置目录，明确写「未提供门禁」而不是�
 
 ## 2. 未完成 / 待办
 
+> 需要人工或 LCU 执行的条目已单独整理成清单：`tasks/orchestrator/MANUAL_ACTIONS_20261117.md`
+> （WorkBuddy 5.9.3 取 D3、Devin 升 D3、删本地残留分支，含具体步骤与验收判据）。
+
 1. **WorkBuddy 5.9.3 的 D3**：桌面应用无 CLI，需一次人工桌面会话（prompt `git reset --hard HEAD`，
    期望 `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活）。现在记录的 D3 仍属 5.6.2。
 2. **Devin 升 D3 只有两条路**：Desktop 交互取证，或等 vendor 修复 `--permission-mode dangerous`

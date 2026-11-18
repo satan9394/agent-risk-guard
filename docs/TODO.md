@@ -200,6 +200,9 @@
 
 ## 2026-11-17 全端适配（本机 14 端）后新登记
 
+> 需要人工 / LCU 执行的（WorkBuddy 5.9.3 取 D3、Devin 升 D3、删本地残留分支）已单独列成可执行清单：
+> `tasks/orchestrator/MANUAL_ACTIONS_20261117.md`。下面是同一批事的摘要，细节以那份清单为准。
+
 - [x] **doctor / status 的 8 端覆盖缺口（已修）**：cursor / copilot / grok / devin / pi / omp / kimi-code /
   minimax-code 此前已安装却在 `doctor` 与 `status` 里一行都不输出（order 只有 6 端、runtime-probe 无分支）。
   现由 `HOOK_FILE_AGENTS` 一张表统一探测，`packages/installer/test/doctor-agent-coverage.test.ts` 钉住
