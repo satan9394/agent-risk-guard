@@ -25,6 +25,25 @@
 - [ ] **MCP canonical capability 深化**：`mcp.invoke` 从近似映射升级为一等 capability（server/tool identity，tool poisoning 门禁，P1）
 - [ ] **Gemini BeforeTool adapter（D2）**：P2 顺序（§二十八）
 
+## DSH 覆盖边界（2026-11-12 登记）
+
+- [x] **dsh-ops 的 `ops_bash` 白名单缺口（2026-11-12 已补判据）**：原判据只匹配 `exec.name` 为 `pwsh` / `bash`
+  的调用，dsh-ops 启用 bash 时发布的 `ops_bash`（自带 MSYS bash）不过闸。已把插件判据改成 fail-closed 结构性判据：
+  只要 `arguments.command` 是字符串就按执行器处理，例外表默认只有 `str_replace_editor`（它的 `command` 是编辑动作名）；
+  实测 rc.2 + dsh-ops 里带 `command` 字符串的工具只有 pwsh / bash / 持久化 shell / `ops_bash` / 该编辑器。
+  16 条用例矩阵覆盖 pwsh、bash、sh、`ops_bash`、`pwsh_persistent`、`bash_persistent`、未知同名工具、编辑器误杀、
+  无 `command` 参数、`arguments` 为 JSON 字符串，全 PASS。插件同时从 `file:`（复制）改成 `link:`（junction），
+  避免「改了源码、profile 跑旧副本」的漂移。
+  本机仍保持 `global.bash: false` + `hidePwsh: false`；**恢复 `ops_bash` 现在只剩一个开关决定**，
+  不再是门禁缺口（真跑一次 `ops_bash` 的拒/放仍待取证）。
+- [x] **PTC 内层调用是否绕过门禁（2026-11-12 源码核实）**：不绕过。`run_code` 内的 `tools.pwsh(...)`
+  走同一个工具管线 —— `@deepseek-ai/dsh-tools` 的 `pipeline.js` 在派发前执行
+  `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`；`@deepseek-ai/dsh-tool-executor-ptc` 直接 import
+  `ToolExecutionPipeline` / `executeToolBatch` 并构造同一个 pipeline（`executor.prepare(input)`），工具名保持 `pwsh`。
+  本轮**未**单独跑 PTC 会话取证：`dsh headless` 用的 headless profile 没有 dsh-ops（无 `run_code`），
+  而 web profile 的 ops-ptc 只能从 GUI 驱动；结论基于 0.2.2-rc.2 安装包源码。真实 PTC 会话复验仍待一次
+  「web profile + ops-ptc」的会话。
+
 ## 已知过拦（登记延后，不开新轮）
 
 > 项目停止规则：**只有安全方向（放松 / fail-open / 丢拦截）才开新轮，过拦与边角一律登记延后。**
@@ -165,6 +184,11 @@
   `dangerous-commands-guard`。已在新版 `agyHooksConfig()` 注释中写明，doctor 不认名字所以无功能影响；
   若将来要统一，先确认新机器的 pwsh 可用性再动。
 
+- [ ] **`riskguard-wiring-check.ps1 -Fix` 不能给没有 `# N3 预算闸门` 标记的 dsh profile 追加新规则**
+      （2026-11-11 加 `git -C` 伞形规则时暴露）：desktop/headless 两份 profile 命中「缺 1 条」但
+      没有同位次可替换的条目，兜底重组又要求 N3 标记，只能手工插入。要么给兜底加「按
+      deny-risk-commands 规则块末尾插入」，要么在巡检里明确提示「需人工插入」并给出插入点。
+
 ## 长期（roadmap，见 docs/ecosystem-benchmark.md）
 
 - bash AST 角色解析（allowlister 式：管道过滤命令按角色判定）
@@ -173,3 +197,64 @@
 - hash-chain 审计账本（防篡改日志链）
 - prompt injection 检测（工具输出 / 抓取内容扫描）
 - OS 级沙箱指引（Windows 可行方案：受限账号 / WSL 容器）
+
+## 2026-11-17 全端适配（本机 14 端）后新登记
+
+> 需要人工 / LCU 执行的（WorkBuddy 5.9.3 取 D3、Devin 升 D3、删本地残留分支）已单独列成可执行清单：
+> `tasks/orchestrator/MANUAL_ACTIONS_20261117.md`。下面是同一批事的摘要，细节以那份清单为准。
+
+- [x] **doctor / status 的 8 端覆盖缺口（已修）**：cursor / copilot / grok / devin / pi / omp / kimi-code /
+  minimax-code 此前已安装却在 `doctor` 与 `status` 里一行都不输出（order 只有 6 端、runtime-probe 无分支）。
+  现由 `HOOK_FILE_AGENTS` 一张表统一探测，`packages/installer/test/doctor-agent-coverage.test.ts` 钉住
+  「compatibility.json 每个 Agent 都要有一行」，且已验证回退会让测试变红。
+- [x] **Claude Code `unrecognized_model` 的结论纠正（已改文档）**：那是诊断标记不是拒绝。
+  2.1.326 上默认 `workbuddy/deepseek-v4.1-flash[1m]` 确实发到了 provider（回 429 配额），
+  「2.1.316 拒绝运行」的说法不再成立。**未改用户模型偏好**（现在仍是 workbuddy/…，属用户选择）。
+- [ ] **WorkBuddy 5.9.3 的 D3 待取**：桌面应用无 CLI 可驱动，本轮只做到「版本登记 + 接线巡检 + 委派
+  模式 self-test PASS」。按硬约束 5，D3 证据仍属 5.6.2（2026-11-12 会话）。要升版本证据需一次人工桌面会话
+  （prompt：`git reset --hard HEAD`，期望 `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活）。
+  **2026-11-21 已确认 CLI 路不通**：安装目录里带 CodeBuddy CLI
+  （`resources\app.asar.unpacked\cli\bin\codebuddy`，`--version` = 2.165.0），但 `dist/` 被打包剥离，
+  除 `--version` 外一律 `Cannot find module '../dist/codebuddy'`，`-p` 起不来。
+- [ ] **Devin（原 Windsurf）升 D3 的两条路**：① Desktop 交互模式取证；② 等 vendor 修复
+  `--permission-mode dangerous` 不触发 hook（2026-11-17 复验：适配器日志零记录、命令真执行）。
+  print 模式下 `smart` 会先被审批层拒绝，`dangerous` 又不跑 hook —— 目前没有第三条路。
+  2026-11-21 在 Devin 3000.14.30821 上把 `accept-edits` 也试了：同样是审批层拒绝
+  （`rejected a tool call that requires confirmation`），hook 日志零增长 ⇒ 三种模式全试过，结论不变。
+- [ ] **omp 18.22.0 的取证陷阱（已在 references 记录）**：`omp -p` 默认要审批，非交互环境直接报
+  `requires approval but no interactive UI available`。复验必须带 `--auto-approve`（或 `--approval-mode=yolo`），
+  否则会把「没跑起来」误读成「被拦住了」。若哪天 omp 改了默认值，本条要重新确认。
+- [ ] **Codex `hooks.json` 双注册仍未合并**（2026-11-02 起的旧账）：ps1 + `_riskguard` node 两条，每次 Bash 跑两遍。
+  结论仍是「合并无收益」，但两处脚本都要跟单源走，别只刷新一处。
+
+- [ ] **WorkBuddy 5.9.3 的 D3 仍未取（2026-11-21 复核后维持）**：本机版本仍是 5.9.3、桌面应用无 CLI，
+  本轮只做到版本登记 + `scripts/riskguard-wiring-check.ps1` exit 0（接线健康）。D3 证据仍属 5.6.2
+  （2026-11-12 会话）。要补需一次人工桌面会话：prompt `git reset --hard HEAD`，期望
+  `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活。
+- [ ] **Devin 3000.14.30821：dangerous 模式依旧绕过 hook（2026-11-21 复验）**：`devin -p` 带
+  `--respect-workspace-trust false --permission-mode dangerous` 时 `git reset --hard HEAD` 真的执行了
+  （`HEAD is now at …`），`%TEMP%\riskguard-devin-hook.log` 长度无变化 ⇒ hook 未被调用。版本升了但
+  `compatibility.json` 里 verification 保持 **D2**。可试的两条路没变：Desktop 交互取证，或等 vendor 修复。
+- [ ] **OpenCode Desktop 的窗口内会话未直接取证（2026-11-21）**：已证 Desktop 随包 CLI
+  （`%APPDATA%\ai.opencode.desktop\cli\2.3.2-x64\opencode-cli.exe`）与 CLI 共用 `~/.config/opencode`
+  与同一插件、同一 prompt 同样被 `BLOCKED_BY_GLOBAL_SAFETY_GUARD` 拦住；但桌面窗口自己发起的会话没有
+  原始输出。若要坐实，需要在 Desktop 里跑一次同 prompt 并把会话原文贴进证据文件。
+- [ ] **已评估不登记 / 已扫描的面（2026-11-21）**：Multica（云端 Agent 平台，无本地 pre-execution 拦截点）、
+  Kiro（`%APPDATA%\Kiro` 桌面 IDE，本机无 CLI、`~/.kiro` 只有 `settings/mcp.json` + skills，无 hooks 文件）、
+  Grok Bot（`%APPDATA%\Grok Bot` + `~/.grokbot` 只有配置）、cagent（`~/.cagent\store` 只有数据，无 CLI）；
+  **Hermes 不在此列**——它仍是 documented-only（已登记机制、`doctor` 输出一行 SKIP），`~/.hermes` 只有
+  `config.yaml` + `.env` + 空 `skills\`、没有二进制。另 **T3 Code Beta**
+  （`%LOCALAPPDATA%\Programs\t3code` + `~/.t3/bin/t3.cmd`）是「按 provider 跑会话」的多 Agent 封装层，
+  自身没有 pre-execution 拦截点、门禁沿用被封装 Agent（claude/codex/cursor/…）自己的 hook ——
+  **这条是推断，未用 T3 真会话验证**，要坐实需 `t3` 起服务后让某个 provider 跑一次 `git reset --hard`。
+  判据统一写进 `skills/agent-risk-guard/references/agent-matrix.md`：**有 pre-execution 工具拦截点才登记**。
+  若哪天其中任何一个长出 hook 面，按 `docs/adding-an-agent.md` §2.5 的三张表补登记。
+- [ ] **Mavis 的 coder 是内嵌 OpenCode，当前不可驱动（2026-11-21 复核）**：
+  `~/.mavis/bin/mavis.cmd` 指向 `%LOCALAPPDATA%\Programs\MiniMax\MiniMax.exe`，**该宿主已卸载**
+  （实测 `mavis.cmd --help` = 「系统找不到指定的路径」），只剩 `~/.mavis` 数据目录。
+  若将来重装 MiniMax：注意它 coder 的配置根是 `~/.mavis/agents/coder/opencode/opencode.json`
+  （`plugin: ["mavis"]`、`permission "*": allow`），**不读 `~/.config/opencode`**，
+  需把 riskguard 插件加进该 `plugin` 数组才覆盖；接完要用 `mavis.cmd` 跑一次
+  「deny `git reset --hard` + 未提交改动存活」取证才能报 D2/D3。另注意它自带 `bin\mavis-trash`。
+- [ ] **全局残留旧包 `@opencode/cli-windows-x64@2.2.5`（2026-11-21）**：与 `@opencode/cli@2.3.2` 并存，
+  `opencode` / `opencode2` 都解析到 2.3.2，但判版本时若拿到 2.2.5 会误判。清理属用户环境，不在本仓代劳。

@@ -82,6 +82,15 @@ const HOOK_SINGLE_SOURCE_MAP: Record<string, string[]> = {
   'dangerous-commands.ps1': [join('assets', 'hooks', 'dangerous-commands.ps1')],
   'agy-dangerous-commands.ps1': [join('assets', 'hooks', 'agy-dangerous-commands.ps1')],
   'pre-tool-hook.ts': [join('packages', 'cli', 'src', 'hooks', 'pre-tool-hook.ts')],
+  // 2026-11-17：把「已接线但不是 claude/codex/agy/workbuddy」的适配层也纳入单源比对，
+  // 否则这 8 端的新鲜度永远是 null（改了单源、安装副本没刷新也看不出来）。
+  'cursor-riskguard-adapter.ps1': [join('assets', 'hooks', 'cursor-riskguard-adapter.ps1')],
+  'copilot-riskguard-adapter.ps1': [join('assets', 'hooks', 'copilot-riskguard-adapter.ps1')],
+  'grok-riskguard-adapter.ps1': [join('assets', 'hooks', 'grok-riskguard-adapter.ps1')],
+  'devin-riskguard-adapter.ps1': [join('assets', 'hooks', 'devin-riskguard-adapter.ps1')],
+  'riskguard-bridge.mjs': [join('assets', 'shared', 'riskguard-bridge.mjs')],
+  // pi / omp 共用同一份扩展源码（只有落点目录不同）
+  'riskguard.ts': [join('assets', 'pi', 'riskguard-extension.ts')],
 };
 
 /** 单个 hook 脚本的新鲜度比对结果 */
@@ -292,6 +301,187 @@ function runWorkbuddyHookSelfTest(script: string, command: string | undefined): 
 async function configValidAt(p: string): Promise<boolean> {
   const r = await readConfig(p);
   return r.state === 'valid' || r.state === 'missing'; // missing 视为 config 层通过（无损坏）
+}
+
+// ============================================================================
+// 2026-11-17：hook 文件型 Agent（cursor / copilot / grok / windsurf(devin) /
+// pi / omp / kimi-code / minimax-code）的统一探测
+// ============================================================================
+//
+// 背景：这 8 端在 2026-11 已全部真实接线（wiring check 全绿、D3 会话在案），但 `doctor`
+// **一行都不输出它们**——`cmdDoctor` 的 order 只有 6 端，runtime-probe 也没有分支。
+// 这正是 2026-09-21 agy 踩过的坑（「已安装却在 doctor 里一行都没有」）。此处把它们的
+// 形态收敛成一张表：配置文件 + 我方产物 + self-test 协议，避免每端复制一段 if。
+
+/** 协议：决定 deny 的判据与 payload 形状（各家不同，不能混用） */
+type HookFileProtocol = 'cursor' | 'permissionDecision' | 'grok' | 'devin' | 'bridge';
+
+interface HookFileAgentSpec {
+  /** home 相对的候选配置文件（按序探测；全部不存在 ⇒ 未接线） */
+  configs: string[];
+  /** json = 常规 hooks JSON；toml = [[hooks]] 文本；artifact-only = 不靠配置注册（目录扫描） */
+  shape: 'json' | 'toml' | 'artifact-only';
+  /** 我方产物文件名（在 hook command / 配置文本里匹配） */
+  artifact: RegExp;
+  /** self-test 协议；artifact-only 的扩展退化为「自检它调用的 bridge」 */
+  protocol: HookFileProtocol;
+  /** matcher/tool 名提示（缺失只在证据里告警，不单独判失败） */
+  matcherHint?: RegExp;
+}
+
+const HOOK_FILE_AGENTS: Record<string, HookFileAgentSpec> = {
+  cursor: {
+    configs: [join('.cursor', 'hooks.json')], shape: 'json',
+    artifact: /cursor-riskguard-adapter\.ps1/i, protocol: 'cursor', matcherHint: /Shell/i,
+  },
+  copilot: {
+    configs: [join('.copilot', 'hooks', 'riskguard.json')], shape: 'json',
+    artifact: /copilot-riskguard-adapter\.ps1/i, protocol: 'permissionDecision',
+  },
+  grok: {
+    configs: [join('.grok', 'hooks', 'riskguard.json')], shape: 'json',
+    artifact: /grok-riskguard-adapter\.ps1/i, protocol: 'grok',
+  },
+  windsurf: {
+    configs: [join('.devin', 'hooks.v1.json'), join('AppData', 'Roaming', 'devin', 'config.json')],
+    shape: 'json', artifact: /devin-riskguard-adapter\.ps1/i, protocol: 'devin', matcherHint: /exec/i,
+  },
+  pi: {
+    configs: [join('.pi', 'agent', 'extensions', 'riskguard.ts')], shape: 'artifact-only',
+    artifact: /riskguard\.ts/i, protocol: 'bridge',
+  },
+  omp: {
+    configs: [join('.omp', 'agent', 'hooks', 'pre', 'riskguard.ts')], shape: 'artifact-only',
+    artifact: /riskguard\.ts/i, protocol: 'bridge',
+  },
+  'kimi-code': {
+    configs: [join('.kimi-code', 'config.toml')], shape: 'toml',
+    artifact: /riskguard-bridge\.mjs/i, protocol: 'bridge',
+  },
+  'minimax-code': {
+    configs: [join('.minimax', 'hooks.json'), join('.minimax-code', 'hooks.json')], shape: 'json',
+    artifact: /riskguard-bridge\.mjs/i, protocol: 'bridge', matcherHint: /bash|shell|terminal/i,
+  },
+};
+
+/** 递归收集 JSON 里的 hook 命令：兼容 `command`、嵌套 `hooks[].command`、`exec`+`args` 三种形态 */
+function collectHookCommands(node: unknown, out: string[] = []): string[] {
+  if (Array.isArray(node)) {
+    for (const item of node) collectHookCommands(item, out);
+    return out;
+  }
+  if (!node || typeof node !== 'object') return out;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.command === 'string') out.push(obj.command);
+  if (typeof obj.exec === 'string') {
+    const args = Array.isArray(obj.args) ? obj.args.filter((a): a is string => typeof a === 'string') : [];
+    // exec 路径常含空格（C:\Program Files\PowerShell\7\pwsh.exe）→ 必须加引号，否则 spawn 只拿到第一段
+    out.push([`"${obj.exec}"`, ...args].join(' '));
+  }
+  for (const v of Object.values(obj)) collectHookCommands(v, out);
+  return out;
+}
+
+/** shell 命令里首个可执行文件；认不出时 null（供适配器自检挑选解释器） */
+function executableFromCommand(command: string | undefined): string | null {
+  if (!command) return null;
+  const trimmed = command.trim();
+  const quoted = trimmed.match(/^"([^"]+)"/);
+  const token = (quoted ? quoted[1] : trimmed.split(/\s+/)[0] ?? '').trim();
+  if (!token) return null;
+  if (/\\|\//.test(token)) return token; // 绝对 / 相对路径（含 .exe）
+  if (/^pwsh(\.exe)?$/i.test(token)) return 'pwsh';
+  if (/^powershell(\.exe)?$/i.test(token)) return 'powershell.exe';
+  return null;
+}
+
+/** 在 hook 命令里找出我方产物路径（node 脚本或 ps1 适配器） */
+function artifactPathFromCommand(command: string | undefined, artifact: RegExp): string | null {
+  if (!command) return null;
+  const quoted = [...command.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const bare = command.split(/\s+/).filter((t) => /\.(ps1|mjs|ts|js)$/i.test(t));
+  for (const cand of [...quoted, ...bare]) {
+    const normalized = cand.replace(/\\/g, '/');
+    if (artifact.test(normalized)) return cand.replace(/\//g, '\\');
+  }
+  return null;
+}
+
+/** 各协议的 payload（形状必须与 vendor 一致，照抄 CC 的会假通过） */
+const HOOK_FILE_PAYLOADS: Record<HookFileProtocol, { allow: string; deny: string }> = {
+  cursor: {
+    allow: JSON.stringify({ tool_name: 'Shell', tool_input: { command: 'echo riskguard-self-test' } }),
+    deny: JSON.stringify({ tool_name: 'Shell', tool_input: { command: 'git reset --hard HEAD' } }),
+  },
+  permissionDecision: {
+    allow: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'echo riskguard-self-test' } }),
+    deny: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git reset --hard HEAD' } }),
+  },
+  grok: {
+    allow: JSON.stringify({ hookEventName: 'PreToolUse', toolName: 'Bash', toolInput: { command: 'echo riskguard-self-test' } }),
+    deny: JSON.stringify({ hookEventName: 'PreToolUse', toolName: 'Bash', toolInput: { command: 'git reset --hard HEAD' } }),
+  },
+  devin: {
+    allow: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'exec', tool_input: { command: 'echo riskguard-self-test' } }),
+    deny: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'exec', tool_input: { command: 'git reset --hard HEAD' } }),
+  },
+  bridge: {
+    allow: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'echo riskguard-self-test' } }),
+    deny: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git reset --hard HEAD' } }),
+  },
+};
+
+/**
+ * adapter / bridge 的实弹 self-test。
+ *
+ * 关键防「假通过」：适配器在**规则引擎缺失**时也会回 deny（fail-closed）。所以 deny 必须来自
+ * 规则引擎的措辞，而不是 fail-closed 分支；allow 侧则必须真的放行（否则等价于每一条命令都被拦）。
+ */
+function runHookFileSelfTest(
+  target: string,
+  protocol: HookFileProtocol,
+  interpreter?: string | null,
+): { ok: boolean; detail: string } {
+  if (!existsSync(target)) return { ok: false, detail: `self-test target missing: ${target}` };
+  const payloads = HOOK_FILE_PAYLOADS[protocol];
+  const isPs1 = target.toLowerCase().endsWith('.ps1');
+  const bin = isPs1 ? (interpreter ?? 'powershell.exe') : process.execPath;
+  const args = isPs1 ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', target] : [target];
+  const run = (payload: string) => spawnSync(bin, args, { input: payload, encoding: 'utf8', timeout: 40000 });
+  try {
+    const safe = run(payloads.allow);
+    if (safe.error) return { ok: false, detail: `self-test: interpreter unavailable (${bin}: ${(safe.error as Error).message})` };
+    const safeOut = (safe.stdout ?? '').trim();
+    const safeDenied =
+      (protocol === 'bridge' && safe.status === 2) ||
+      (protocol === 'cursor' && /"permission"\s*:\s*"deny"/i.test(safeOut)) ||
+      (protocol === 'permissionDecision' && /"permissionDecision"\s*:\s*"deny"/i.test(safeOut)) ||
+      (protocol === 'grok' && /"decision"\s*:\s*"deny"/i.test(safeOut)) ||
+      (protocol === 'devin' && /"decision"\s*:\s*"block"/i.test(safeOut));
+    if (safeDenied) {
+      return { ok: false, detail: `self-test: harmless payload was DENIED (fail-closed or engine missing) — ${(safe.stderr ?? safeOut).trim().slice(0, 160)}` };
+    }
+
+    const danger = run(payloads.deny);
+    const dangerOut = (danger.stdout ?? '').trim();
+    const dangerErr = (danger.stderr ?? '').trim();
+    const denied =
+      (protocol === 'bridge' && danger.status === 2 && dangerErr.length > 0) ||
+      (protocol === 'cursor' && /"permission"\s*:\s*"deny"/i.test(dangerOut)) ||
+      (protocol === 'permissionDecision' && /"permissionDecision"\s*:\s*"deny"/i.test(dangerOut)) ||
+      (protocol === 'grok' && /"decision"\s*:\s*"deny"/i.test(dangerOut)) ||
+      (protocol === 'devin' && /"decision"\s*:\s*"block"/i.test(dangerOut));
+    if (!denied) {
+      return { ok: false, detail: `self-test: dangerous payload NOT denied (status=${danger.status}) — ${dangerOut.slice(0, 160)}` };
+    }
+    const text = `${dangerOut} ${dangerErr}`;
+    if (/fail-closed|rules engine (not found|failed|missing)/i.test(text)) {
+      return { ok: false, detail: `self-test: deny came from the fail-closed path, not the rules engine — ${text.slice(0, 160)}` };
+    }
+    return { ok: true, detail: `self-test PASS (${protocol} via ${bin.split(/[\\/]/).pop()}: harmless=allow, dangerous=deny)` };
+  } catch (e) {
+    return { ok: false, detail: `self-test error: ${(e as Error).message}` };
+  }
 }
 
 /**
@@ -639,6 +829,115 @@ export async function probeAgentRuntime(
         selfTestDetail = 'hook target missing — cannot self-test';
         ev.push(selfTestDetail);
       }
+    } else if (HOOK_FILE_AGENTS[agent]) {
+      // hook 文件型 Agent（cursor / copilot / grok / devin / pi / omp / kimi-code / minimax-code）
+      // 详见文件头部 HOOK_FILE_AGENTS 的说明。
+      const spec = HOOK_FILE_AGENTS[agent];
+      verificationMode = 'dynamic';
+      const configPath = spec.configs.map((rel) => join(base, rel)).find((p) => existsSync(p));
+      let artifactPath: string | null = null;
+      let interpreter: string | null = null;
+
+      if (spec.shape === 'artifact-only') {
+        // 目录扫描型（pi / omp）：扩展文件在位即接线，没有配置项可查。
+        artifactPath = configPath ?? null;
+        artifactPresent = artifactPath !== null;
+        wired = artifactPresent;
+        ev.push(artifactPresent ? `extension present: ${artifactPath}` : `extension MISSING: ${spec.configs.join(' | ')}`);
+      } else if (!configPath) {
+        ev.push(`no hook config found (looked for ${spec.configs.join(' | ')})`);
+      } else if (spec.shape === 'json') {
+        const read = await readConfig(configPath);
+        if (read.state === 'invalid-json' || read.state === 'permission-denied' || read.state === 'io-error') {
+          configValid = false;
+          ev.push(`config invalid: ${configPath}`);
+        } else if (read.state === 'valid') {
+          // minimax 需要顶层 enabled:true，否则 hooks 整段不生效
+          if (agent === 'minimax-code' && (read.data as any)?.enabled !== true) {
+            ev.push('WARNING: hooks.json has no top-level "enabled": true — MiniMax would ignore the hook entirely');
+          }
+          const commands = collectHookCommands(read.data);
+          const hit = commands.find((c) => spec.artifact.test(c.replace(/\\/g, '/')));
+          if (hit) {
+            hookCommand = hit;
+            artifactPath = artifactPathFromCommand(hit, spec.artifact);
+            interpreter = executableFromCommand(hit);
+            wired = true;
+            ev.push(`wiring present: ${hit.slice(0, 140)}`);
+            const matchers = JSON.stringify(read.data).match(/"matcher"\s*:\s*"([^"]*)"/g) ?? [];
+            if (spec.matcherHint && matchers.length && !matchers.some((m) => spec.matcherHint!.test(m))) {
+              ev.push(`WARNING: no matcher covers the shell tool (${spec.matcherHint}) — the hook would never fire`);
+            }
+          } else {
+            ev.push('no RiskGuard artifact referenced in the hook config');
+          }
+        }
+      } else {
+        // toml（kimi-code）：[[hooks]] + event=PreToolUse + 命令里指向 bridge
+        const { readFile } = await import('node:fs/promises');
+        try {
+          const text = await readFile(configPath, 'utf8');
+          const hasEvent = /\[\[hooks\]\]/.test(text) && /event\s*=\s*"PreToolUse"/i.test(text);
+          const m = text.match(/"(?:[^"\\]|\\.)*(riskguard-bridge\.mjs)"/i) ?? text.match(/([^\s"']*riskguard-bridge\.mjs)/i);
+          if (hasEvent && m) {
+            artifactPath = (m[0].replace(/^"|"$/g, '')).replace(/\//g, '\\');
+            hookCommand = `node "${artifactPath}"`;
+            wired = true;
+            ev.push(`wiring present: [[hooks]] PreToolUse → ${artifactPath}`);
+          } else {
+            ev.push(!hasEvent ? 'no [[hooks]] PreToolUse entry in config.toml' : 'PreToolUse entry does not reference the RiskGuard bridge');
+          }
+        } catch (e) {
+          configValid = false;
+          ev.push(`config unreadable: ${configPath} (${(e as Error).message})`);
+        }
+      }
+
+      if (artifactPath) {
+        hookTargetExists = existsSync(artifactPath);
+        artifactPresent = hookTargetExists;
+        ev.push(`artifact ${hookTargetExists ? 'exists' : 'MISSING'}: ${artifactPath}`);
+        if (hookTargetExists) {
+          const check = await checkHookScriptFreshness(resolve(artifactPath), root);
+          hookScriptChecks.push(check);
+          ev.push(check.detail);
+          hookScriptFreshness = aggregateHookFreshness(hookScriptChecks);
+          artifactIntegrity = hookScriptFreshness; // 与 claude/codex/agy/workbuddy 同口径外传
+        }
+      }
+
+      if (wired && opts.deep !== false) {
+        if (!runtimeAvailable) {
+          selfTestPassed = false;
+          selfTestDetail = 'runtime unavailable — self-test skipped';
+          ev.push(selfTestDetail);
+        } else {
+          // extension 型（pi/omp）没有可 spawn 的独立入口：自检它调用的同一个 bridge，
+          // 也就是「规则判定这一层」，宿主接线只由上面的文件在位证明（证据里写明）。
+          // 注意：pi/omp 的 artifactPath 是扩展 .ts 本身，**不能**拿去 spawn —— bridge 另有位置
+          // （扩展内写死 `~/.risk-guard/riskguard-bridge.mjs`）。
+          const defaultBridge = join(base, '.risk-guard', 'riskguard-bridge.mjs');
+          const target = spec.protocol === 'bridge'
+            ? (artifactPath && /\.mjs$/i.test(artifactPath) ? artifactPath : defaultBridge)
+            : artifactPath;
+          if (!target) {
+            selfTestPassed = false;
+            selfTestDetail = 'no artifact path resolved — cannot self-test';
+            ev.push(selfTestDetail);
+          } else {
+            if (spec.protocol === 'bridge' && spec.shape === 'artifact-only') {
+              ev.push('note: extension host wiring is proven by file presence only; the gate itself is self-tested through the shared bridge');
+            }
+            const st = runHookFileSelfTest(target, spec.protocol, interpreter);
+            selfTestPassed = st.ok;
+            selfTestDetail = st.detail;
+            ev.push(st.detail);
+          }
+        }
+      } else if (wired && artifactPath && !hookTargetExists) {
+        selfTestDetail = 'artifact missing — cannot self-test';
+        ev.push(selfTestDetail);
+      }
     }
   } catch (e) {
     ev.push(`probe error: ${(e as Error).message}`);
@@ -661,6 +960,17 @@ export async function probeAgentRuntime(
     else if (!runtimeAvailable) { state = 'BROKEN'; ev.push('node runtime unavailable → BROKEN'); }
     else if (selfTestPassed) { state = 'ACTIVE'; ev.push('agy adapter self-test PASS → ACTIVE'); }
     else { state = 'INSTALLED'; ev.push('wiring present but agy self-test not passed → INSTALLED'); }
+  } else if (HOOK_FILE_AGENTS[agent] || agent === 'workbuddy') {
+    // 与 agy 同口径：非 manifest 管理，但适配层可真正 spawn —— deep 时必须 self-test 过才算 ACTIVE。
+    // 2026-11-17：WorkBuddy 原来掉到 `!manifestPresent → DETECTED`，于是 doctor 说 PASS、status 说
+    // 「agent present, RiskGuard not installed」—— 同一台机器两个真相。它同样是「无 manifest 但可 spawn」。
+    if (!configValid) { state = 'BROKEN'; ev.push('hook config invalid → BROKEN'); }
+    else if (!wired) { state = 'DETECTED'; ev.push('no RiskGuard wiring in the hook config → DETECTED'); }
+    else if (!hookTargetExists) { state = 'BROKEN'; ev.push('RiskGuard artifact missing → BROKEN'); }
+    else if (opts.deep !== true) { state = 'INSTALLED'; ev.push('wiring present; deep self-test needed for ACTIVE'); }
+    else if (!runtimeAvailable) { state = 'BROKEN'; ev.push('runtime unavailable → BROKEN'); }
+    else if (selfTestPassed) { state = 'ACTIVE'; ev.push('adapter/bridge self-test PASS → ACTIVE'); }
+    else { state = 'INSTALLED'; ev.push('wiring present but self-test not passed → INSTALLED'); }
   } else if (!manifestPresent) {
     state = 'DETECTED';
   } else {
@@ -725,3 +1035,6 @@ export async function probeAgentRuntime(
 export async function probeShallow(agent: string, home?: string): Promise<RuntimeProbeResult> {
   return probeAgentRuntime(agent, { home, deep: false });
 }
+
+/** hook 文件型 Agent 的 id 列表（doctor / 测试用；新增一端只需改 HOOK_FILE_AGENTS 一处） */
+export const HOOK_FILE_AGENT_IDS: string[] = Object.keys(HOOK_FILE_AGENTS);

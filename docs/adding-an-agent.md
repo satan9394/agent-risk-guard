@@ -98,7 +98,40 @@ layer or a redundant one. Use the *Agent security mechanism / environment report
 
 ---
 
+### 2.5 Three registration tables — miss one and the agent is "installed but unwatched" (2026-11-17)
+
+本机 2026-11-17 盘点发现：cursor / copilot / grok / devin / pi / omp / kimi-code / minimax-code 这 8 端
+**接线全绿、D3 在案**，但 `riskguard doctor` 一行都不输出它们。根因不是接线，而是三张表没同步：
+
+| 表 | 在哪 | 漏了会怎样 |
+|---|---|---|
+| `AGENT_REGISTRY` | `packages/installer/src/discovery.ts` | `detect` / `doctor` 判「未安装」，探针路径缺失 |
+| `HOOK_FILE_AGENTS` | `packages/installer/src/runtime-probe.ts` | 没有探测分支 → `doctor` / `status` **一行都不输出** |
+| `cmdDoctor` / `cmdStatus` 的 `order` | `packages/cli/src/commands.ts` | 同上（order 里没有就不探） |
+
+现在这条由 `packages/installer/test/doctor-agent-coverage.test.ts` 兜住：它断言
+**compatibility.json 的每个 Agent 都在 doctor 输出里有一行**，并用一个「假 home 里接线了 cursor」
+的反向对照证明 doctor 真的去探了（不是 SKIP）。新增一端时这张测试会直接红。
+
+hook 文件型 Agent 的接入只需要在 `HOOK_FILE_AGENTS` 加一条：
+
+```ts
+'your-agent': {
+  configs: [join('.your', 'hooks.json')],   // home 相对，按序探
+  shape: 'json',                            // json | toml | artifact-only（目录扫描型）
+  artifact: /your-riskguard-adapter\.ps1/i, // 命令里匹配我方产物
+  protocol: 'permissionDecision',           // cursor|permissionDecision|grok|devin|bridge
+  matcherHint: /Bash/i,                     // 缺失只在证据里告警
+},
+```
+
+`protocol` 决定 self-test 的 payload 与 deny 判据 —— **不能套用 CC 的形状**：cursor 的 shell 工具叫
+`Shell`、grok 是 camelCase `toolName/toolInput`、devin 是 `decision:"block"`，照抄会得到假通过或假失败。
+
+---
+
 ## 3. Checklist: from zero to a merged adapter
+
 
 1. **Read** [`docs/adapter-contract.md`](adapter-contract.md) (payload → `RiskEvent` → `Decision`).
 2. **Look at a neighbour.** `packages/adapters/` already has `claude`, `codex`, `copilot`, `cursor`, `grok`,

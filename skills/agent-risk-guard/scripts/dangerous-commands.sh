@@ -568,15 +568,18 @@ fi
 # 误伤防线：git restore --help/-h/--version 放行（restore 后跟 --help 不是破坏性操作）
 # G3：本节整类改 -i（对齐 ps1 的 -match 默认大小写不敏感）。**唯一例外** `git switch -C` 保持
 #   大小写敏感——ps1 L481 用 -cmatch 精确大写，而 `-c` 是安全的新建分支（sh-hook-test 有 allow 用例）。
-if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+restore[[:space:]]+--(help|version)'; then
+# 2026-11-11: 去掉 git 全局选项（-C <path> / -c k=v / --git-dir=…），与 ps1 的 $gitScan 同形。
+# 实测 `git -C <repo> reset --hard` 会绕过下面所有 git 判据。
+git_scan=$(printf '%s' "$cmd" | sed -E 's/git[[:space:]]+(-C|-c)[[:space:]]+("[^"]*"|[^[:space:]]+)[[:space:]]+/git /g; s/git[[:space:]]+--(git-dir|work-tree|namespace|config-env|exec-path|super-prefix)=[^[:space:]]+[[:space:]]+/git /g')
+if printf '%s' "$git_scan" | grep -qiE 'git[[:space:]]+restore[[:space:]]+--(help|version)'; then
     :
-elif printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--([[:space:]]|$)|restore([[:space:]]|$))' || printf '%s' "$cmd" | grep -qE 'git[[:space:]]+switch[[:space:]]+-C'; then
+elif printf '%s' "$git_scan" | grep -qiE 'git[[:space:]]+(clean[[:space:]]+-f|reset[[:space:]]+--hard|checkout[[:space:]]+--([[:space:]]|$)|restore([[:space:]]|$))' || printf '%s' "$git_scan" | grep -qE 'git[[:space:]]+switch[[:space:]]+-C'; then
     deny_command "git irreversible operation (clean/reset/checkout/restore/switch -C) blocked."
 fi
-if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+rm([[:space:]]|$)'; then
+if printf '%s' "$git_scan" | grep -qiE 'git[[:space:]]+rm([[:space:]]|$)'; then
     deny_command "git rm permanently deletes tracked files (no recycle bin)."
 fi
-if printf '%s' "$cmd" | grep -qiE 'git[[:space:]]+worktree[[:space:]]+remove[[:space:]]+--force'; then
+if printf '%s' "$git_scan" | grep -qiE 'git[[:space:]]+worktree[[:space:]]+remove[[:space:]]+--force'; then
     deny_command "git worktree remove --force discards changes."
 fi
 # R3+R4 修复：--force 后须空白/结尾（放开 --force-with-lease）；覆盖 -f 短标志（R4-01）
@@ -599,6 +602,11 @@ fi
 # R3 新发现：wmic shadowcopy delete（勒索软件前置）
 if printf '%s' "$cmd" | grep -qiE 'wmic[^;]*(shadowcopy|shadowstorage)[^;]*delete|wmic[^;]*delete'; then
     deny_command "wmic delete (shadowcopy/system admin) blocked."
+fi
+
+# 2026-11-12: apply_patch 删除/移动（原生工具或 shell 调 apply_patch CLI 都以 *** Delete File: 出现）
+if printf '%s' "$cmd" | grep -qE '(^|[[:space:]])\*\*\*[[:space:]]*(Delete File|Move to):'; then
+    deny_command "apply_patch delete/move is blocked (use the recycle bin through shell)."
 fi
 
 # 8) 磁盘操作（diskpart/format 用命令边界匹配以防 echo 字符串误伤）

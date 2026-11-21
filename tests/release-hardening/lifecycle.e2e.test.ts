@@ -70,7 +70,8 @@ test('lifecycle: detect 全部 detected', () => {
     assert.equal(map.dsh, false);
     assert.equal(typeof map.agy, 'boolean');
     // 全量列齐：既有四件套 + agy + workbuddy + 其余 registry 全部出现
-    for (const id of ['claude-code', 'codex', 'opencode', 'cursor', 'windsurf', 'grok', 'claude-code-copilot', 'hermes', 'cline', 'aider', 'goose', 'agy', 'dsh', 'workbuddy']) {
+    // 2026-11-17：`claude-code-copilot`（按「CC 内核」猜的旧 id）已退役，真实落点是 `copilot`（~/.copilot）
+    for (const id of ['claude-code', 'codex', 'opencode', 'cursor', 'windsurf', 'grok', 'copilot', 'hermes', 'cline', 'aider', 'goose', 'agy', 'dsh', 'workbuddy', 'pi', 'omp', 'kimi-code', 'minimax-code']) {
       assert.ok(id in map, `detect --json should include ${id}`);
     }
   } finally { rmSync(home, { recursive: true, force: true }); }

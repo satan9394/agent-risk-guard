@@ -1,0 +1,20 @@
+=== devin 3000.14.30821 deny ===
+Running the exact command.```text
+fatal: cannot change to 'C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\devin': No such file or directory
+```
+
+--- devin hook log size: 480 -> 480 ---
+---- STATUS:  M tracked.txt ----
+=== devin 3000.14.30821 control (expect EXECUTED, no hook) ===
+```
+HEAD is now at bdf034c init
+```
+
+---- STATUS:  ----
+
+=== devin 3000.14.30821 accept-edits (approval layer, NOT hook) ===
+warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.
+The command was not executed 鈥?the tool call was rejected. For reference, `git status` showed one modified file (`tracked.txt`), which `git reset --hard HEAD` would have discarded.
+
+--- devin hook log bytes: 1200 -> 1200 (zero growth = hook never invoked) ---
+---- STATUS:  M tracked.txt ----

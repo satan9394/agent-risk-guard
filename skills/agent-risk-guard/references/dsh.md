@@ -69,6 +69,52 @@ cmd /c | pwsh/powershell -Command 内嵌删除
   对桌面端的接线核验只能看该 profile 的 `cordis.patch.yml` 本身，或用 Desktop 自带的命令运行时。
 - 三个 profile（desktop / headless / web）的规则条数以巡检输出为准，别在文档里写死。
 
+## 0.2.2-rc.2 适配要点（2026-11-12）
+
+### 规则必须是 JS 正则（本轮真实故障，已修）
+
+DSH 的 `deny-risk-commands` 插件用 **JS** `new RegExp(rule.re, 'i')` 逐条编译
+`config.rules`。JS **不支持 PCRE 内联标志**（`(?m)` / `(?s)` / `(?i)`），**一条规则写错就
+让整个 `apply()` 抛错 → 插件整行不激活 → 删除门禁静默失效（fail-open）**。
+
+- 现场报错（`E:\DeepSeek_Harness\.dsh-daily\logs\dsh-2026_11_12.err.log`）：
+  `dsh: warning: 1 entry did not activate` +
+  `deny-risk-commands (deny-risk-commands): SyntaxError: Invalid regular expression: /(?m)^\s*\*\*\*\s*(?:Delete File|Move to):/i: Invalid group`
+- 影响面不止 DSH：同一份规则也下发给 Claude Code 的 filter matcher 与 OpenCode 插件（都是 JS 正则）。
+- 写法约定：需要行首锚点时用 `(?:^|[\r\n])`（或 `(?:^|\n)`），**不要用 `(?m)`**；其余只用 JS 支持的语法。
+  apply_patch 那条（`\s*\*\*\*\s*(?:Delete File|Move to):`）不带行锚点——命令文本里出现
+  `*** Delete File:` / `*** Move to:` 即拦，宁可错杀（正文转述同一标记也会命中，属有意取舍）。
+- 闸门：`tests/adversarial/dsh-rule-js-compat.test.ts` 对 DSH patch 与 `defaultDenyRules()`
+  逐条做 `new RegExp(re, 'i')`，任一条编译失败即红；另有一条用例验证闸门本身有牙齿
+  （`(?m)` 在 JS 里确实抛错）。**把 `(?m)` 加回任一规则 → 该测试 2/4 红**
+  （实测 `Invalid regular expression … Invalid group`）。
+
+### insert id / config 形状（rc.2 仍有效）
+
+- `- insert: → - id: deny-risk-commands → name: deny-risk-commands → config.rules[]` 在 0.2.2-rc.2 未变：
+  `dsh --profile headless --dump-config` 输出里能直接看到 `- id: deny-risk-commands` / `config: rules:`；
+  web profile 的加载栈里条目名是 `#deny-risk-commands`（插件被识别并执行到 `apply()` 这一层）。
+- 规则条数、profile 覆盖情况以 `riskguard-wiring-check.ps1`（只读）与 `--dump-config` 的实际输出为准，不在文档写死。
+
+### ops-ptc 模式的覆盖面（本机默认 preset）
+
+`dsh-ops` 的 `ops-ptc` preset 会把官方 read/glob/grep 换成 `ops_*`，shell 侧有两个不同来源，**门禁只认其中一个**：
+
+| 工具 | 谁发布 | 命令参数 | 过 `tools/pre-execute` 时 `exec.name` | 本仓库限制规则是否生效 |
+|---|---|---|---|---|
+| `pwsh` | 宿主 `@deepseek-ai/dsh-tool-pwsh` | `command` | `pwsh` | ✅ 生效 |
+| `bash` | 宿主 `@deepseek-ai/dsh-tool-bash`（Windows 默认 disabled） | `command` | `bash` | ✅ 生效 |
+| `ops_bash` | `dsh-ops`（自带 MSYS bash） | `command` | `ops_bash` | ❌ **不生效**（插件只匹配 `pwsh`/`bash`） |
+
+- **PTC 内层调用仍过闸**：`run_code` 里 `tools.pwsh({command})` 走的是同一个工具管线
+  （`@deepseek-ai/dsh-tools` 的 `pipeline.js` 在派发前 `ctx.waterfall(..., 'tools/pre-execute', exec, ...)`），
+  工具名保持 `pwsh`，所以 PTC 不构成绕过。
+- **唯一的缺口是 `ops_bash`**：它是另一个工具名，插件白名单里没有。本机 `~/.dsh/profiles/web/cordis.patch.yml`
+  已按此规避——`dsh-ops` 的 `global.bash: false`（不发布 `ops_bash`）+ `hidePwsh: false`（保留官方 `pwsh`），
+  `agent-preset-registry.selectedDefault: ops-ptc` 仍指向 ops-ptc。**改动这三项中的任何一项前先确认门禁认得新工具名。**
+- 实证（0.2.2-rc.2，headless profile，2026-11-12）：`pwsh` 调 `git reset --hard HEAD` 返回
+  `Error: 高危：git reset --hard 丢弃工作区改动`、脏改动保留；同会话 `git status --short` 正常返回 ` M tracked.txt`。
+
 ## DSH 其他安全层（与门禁的关系）
 
 - 沙箱模式：`read-only` / `workspace-write` / `danger-full-access`（只约束**文件效果**；网络/进程可见性不在词汇内）

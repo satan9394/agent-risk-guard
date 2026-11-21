@@ -1,9 +1,31 @@
 # Windsurf / Zed / Warp：rules + permissions（有限拦截）
 
-## Windsurf
+## Windsurf → Devin（2026-11-13 更名）
 
-机制：**无 hooks、无权限系统**，主要靠**规则文件**（模型级提示）+ ignore 文件（保护敏感路径）。
-配置：`.windsurfrules`（项目）+ 全局 rules + `.codeiumignore`
+**重要**：Cognition 已于 2026-06-02 把 Windsurf 改名为 **Devin Desktop / Devin CLI**，Cascade 2026-07-01 停用。
+旧 `pre_run_command` hook 契约退役；新契约是 `PreToolUse` + `matcher: "exec"`，配置在用户级
+`%APPDATA%\devin\config.json` 的 `"hooks"` 键（或项目 `.devin/hooks.v1.json`），拒绝用 exit 2 或
+`{"decision":"block","reason":...}`。本机已装 Devin CLI 3000.12.57，wiring 已写入
+`~/.devin/hooks/devin-riskguard-adapter.ps1` → 共享引擎；离线 deny/allow 3/3。用户已登录并真跑复验：
+`--permission-mode dangerous` 下 hook 返回 block + exit 2 后命令仍执行；`auto`/`smart` 在 print 模式
+被权限确认提前拒绝。CLI 当前无法同时做到「无审批 + 硬拦截」，仍停在 D2，需等 Devin 修复或改 Desktop
+交互模式取证。
+
+**2026-11-17 复验（3000.12.57，结论不变，补两条新行为）**：
+
+1. **工作区信任闸门**：`devin -p` 在未信任目录直接
+   `Error: Refusing to run in an untrusted workspace`。要么先交互式信任该目录，要么加
+   `--respect-workspace-trust false`（print 模式无法弹信任提示，默认尊重信任设置）。
+2. `--permission-mode dangerous` 下 hook **根本没被调用**——`%TEMP%\riskguard-devin-hook.log`
+   零记录，`git reset --hard HEAD` 直接执行（`HEAD is now at … init`）。这与 11-13 的「返回 block
+   仍执行」是更准确的描述：不是 deny 被无视，而是 hook 没有被触发。
+   `--permission-mode smart` 则在 print 模式先被审批层拒绝（`Tool execution was rejected`），
+   同样零 hook 记录。
+
+取证提示：用 `--permission-mode dangerous` 得不到 D3；用 `smart` 连命令都跑不起来。
+Restricted Mode 下 hook 不加载。
+
+以下为旧 Windsurf 资料，保留作历史参考：
 
 ### 配置文件
 

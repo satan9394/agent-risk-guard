@@ -80,11 +80,25 @@ $srcPs1    = Join-Path $repo 'assets\hooks\dangerous-commands.ps1'
 $srcPs1Agy = Join-Path $repo 'assets\hooks\agy-dangerous-commands.ps1'
 $srcOc     = Join-Path $repo 'assets\opencode\agent-risk-guard.ts'
 $srcDsh    = Join-Path $repo 'assets\dsh\deny-risk-commands.patch.yml'
+$srcBridge = Join-Path $repo 'assets\shared\riskguard-bridge.mjs'
+$srcPiExt  = Join-Path $repo 'assets\pi\riskguard-extension.ts'
+$srcSh     = Join-Path $repo 'skills\agent-risk-guard\scripts\dangerous-commands.sh'
+$srcCursorAdapter = Join-Path $repo 'assets\hooks\cursor-riskguard-adapter.ps1'
+$srcCopilotAdapter = Join-Path $repo 'assets\hooks\copilot-riskguard-adapter.ps1'
+$srcGrokAdapter = Join-Path $repo 'assets\hooks\grok-riskguard-adapter.ps1'
+$srcDevinAdapter = Join-Path $repo 'assets\hooks\devin-riskguard-adapter.ps1'
 Write-Check '单源 ps1 存在' (Test-Path $srcPs1) $srcPs1
 Write-Check '单源 agy 适配器存在' (Test-Path $srcPs1Agy) $srcPs1Agy
 Write-Check '单源 opencode 存在' (Test-Path $srcOc) $srcOc
 Write-Check '单源 dsh patch 存在' (Test-Path $srcDsh) $srcDsh
-if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh)) { exit 2 }
+Write-Check '单源 shared bridge 存在' (Test-Path $srcBridge) $srcBridge
+Write-Check '单源 pi 扩展存在' (Test-Path $srcPiExt) $srcPiExt
+Write-Check '单源 sh 引擎存在' (Test-Path $srcSh) $srcSh
+Write-Check '单源 cursor 适配器存在' (Test-Path $srcCursorAdapter) $srcCursorAdapter
+Write-Check '单源 copilot 适配器存在' (Test-Path $srcCopilotAdapter) $srcCopilotAdapter
+Write-Check '单源 grok 适配器存在' (Test-Path $srcGrokAdapter) $srcGrokAdapter
+Write-Check '单源 devin 适配器存在' (Test-Path $srcDevinAdapter) $srcDevinAdapter
+if (-not (Test-Path $srcPs1) -or -not (Test-Path $srcPs1Agy) -or -not (Test-Path $srcOc) -or -not (Test-Path $srcDsh) -or -not (Test-Path $srcBridge) -or -not (Test-Path $srcPiExt) -or -not (Test-Path $srcSh) -or -not (Test-Path $srcCursorAdapter) -or -not (Test-Path $srcCopilotAdapter) -or -not (Test-Path $srcGrokAdapter) -or -not (Test-Path $srcDevinAdapter)) { exit 2 }
 
 function Test-Hash([string]$expected, [string]$path) {
   if (-not (Test-Path $path)) { return $false }
@@ -108,7 +122,19 @@ $ps1Targets = @(
   # 2026-11-08 新增：Cursor（桌面 3.29.9 / cursor-agent 2026.11.05-86047df）。
   # 官方 hook 位置是 ~/.cursor/hooks.json + ~/.cursor/hooks/*；复用同一 ps1 规则引擎，
   # 只是事件名/返回格式由 hooks.json 适配（不新增任何规则）。
-  @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' }
+  @{ dest = (Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'cursor hooks' },
+  # 2026-11-11: Cursor preToolUse 的原生 Delete 工具无法走回收站，单独用适配器翻译
+  # Cursor 的 {"permission":"deny"} 协议；Shell 仍转给上面的共享引擎判定。
+  @{ dest = (Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1');      src = $srcCursorAdapter; label = 'cursor adapter' },
+  # 2026-11-12: Copilot CLI 的 preToolUse 也是自家协议，适配层与引擎一起落到 ~/.copilot/hooks\。
+  @{ dest = (Join-Path $userHome '.copilot\hooks\dangerous-commands.ps1');             src = $srcPs1;    label = 'copilot engine' },
+  @{ dest = (Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1');     src = $srcCopilotAdapter; label = 'copilot adapter' },
+  # 2026-11-13: Grok Build 的 PreToolUse 也是自家协议（{"decision":"deny"} + exit 2）。
+  @{ dest = (Join-Path $userHome '.grok\hooks\dangerous-commands.ps1');                 src = $srcPs1;    label = 'grok engine' },
+  @{ dest = (Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1');            src = $srcGrokAdapter; label = 'grok adapter' },
+  # 2026-11-13: Devin（Windsurf 的继任者）CLI 已装，hook 契约换成 PreToolUse + matcher exec。
+  @{ dest = (Join-Path $userHome '.devin\hooks\dangerous-commands.ps1');                src = $srcPs1;    label = 'devin engine' },
+  @{ dest = (Join-Path $userHome '.devin\hooks\devin-riskguard-adapter.ps1');           src = $srcDevinAdapter; label = 'devin adapter' }
 )
 foreach ($t in $ps1Targets) {
   $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
@@ -633,7 +659,7 @@ fs.writeFileSync(p, JSON.stringify(s, null, 2) + '\n', 'utf8');
 #     → 正常命令会被误拦。故显式写 failClosed:false，失败语义与 Claude Code hook 一致（崩溃/超时 fail-open）。
 #   · 非法 JSON 在 preToolUse 上由 Cursor 自身按拦截处理（不依赖 failClosed）。
 $cursorHooks = Join-Path $userHome '.cursor\hooks.json'
-$cursorHookPath = Join-Path $userHome '.cursor\hooks\dangerous-commands.ps1'
+$cursorHookPath = Join-Path $userHome '.cursor\hooks\cursor-riskguard-adapter.ps1'
 $cursorCfgOk = $false
 $cursorEntry = $null
 if (Test-Path $cursorHooks) {
@@ -641,12 +667,13 @@ if (Test-Path $cursorHooks) {
     $cursorCfg = Get-Content $cursorHooks -Raw -Encoding UTF8 | ConvertFrom-Json
     $cursorCfgOk = $true
     foreach ($e in @($cursorCfg.hooks.preToolUse)) {
-      if ($e -and $e.command -and ([string]$e.command -match 'dangerous-commands')) { $cursorEntry = $e }
+      if ($e -and $e.command -and ([string]$e.command -match 'cursor-riskguard-adapter|dangerous-commands')) { $cursorEntry = $e }
     }
   } catch { $cursorCfgOk = $false }
 }
-$cursorEntryOk = ($null -ne $cursorEntry) -and ([string]$cursorEntry.matcher -match 'Shell') -and ([int]$cursorEntry.timeout -ge 10)
-Write-Check 'cursor hooks.json preToolUse（matcher 含 Shell）' ($cursorCfgOk -and $cursorEntryOk) $cursorHooks
+$cursorMatcher = if ($cursorEntry) { [string]$cursorEntry.matcher } else { '' }
+$cursorEntryOk = ($null -ne $cursorEntry) -and ($cursorMatcher -match 'Shell') -and ($cursorMatcher -match 'Delete') -and ([int]$cursorEntry.timeout -ge 10)
+Write-Check 'cursor hooks.json preToolUse（matcher 含 Shell 与 Delete）' ($cursorCfgOk -and $cursorEntryOk) $cursorHooks
 
 if ((-not $cursorCfgOk -or -not $cursorEntryOk) -and $Fix) {
   if ((Test-Path $cursorHooks) -and (-not $cursorCfgOk)) {
@@ -669,28 +696,134 @@ if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) { process.exit(3); }
 cfg.version = 1;
 if (!cfg.hooks || typeof cfg.hooks !== 'object') cfg.hooks = {};
 if (!Array.isArray(cfg.hooks.preToolUse)) cfg.hooks.preToolUse = [];
+// 清掉侦察用的临时探针（_probe），只保留真实接线
+cfg.hooks.preToolUse = cfg.hooks.preToolUse.filter(e => !(e && e._probe));
 // 绝对 powershell.exe + 正斜杠路径：与 Claude 段同样避免 shell 吃掉反斜杠。
 const ps = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 const command = ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (/[\s"]/.test(hookPosix) ? '"' + hookPosix + '"' : hookPosix);
-const entry = cfg.hooks.preToolUse.find(e => e && typeof e.command === 'string' && /dangerous-commands/.test(e.command));
+const entry = cfg.hooks.preToolUse.find(e => e && typeof e.command === 'string' && /cursor-riskguard-adapter|dangerous-commands/.test(e.command));
 if (entry) {
   entry.command = command;
-  entry.matcher = 'Shell';
+  entry.matcher = 'Shell|Delete';
   entry.timeout = timeout;
   if (entry.failClosed === undefined) entry.failClosed = false;
 } else {
-  cfg.hooks.preToolUse.push({ command, matcher: 'Shell', timeout, failClosed: false });
+  cfg.hooks.preToolUse.push({ command, matcher: 'Shell|Delete', timeout, failClosed: false });
 }
 fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
 '@ | Set-Content -Path $cursorHelper -Encoding UTF8
     node $cursorHelper $cursorHooks $cursorHookPath 20
     if ($LASTEXITCODE -eq 0) {
       Write-Host "  [Fix] cursor hooks.json 已合并式写入 preToolUse（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
-      $issues = @($issues | Where-Object { $_ -ne 'cursor hooks.json preToolUse（matcher 含 Shell）' })
+      $issues = @($issues | Where-Object { $_ -ne 'cursor hooks.json preToolUse（matcher 含 Shell 与 Delete）' })
     } else {
       Write-Host "  [Fix] cursor hooks.json 恢复失败（node 退出码 $LASTEXITCODE）" -ForegroundColor Red
     }
   }
+}
+
+# ---- Copilot CLI（2026-11-12）----
+# 官方用户级 hook：~/.copilot/hooks/*.json；事件名必须 PascalCase PreToolUse（camelCase 的 payload
+# 是 toolName/toolArgs，现有引擎读不到）。deny 用顶层 permissionDecision + exit 2。
+$copilotHooks = Join-Path $userHome '.copilot\hooks\riskguard.json'
+$copilotAdapterPath = Join-Path $userHome '.copilot\hooks\copilot-riskguard-adapter.ps1'
+$copilotRaw = if (Test-Path $copilotHooks) { Get-Content $copilotHooks -Raw -Encoding UTF8 } else { '' }
+$copilotExpected = $copilotAdapterPath.Replace('\', '\\')
+$copilotExpectedPosix = $copilotAdapterPath.Replace('\', '/')
+$copilotOk = ($copilotRaw -match 'PreToolUse') -and ($copilotRaw.Contains($copilotExpected) -or $copilotRaw.Contains($copilotExpectedPosix))
+Write-Check 'copilot hooks/riskguard.json PreToolUse' $copilotOk $copilotHooks
+if (-not $copilotOk -and $Fix) {
+  try {
+    if (Test-Path $copilotHooks) { Backup-File $copilotHooks }
+    $pwshExe = 'C:\Program Files\PowerShell\7\pwsh.exe'
+    if (-not (Test-Path $pwshExe)) { $pwshExe = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
+    $adapterPosix = $copilotAdapterPath.Replace('\', '/')
+    $obj = @{
+      version = 1
+      hooks = @{
+        PreToolUse = @(
+          @{
+            type = 'command'
+            exec = $pwshExe
+            args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $adapterPosix)
+            timeoutSec = 30
+          }
+        )
+      }
+    }
+    $parent = Split-Path -Parent $copilotHooks
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($copilotHooks, (($obj | ConvertTo-Json -Depth 8) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] copilot hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'copilot hooks/riskguard.json PreToolUse' })
+  } catch { Write-Host ("  [Fix] copilot 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# ---- Grok Build（2026-11-13）----
+# 官方用户级 hook：~/.grok/hooks/*.json；PreToolUse 无 matcher = 匹配全部工具。
+# deny 用 stdout {"decision":"deny","reason":...} + exit 2；崩溃/超时按 vendor 合同 fail-open。
+$grokHooks = Join-Path $userHome '.grok\hooks\riskguard.json'
+$grokAdapterPath = Join-Path $userHome '.grok\hooks\grok-riskguard-adapter.ps1'
+$grokRaw = if (Test-Path $grokHooks) { Get-Content $grokHooks -Raw -Encoding UTF8 } else { '' }
+$grokExpectedPosix = $grokAdapterPath.Replace('\', '/')
+$grokOk = ($grokRaw -match 'PreToolUse') -and $grokRaw.Contains($grokExpectedPosix)
+Write-Check 'grok hooks/riskguard.json PreToolUse' $grokOk $grokHooks
+if (-not $grokOk -and $Fix) {
+  try {
+    if (Test-Path $grokHooks) { Backup-File $grokHooks }
+    $obj = @{
+      hooks = @{
+        PreToolUse = @(
+          @{
+            hooks = @(
+              @{
+                type = 'command'
+                command = "pwsh -NoProfile -ExecutionPolicy Bypass -File $grokExpectedPosix"
+                timeout = 20
+              }
+            )
+          }
+        )
+      }
+    }
+    $parent = Split-Path -Parent $grokHooks
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($grokHooks, (($obj | ConvertTo-Json -Depth 8) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] grok hooks/riskguard.json 已写入（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'grok hooks/riskguard.json PreToolUse' })
+  } catch { Write-Host ("  [Fix] grok 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# ---- Devin（原 Windsurf，2026-11-13）----
+# 用户级配置 %APPDATA%\devin\config.json 的 "hooks" 键；matcher 用正则 "exec"（shell 工具名）。
+$devinCfg = Join-Path $userHome 'AppData\Roaming\devin\config.json'
+$devinAdapterPath = Join-Path $userHome '.devin\hooks\devin-riskguard-adapter.ps1'
+$devinRaw = if (Test-Path $devinCfg) { Get-Content $devinCfg -Raw -Encoding UTF8 } else { '' }
+$devinExpected = $devinAdapterPath.Replace('\', '/')
+$devinOk = ($devinRaw -match 'devin-riskguard-adapter') -and ($devinRaw -match '"exec"')
+Write-Check 'devin config.json PreToolUse(exec)' $devinOk $devinCfg
+if (-not $devinOk -and $Fix) {
+  try {
+    $obj = if ($devinRaw.Trim()) { $devinRaw | ConvertFrom-Json -ErrorAction Stop } else { [pscustomobject]@{ version = 1 } }
+    if (-not $obj.PSObject.Properties.Name.Contains('hooks')) {
+      $obj | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $entry = @{
+      matcher = 'exec'
+      hooks = @(@{
+        type = 'command'
+        timeout = 20
+        command = "pwsh -NoProfile -ExecutionPolicy Bypass -File $devinExpected"
+      })
+    }
+    $obj.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @($entry) -Force
+    if (Test-Path $devinCfg) { Backup-File $devinCfg }
+    $parent = Split-Path -Parent $devinCfg
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    [System.IO.File]::WriteAllText($devinCfg, (($obj | ConvertTo-Json -Depth 12) + "`r`n"), [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  [Fix] devin config.json 已写入 hooks.PreToolUse（备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'devin config.json PreToolUse(exec)' })
+  } catch { Write-Host ("  [Fix] devin 接线失败（配置不是合法 JSON？）: " + $_.Exception.Message) -ForegroundColor Yellow }
 }
 
 $codexHooks = Join-Path $userHome '.codex\hooks.json'
@@ -714,6 +847,121 @@ Write-Check 'codex config.toml 无内联 hooks 重复注册' $tomlOk $codexToml
 $agyHooks = Join-Path $userHome '.gemini\config\hooks.json'
 $agyOk = (Test-Path $agyHooks) -and ((Get-Content $agyHooks -Raw -Encoding UTF8) -match 'dangerous-commands')
 Write-Check 'agy hooks.json' $agyOk $agyHooks
+
+# ---- 7. Pi / omp / Kimi Code / MiniMax Code（2026-11-11）----
+# 四个 Node 系 agent 共用一套「扩展/钩子 → ~/.risk-guard/riskguard-bridge.mjs →
+# 同一份 assets/hooks/dangerous-commands.ps1」链路。规则仍只在 ps1 单源里；
+# 这一节只负责把桥、引擎副本和各自的接线装到位，且全部幂等。
+Write-Host "`n[Pi / omp / Kimi Code / MiniMax Code]"
+
+$rgHome = Join-Path $userHome '.risk-guard'
+$rgTargets = @(
+  @{ dest = (Join-Path $rgHome 'riskguard-bridge.mjs');   src = $srcBridge; label = 'shared bridge' },
+  @{ dest = (Join-Path $rgHome 'dangerous-commands.ps1'); src = $srcPs1;    label = 'shared ps1 engine' },
+  @{ dest = (Join-Path $rgHome 'dangerous-commands.sh');  src = $srcSh;     label = 'shared sh engine' }
+)
+foreach ($t in $rgTargets) {
+  $ok = Test-Hash (Get-FileHash $t.src -Algorithm SHA256).Hash $t.dest
+  Write-Check ("shared: " + $t.label) $ok $t.dest
+  if (-not $ok) { Restore-Single-Source $t.dest $t.src $t.label }
+}
+
+$piDest  = Join-Path $userHome '.pi\agent\extensions\riskguard.ts'
+$ompDest = Join-Path $userHome '.omp\agent\hooks\pre\riskguard.ts'
+$extTargets = @(
+  @{ dest = $piDest;  label = 'pi extension' },
+  @{ dest = $ompDest; label = 'omp extension' }
+)
+foreach ($t in $extTargets) {
+  $ok = Test-Hash (Get-FileHash $srcPiExt -Algorithm SHA256).Hash $t.dest
+  Write-Check ("extension: " + $t.label) $ok $t.dest
+  if (-not $ok) { Restore-Single-Source $t.dest $srcPiExt $t.label }
+}
+
+# 稳定入口优先：nvm 的 .nodejs 是 junction，换 Node 版本不会失效；找不到再退回 PATH 上的 node
+$nodeExe = Join-Path $userHome 'AppData\Local\Author Software\nvm\.nodejs\node.exe'
+if (-not (Test-Path $nodeExe)) {
+  $nodeCmd = Get-Command node -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($nodeCmd -and $nodeCmd.Source) { $nodeExe = $nodeCmd.Source } else { $nodeExe = 'node' }
+}
+$nodePosix   = $nodeExe.Replace('\', '/')
+$bridgePosix = (Join-Path $rgHome 'riskguard-bridge.mjs').Replace('\', '/')
+
+# Kimi Code：config.toml 的 [[hooks]] PreToolUse（TOML 字面量字符串，路径用正斜杠交给 Git Bash）
+$kimiCfg = Join-Path $userHome '.kimi-code\config.toml'
+$kimiRaw = if (Test-Path $kimiCfg) { Get-Content $kimiCfg -Raw -Encoding UTF8 } else { '' }
+$kimiOk = ($kimiRaw -match [regex]::Escape($bridgePosix))
+Write-Check 'kimi config.toml PreToolUse hook' $kimiOk $kimiCfg
+if (-not $kimiOk -and $Fix) {
+  try {
+    if (-not (Test-Path (Split-Path -Parent $kimiCfg))) { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $kimiCfg) | Out-Null }
+    if (Test-Path $kimiCfg) { Backup-File $kimiCfg }
+    $kimiLine = "command = '""$nodePosix"" ""$bridgePosix""'"
+    if ($kimiRaw -match 'riskguard-bridge\.mjs') {
+      # 已有一条但指向旧位置（例如任务目录）：只改 command 行，保留其余 hook 配置
+      $kimiNew = [regex]::Replace($kimiRaw, "(?m)^command = '.*riskguard-bridge\.mjs.*'$", $kimiLine)
+      [System.IO.File]::WriteAllText($kimiCfg, $kimiNew, [System.Text.UTF8Encoding]::new($false))
+      Write-Host "  [Fix] kimi config.toml 的 PreToolUse command 已改指 ~/.risk-guard/" -ForegroundColor Cyan
+    } else {
+      $kimiBlock = "`r`n[[hooks]]`r`nevent = ""PreToolUse""`r`n$kimiLine`r`ntimeout = 10`r`n"
+      Add-Content -LiteralPath $kimiCfg -Value $kimiBlock -Encoding UTF8 -NoNewline
+      Write-Host "  [Fix] kimi config.toml 已追加 PreToolUse hook" -ForegroundColor Cyan
+    }
+    $issues = @($issues | Where-Object { $_ -ne 'kimi config.toml PreToolUse hook' })
+  } catch { Write-Host ("  [Fix] kimi 接线失败: " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+
+# MiniMax Code：用户级 hooks.json（Claude 兼容 PreToolUse，原生工具名 bash）
+$mmHooks = Join-Path $userHome '.minimax\hooks.json'
+$mmRaw = if (Test-Path $mmHooks) { Get-Content $mmHooks -Raw -Encoding UTF8 } else { '' }
+$mmOk = ($mmRaw -match [regex]::Escape($bridgePosix))
+Write-Check 'minimax hooks.json PreToolUse hook' $mmOk $mmHooks
+if (-not $mmOk -and $Fix) {
+  $mmHelper = Join-Path $env:TEMP 'riskguard-minimax-hooks.cjs'
+  @'
+const fs = require('fs');
+const target = process.argv[2];
+const node = process.argv[3];
+const bridge = process.argv[4];
+let cfg = {};
+if (fs.existsSync(target)) {
+  try { cfg = JSON.parse(fs.readFileSync(target, 'utf8')); }
+  catch (e) { process.exit(3); }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) process.exit(3);
+cfg.enabled = true;
+if (!cfg.hooks || typeof cfg.hooks !== 'object') cfg.hooks = {};
+if (!Array.isArray(cfg.hooks.PreToolUse)) cfg.hooks.PreToolUse = [];
+const cmd = '"' + node + '" "' + bridge + '"';
+let updated = 0;
+for (const g of cfg.hooks.PreToolUse) {
+  if (!g || !Array.isArray(g.hooks)) continue;
+  for (const h of g.hooks) {
+    if (h && typeof h.command === 'string' && /riskguard-bridge/.test(h.command)) {
+      h.command = cmd;
+      h.commandWindows = cmd;
+      h.type = 'command';
+      h.timeout = 10;
+      updated++;
+    }
+  }
+}
+if (updated === 0) {
+  cfg.hooks.PreToolUse.push({ matcher: 'bash|shell|terminal', hooks: [{ type: 'command', name: 'RiskGuard', command: cmd, commandWindows: cmd, timeout: 10 }] });
+}
+fs.writeFileSync(target, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+'@ | Set-Content -Path $mmHelper -Encoding UTF8
+  if (Test-Path $mmHooks) { Backup-File $mmHooks }
+  $mmParent = Split-Path -Parent $mmHooks
+  if (-not (Test-Path $mmParent)) { New-Item -ItemType Directory -Force -Path $mmParent | Out-Null }
+  node $mmHelper $mmHooks $nodePosix $bridgePosix
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "  [Fix] minimax hooks.json 已合并 PreToolUse（原文备份到 ~/.risk-guard-backup/）" -ForegroundColor Cyan
+    $issues = @($issues | Where-Object { $_ -ne 'minimax hooks.json PreToolUse hook' })
+  } else {
+    Write-Host "  [Fix] minimax hooks.json 合并失败（node 退出码 $LASTEXITCODE，原文件可能不是合法 JSON）" -ForegroundColor Red
+  }
+}
 
 # ---- 汇总 ----
 Write-Host ""

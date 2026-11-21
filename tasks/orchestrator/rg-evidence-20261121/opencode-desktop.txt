@@ -1,0 +1,35 @@
+=== opencode-desktop bundled CLI deny ===
+
+> build · auto/deepseek-v4.1-flash
+�?git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\opencode-desktop" reset --hard HEAD failed
+Error: BLOCKED_BY_GLOBAL_SAFETY_GUARD
+Policy: GIT_RESET_HARD
+Reason: git reset --hard can irreversibly discard uncommitted changes.
+> build · auto/deepseek-v4.1-flash
+这条命令没能执行�?
+原文返回�?
+```
+BLOCKED_BY_GLOBAL_SAFETY_GUARD
+Policy: GIT_RESET_HARD
+Reason: git reset --hard can irreversibly discard uncommitted changes.
+```
+
+也就是说，在本机全局安全护栏（hook）层�?`git reset --hard` 是被直接拦下的，命令没有真正跑起来，所以没�?`HEAD is now at ...` 之类的输出可贴�?
+`reset --hard` 会无提示丢弃未提交改动，这条护栏是故意设的。可以走这几条路�?
+1. 先看会丢什么：`git -C "<repo>" status --short` �?`git stash list`，确认没有你的或别的 agent 的改动后，由你在终端里亲自执行原命令�?2. 如果目的只是让工作区干净、但又想留退路，�?`git stash push -u -m "before-reset"`，需要时 `git stash pop` 取回�?3. 只想丢弃特定文件，用 `git restore --source=HEAD -- <path>`，范围可控，不会误伤整个仓库�?
+告诉我这个仓库里当前有哪些改动、你想达成什么，我可以按上面更窄的方式处理�?
+
+---- STATUS:  M tracked.txt ----
+
+=== opencode-desktop bundled CLI allow ===
+
+> build · auto/deepseek-v4.1-flash
+$ git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\opencode-desktop" status --short .
+M tracked.txt
+> build · auto/deepseek-v4.1-flash
+```
+ M tracked.txt
+```
+
+---- STATUS:  M tracked.txt ----
+

@@ -1,0 +1,13 @@
+=== WorkBuddy 5.9.3 CLI probe ===
+安装目录里的 CodeBuddy CLI: E:\APP\Technology\Workbuddy\resources\app.asar.unpacked\cli\bin\codebuddy
+
+-- node codebuddy --version --
+2.165.0
+
+-- node codebuddy -p "say hi" --
+Error: Cannot find module '../dist/codebuddy'
+Require stack:
+- E:\APP\Technology\Workbuddy\resources\app.asar.unpacked\cli\bin\codebuddy
+
+结论：除 --version 外模型加载即失败（dist/ 被剥离），无法以 CLI 方式做 D3 取证；WorkBuddy 的 D3 仍需人工桌面会话。
+--- 版本来源：~/.workbuddy/last-launch.json = 5.9.3 / build d46924219e79332f49c37ccebf27292f87001b19 ---

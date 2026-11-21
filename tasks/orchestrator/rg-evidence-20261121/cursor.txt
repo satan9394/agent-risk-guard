@@ -1,0 +1,22 @@
+=== cursor-agent 2026.11.19-f005e9d deny ===
+The command was blocked by a preToolUse hook and did not run. I can’t execute it from here.
+
+---- STATUS:  M tracked.txt ----
+
+说明（2026-11-21，评审后补）：Cursor 这一端 agent 侧只复述「被 preToolUse hook 拦住」，没有把引擎原文回显给用户；
+拦截原文在 %TEMP%\\riskguard-hook-calls.log 里能看到（该日志是各适配器共用的调用记录，不记 agent 名），
+但**易失路径不进仓库**，所以本条的判据只有两条：agent 侧复述 + ` M tracked.txt` 存活。
+尝试补跑同一条取证时 Cursor 触发了用量上限（原文：`ActionRequiredError: You've hit your usage limit Get Cursor Pro for more Agent usage`），
+没能拿到新的引擎侧记录 ⇒ 归档状态记为「agent 复述 + 脏改动存活，引擎侧原文未归档」。
+
+=== cursor allow ===
+```
+ M tracked.txt
+```
+
+---- STATUS:  M tracked.txt ----
+
+--- %TEMP%\riskguard-hook-calls.log 该次运行的实测时间窗（00:51:43–00:51:44；日志不记 agent 名，归属靠时间窗） ---
+2026-11-21 00:51:43  [HookInvoked] decision=deny reason=git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
+2026-11-21 00:51:44  [HookInvoked] decision=deny reason=git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
+2026-11-21 00:51:44  [HookInvoked] decision=deny reason=⛔ HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止

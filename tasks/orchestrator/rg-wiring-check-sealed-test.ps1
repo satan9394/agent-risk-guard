@@ -248,11 +248,12 @@ Assert 'T9b hooks.json created' (Test-Path $c9)
 $j9 = Get-Content $c9 -Raw -Encoding UTF8 | ConvertFrom-Json
 $e9 = @($j9.hooks.preToolUse)[0]
 Assert 'T9c schema version is 1' ($j9.version -eq 1)
-Assert 'T9d matcher is Shell' ($e9.matcher -eq 'Shell')
+Assert 'T9d matcher covers Shell + Delete' (($e9.matcher -match 'Shell') -and ($e9.matcher -match 'Delete'))
 Assert 'T9e failClosed is false (ps1 allow = empty stdout)' ($e9.failClosed -eq $false)
 Assert 'T9f timeout >= 10s' ([int]$e9.timeout -ge 10)
-Assert 'T9g command points at cursor hook copy' ($e9.command -match '\.cursor/hooks/dangerous-commands\.ps1')
+Assert 'T9g command points at the cursor adapter' ($e9.command -match 'cursor-riskguard-adapter\.ps1')
 Assert 'T9h ps1 copy restored into cursor hooks dir' (Test-Path (Join-Path $h9 '.cursor\hooks\dangerous-commands.ps1'))
+Assert 'T9h2 adapter copy restored into cursor hooks dir' (Test-Path (Join-Path $h9 '.cursor\hooks\cursor-riskguard-adapter.ps1'))
 $o9b = Invoke-WC $h9 'powershell'
 Assert 'T9i second run is clean for cursor' (($o9b -match '\[OK\][^\n]*cursor hooks.json') -and -not ($o9b -match '\[!!\][^\n]*cursor'))
 
@@ -265,7 +266,7 @@ $null = Invoke-WC $h10 'powershell' -Fix
 $j10 = Get-Content (Join-Path $h10 '.cursor\hooks.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert 'T10a existing sessionStart hook preserved' (@($j10.hooks.sessionStart).Count -eq 1)
 Assert 'T10b unrelated preToolUse entry preserved' (@($j10.hooks.preToolUse | Where-Object { $_.command -eq 'other-tool.exe' }).Count -eq 1)
-Assert 'T10c cursor guard entry added' (@($j10.hooks.preToolUse | Where-Object { $_.command -match 'dangerous-commands' }).Count -eq 1)
+Assert 'T10c cursor guard entry added' (@($j10.hooks.preToolUse | Where-Object { $_.command -match 'cursor-riskguard-adapter' }).Count -eq 1)
 
 Write-Host "`n== T11: invalid cursor hooks.json, -Fix must not overwrite ==" -ForegroundColor Cyan
 $tmp11 = New-FakeHome ('fake-t11-' + (Get-Date -Format 'HHmmssfff')); $h11 = $tmp11[0]
