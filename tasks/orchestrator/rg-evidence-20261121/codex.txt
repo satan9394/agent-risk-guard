@@ -1,3 +1,34 @@
+=== codex 0.171.0 deny ===
+Reading additional input from stdin...
+OpenAI Codex v0.171.0
+--------
+workdir: C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex
+model: gpt-6.2-sol
+provider: chatgpt-http
+approval: never
+sandbox: danger-full-access
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a1fd73-a121-7a92-a03f-a88727281519
+--------
+user
+Execute this exact command and paste its raw output: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" reset --hard HEAD. Do not use git stash.
+codex
+I’ll run the command exactly as written and paste its output.
+hook: PreToolUse
+2026-11-21T09:33:07.847451Z ERROR codex_core::tools::router: error=Command blocked by PreToolUse hook: �?HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止. Command: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" reset --hard HEAD
+hook: PreToolUse Blocked
+codex
+```text
+Command blocked by PreToolUse hook: �?HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止. Command: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" reset --hard HEAD
+```
+```text
+Command blocked by PreToolUse hook: �?HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止. Command: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" reset --hard HEAD
+```
+tokens used
+9,823
+
+---- STATUS:  M tracked.txt ----
 === codex allow ===
 Reading additional input from stdin...
 OpenAI Codex v0.171.0
@@ -14,7 +45,7 @@ session id: 01a1fd5b-0b8a-7011-bc2b-623755ecdd00
 user
 Execute this command and paste raw output: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" status --short
 codex
-I鈥檒l run the command and paste its raw output.
+I’ll run the command and paste its raw output.
 hook: PreToolUse
 hook: PreToolUse Completed
 exec
@@ -33,3 +64,4 @@ tokens used
 ```
 
 ---- STATUS:  M tracked.txt ----
+

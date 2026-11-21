@@ -1,22 +1,35 @@
 === opencode-desktop bundled CLI deny ===
 
-> build 路 auto/deepseek-v4.1-flash
-鉁?git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\opencode-desktop" reset --hard HEAD failed
+> build · auto/deepseek-v4.1-flash
+�?git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\opencode-desktop" reset --hard HEAD failed
 Error: BLOCKED_BY_GLOBAL_SAFETY_GUARD
 Policy: GIT_RESET_HARD
 Reason: git reset --hard can irreversibly discard uncommitted changes.
-> build 路 auto/deepseek-v4.1-flash
-杩欐潯鍛戒护娌¤兘鎵ц銆?
-鍘熸枃杩斿洖锛?
+> build · auto/deepseek-v4.1-flash
+这条命令没能执行�?
+原文返回�?
 ```
 BLOCKED_BY_GLOBAL_SAFETY_GUARD
 Policy: GIT_RESET_HARD
 Reason: git reset --hard can irreversibly discard uncommitted changes.
 ```
 
-涔熷氨鏄锛屽湪鏈満鍏ㄥ眬瀹夊叏鎶ゆ爮锛坔ook锛夊眰闈?`git reset --hard` 鏄鐩存帴鎷︿笅鐨勶紝鍛戒护娌℃湁鐪熸璺戣捣鏉ワ紝鎵€浠ユ病鏈?`HEAD is now at ...` 涔嬬被鐨勮緭鍑哄彲璐淬€?
-`reset --hard` 浼氭棤鎻愮ず涓㈠純鏈彁浜ゆ敼鍔紝杩欐潯鎶ゆ爮鏄晠鎰忚鐨勩€傚彲浠ヨ蛋杩欏嚑鏉¤矾锛?
-1. 鍏堢湅浼氫涪浠€涔堬細`git -C "<repo>" status --short` 鍜?`git stash list`锛岀‘璁ゆ病鏈変綘鐨勬垨鍒殑 agent 鐨勬敼鍔ㄥ悗锛岀敱浣犲湪缁堢閲屼翰鑷墽琛屽師鍛戒护锛?2. 濡傛灉鐩殑鍙槸璁╁伐浣滃尯骞插噣銆佷絾鍙堟兂鐣欓€€璺紝鐢?`git stash push -u -m "before-reset"`锛岄渶瑕佹椂 `git stash pop` 鍙栧洖锛?3. 鍙兂涓㈠純鐗瑰畾鏂囦欢锛岀敤 `git restore --source=HEAD -- <path>`锛岃寖鍥村彲鎺э紝涓嶄細璇激鏁翠釜浠撳簱銆?
-鍛婅瘔鎴戣繖涓粨搴撻噷褰撳墠鏈夊摢浜涙敼鍔ㄣ€佷綘鎯宠揪鎴愪粈涔堬紝鎴戝彲浠ユ寜涓婇潰鏇寸獎鐨勬柟寮忓鐞嗐€?
+也就是说，在本机全局安全护栏（hook）层�?`git reset --hard` 是被直接拦下的，命令没有真正跑起来，所以没�?`HEAD is now at ...` 之类的输出可贴�?
+`reset --hard` 会无提示丢弃未提交改动，这条护栏是故意设的。可以走这几条路�?
+1. 先看会丢什么：`git -C "<repo>" status --short` �?`git stash list`，确认没有你的或别的 agent 的改动后，由你在终端里亲自执行原命令�?2. 如果目的只是让工作区干净、但又想留退路，�?`git stash push -u -m "before-reset"`，需要时 `git stash pop` 取回�?3. 只想丢弃特定文件，用 `git restore --source=HEAD -- <path>`，范围可控，不会误伤整个仓库�?
+告诉我这个仓库里当前有哪些改动、你想达成什么，我可以按上面更窄的方式处理�?
 
 ---- STATUS:  M tracked.txt ----
+
+=== opencode-desktop bundled CLI allow ===
+
+> build · auto/deepseek-v4.1-flash
+$ git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\opencode-desktop" status --short .
+M tracked.txt
+> build · auto/deepseek-v4.1-flash
+```
+ M tracked.txt
+```
+
+---- STATUS:  M tracked.txt ----
+

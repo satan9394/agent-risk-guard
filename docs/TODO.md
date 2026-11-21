@@ -234,10 +234,22 @@
   （`%APPDATA%\ai.opencode.desktop\cli\2.3.2-x64\opencode-cli.exe`）与 CLI 共用 `~/.config/opencode`
   与同一插件、同一 prompt 同样被 `BLOCKED_BY_GLOBAL_SAFETY_GUARD` 拦住；但桌面窗口自己发起的会话没有
   原始输出。若要坐实，需要在 Desktop 里跑一次同 prompt 并把会话原文贴进证据文件。
-- [ ] **已评估不登记的三个 Agent 面（2026-11-21）**：Multica（云端 Agent 平台，无本地 pre-execution 拦截点）、
+- [ ] **已评估不登记 / 已扫描的面（2026-11-21）**：Multica（云端 Agent 平台，无本地 pre-execution 拦截点）、
   Kiro（`%APPDATA%\Kiro` 桌面 IDE，本机无 CLI、`~/.kiro` 只有 `settings/mcp.json` + skills，无 hooks 文件）、
-  Hermes（`~/.hermes` 仅 config.yaml + .env，无二进制，维持 documented-only）。判据统一写进
-  `skills/agent-risk-guard/references/agent-matrix.md`：**有 pre-execution 工具拦截点才登记**。
+  Grok Bot（`%APPDATA%\Grok Bot` + `~/.grokbot` 只有配置）、cagent（`~/.cagent\store` 只有数据，无 CLI）；
+  **Hermes 不在此列**——它仍是 documented-only（已登记机制、`doctor` 输出一行 SKIP），`~/.hermes` 只有
+  `config.yaml` + `.env` + 空 `skills\`、没有二进制。另 **T3 Code Beta**
+  （`%LOCALAPPDATA%\Programs\t3code` + `~/.t3/bin/t3.cmd`）是「按 provider 跑会话」的多 Agent 封装层，
+  自身没有 pre-execution 拦截点、门禁沿用被封装 Agent（claude/codex/cursor/…）自己的 hook ——
+  **这条是推断，未用 T3 真会话验证**，要坐实需 `t3` 起服务后让某个 provider 跑一次 `git reset --hard`。
+  判据统一写进 `skills/agent-risk-guard/references/agent-matrix.md`：**有 pre-execution 工具拦截点才登记**。
   若哪天其中任何一个长出 hook 面，按 `docs/adding-an-agent.md` §2.5 的三张表补登记。
+- [ ] **Mavis 的 coder 是内嵌 OpenCode，当前没被 RiskGuard 覆盖（2026-11-21 发现，待接线）**：
+  `~/.mavis/bin/mavis.cmd`（`ELECTRON_RUN_AS_NODE=1 …\MiniMax\MiniMax.exe …\daemon\cli.js`）驱动
+  `~/.mavis/agents/coder/`，其中 `opencode/opencode.json` 的 `plugin` 只有 `["mavis"]`、`permission`
+  是 `"*": "allow"`，配置根是它自己的目录 —— **不读 `~/.config/opencode`，所以 CLI 侧插件不生效**。
+  接线办法（未实施，本轮不改接线形态）：把 riskguard 插件加进该 `plugin` 数组或指到仓库产物；
+  接完要用 `mavis.cmd` 跑一次「deny `git reset --hard` + 未提交改动存活」取证才能报 D2/D3。
+  另注意它自带 `bin\mavis-trash`（删除改道工具）。
 - [ ] **全局残留旧包 `@opencode/cli-windows-x64@2.2.5`（2026-11-21）**：与 `@opencode/cli@2.3.2` 并存，
   `opencode` / `opencode2` 都解析到 2.3.2，但判版本时若拿到 2.2.5 会误判。清理属用户环境，不在本仓代劳。

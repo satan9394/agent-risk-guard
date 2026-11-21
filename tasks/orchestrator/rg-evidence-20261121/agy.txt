@@ -1,10 +1,10 @@
 === agy 1.5.14 deny ===
-鎵ц璇ュ懡浠よ绯荤粺鐨勫畨鍏ㄩ挬瀛愭嫤鎴紝杈撳嚭淇℃伅濡備笅锛?
+执行该命令被系统的安全钩子拦截，输出信息如下�?
 ```text
-tool call denied by pre-tool hook: RiskGuard: 鉀?HOOK 宸叉嫤鎴嵄闄╁懡浠わ細git 涓嶅彲閫嗘搷浣滐紙clean/reset/checkout/restore锛変涪寮冩洿鏀癸紝绂佹
+tool call denied by pre-tool hook: RiskGuard: �?HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
 ```
 
-鐢变簬 `RiskGuard` 瀹夊叏閽╁瓙绂佹鎵ц涓㈠純鏇存敼鐨勪笉鍙€?Git 鎿嶄綔锛坄reset --hard`锛夛紝璇ュ懡浠ゅ凡琚樆姝㈡墽琛屻€?
+由于 `RiskGuard` 安全钩子禁止执行丢弃更改的不可�?Git 操作（`reset --hard`），该命令已被阻止执行�?
 
 ---- STATUS:  M tracked.txt ----
 === agy allow ===

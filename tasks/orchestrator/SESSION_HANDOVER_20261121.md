@@ -23,11 +23,15 @@ Devin **3000.14.30821**；WorkBuddy 5.9.3 未变。
 
 - **OpenCode Desktop**（11-20 安装，随包 CLI 2.3.2）→ 不新增 agent 键。用 Desktop 随包
   `opencode-cli.exe` 复跑同一条取证 prompt，得到与 CLI 完全一致的 `BLOCKED_BY_GLOBAL_SAFETY_GUARD /
-  GIT_RESET_HARD` ⇒ 与 CLI 共用 `~/.config/opencode` 与同一插件。写进 `references/opencode-wiring.md`
-  的「三种可执行形态」小节。
+  GIT_RESET_HARD` ⇒ **能证到的是「随包 CLI 与 CLI 共用 `~/.config/opencode` 与同一插件」**（桌面窗口本身未直接取证）。
+  写进 `references/opencode-wiring.md` 的「三种可执行形态」小节。
 - **Multica**（11-19 安装，`multica` CLI 是云端 Agent 平台）→ 不登记。
 - **Kiro**（`%APPDATA%\Kiro` 桌面 IDE，`~/.kiro` 只有 `settings/mcp.json` + skills，无 CLI / 无 hooks）→ 不登记。
-- Hermes 维持 documented-only（`~/.hermes` 无二进制）。
+- **T3 Code (Beta)**（`~/.t3/bin/t3.cmd`，按 provider 起会话的封装层）、**Grok Bot**、**cagent** → 已扫描，不登记。
+- **Mavis**（`~/.mavis/bin/mavis.cmd`）→ 不是另一个 Agent，而是**内嵌 OpenCode 的运行时**：coder 用独立配置根
+  `~/.mavis/agents/coder/opencode/opencode.json`（`plugin: ["mavis"]`、`permission "*": allow`），
+  **不读 `~/.config/opencode` ⇒ CLI 侧插件不覆盖它**，列为待接线缺口（`docs/TODO.md`）。
+- Hermes 维持 documented-only（`~/.hermes` 无二进制：只有 `config.yaml` + `.env` + 空 `skills\`）。
 
 ### 1.3 改了什么
 
@@ -45,6 +49,9 @@ Devin **3000.14.30821**；WorkBuddy 5.9.3 未变。
 2. Devin 升 D3：`dangerous` 仍绕过 hook，只剩 Desktop 交互或等 vendor。
 3. OpenCode Desktop **窗口内**会话原文未取（只证到同包 CLI）。
 4. 全局旧包 `@opencode/cli-windows-x64@2.2.5` 与 `@opencode/cli@2.3.2` 并存，判版本有歧义；清理属用户环境。
+5. **Mavis 的 coder 运行时没被覆盖**：`~/.mavis/agents/coder/opencode/opencode.json` 的 `plugin` 只有 `["mavis"]`，
+   接线后才能谈 D2/D3（`docs/TODO.md` 已写接线办法）。
+6. Cursor 的 deny 归档只有 agent 侧复述（引擎原文在易失 `%TEMP%` 日志里），补跑时撞到用量上限。
 
 ## 3. 现场核对清单
 

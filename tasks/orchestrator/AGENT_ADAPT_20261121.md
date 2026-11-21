@@ -31,19 +31,25 @@
 
 | 候选 | 本机现状 | 有无拦截点 | 结论 | 落地 |
 |---|---|---|---|---|
-| **OpenCode Desktop** | `%APPDATA%\ai.opencode.desktop`，随包 CLI 2.3.2（`cli\2.3.2-x64\opencode-cli.exe`），`%LOCALAPPDATA%\Programs\ai.opencode.desktop`（11-20 安装） | **有**，且与 CLI 共用 `~/.config/opencode` | 不新增 agent 键，作 opencode 的 surface | `references/opencode-wiring.md` 新增「三种可执行形态」小节 + compatibility.json opencode notes |
+| OpenCode Desktop | `%APPDATA%\ai.opencode.desktop`，随包 CLI 2.3.2（`cli\2.3.2-x64\opencode-cli.exe`） | **有**，且**随包 CLI** 与 CLI 共用 `~/.config/opencode` 与同一插件（桌面窗口未直接验证） | 不新增 agent 键，作 opencode 的 surface | `references/opencode-wiring.md` 新增「三种可执行形态」小节 + compatibility.json opencode notes |
 | **Multica** | `%LOCALAPPDATA%\Programs\@multicadesktop`（11-19）、`multica` CLI（`agent/chat/autopilot/issue`） | **无**：云端 Agent 平台，只做创建/克隆/指派与 MCP 绑定，本地没有工具执行前的拦截点 | **不登记** | `references/agent-matrix.md` + `docs/TODO.md` |
 | **Kiro** | `%APPDATA%\Kiro` 桌面 IDE；`~/.kiro` 只有 `settings/mcp.json` + `skills/`，**无 CLI、无 hooks 文件** | 无（未观察到 hook 面） | **不登记**（登记 documented-only 只会产出证明不了机制的 SKIP） | 同上 |
-| Hermes | `~/.hermes` 仅 `config.yaml`（terminal backend local）+ `.env`，opencode 无二进制 | 无 | **维持 documented-only** | 未改代码，`doctor` 仍输出一行 SKIP |
+| Hermes | `~/.hermes` 只有 `config.yaml`（terminal backend local）+ `.env` + 空 `skills\`，无二进制 | 无 | **维持 documented-only** | 未改代码，`doctor` 仍输出一行 SKIP |
+| T3 Code (Beta) | `%LOCALAPPDATA%\Programs\t3code`、`~/.t3/bin/t3.cmd`（`t3 [cwd]` 起 web/desktop 服务，按 provider 跑会话；`~/.t3/caches` 里有 claude/codex/cursor/dsh/grok/kimi/kiro/pi 的探测缓存） | 自身无；**推测沿用被封装 Agent 的 hook（未用 T3 真会话验证）** | **不登记**（封装层不是执行层，门禁应落在 provider 自己身上） | `docs/TODO.md`（含「要坐实需跑一次 t3 provider 会话」） |
+| **Mavis** | `~/.mavis/bin/mavis.cmd`（`ELECTRON_RUN_AS_NODE=1 …\MiniMax\MiniMax.exe …\daemon\cli.js`），`agents\{coder,general,verifier}`；`agents\coder` 里是**内嵌 OpenCode 运行时**（独立配置根 `agents\coder\opencode\opencode.json`，`plugin: ["mavis"]`）+ 自带 `bin\mavis-trash` | 有执行面，但**当前没被 RiskGuard 覆盖**：它读自己的配置根，不读 `~/.config/opencode`，所以 CLI 侧插件不生效 | **不登记为新 Agent**（它是 miniMax 的 Agent 运行时），但**列为待接线缺口**：把 riskguard 插件加进 `agents\coder\opencode\opencode.json` 的 `plugin` 数组即可覆盖 | `docs/TODO.md`（带接线判据与文件路径） |
+| Grok Bot | `%APPDATA%\Grok Bot`、`~/.grokbot`（只有 settings/gate JSON） | 无（未观察到 hook 面） | **已扫描，不登记** | 本表即记录 |
+| cagent | `~/.cagent\store`（仅数据目录，无 CLI 在 PATH） | 无 | **已扫描，不登记** | 本表即记录 |
 
 Desktop 形态的取证不是猜配置目录，而是拿 Desktop 随包 CLI 复跑同一条 prompt（见 §3 opencode 行），
-结果与 CLI 完全一致 ⇒ 桌面不必单独接线；但**桌面窗口自己发起的会话本轮没有直接原文**，已列进 `docs/TODO.md`。
+结果与 CLI 完全一致 ⇒ **能证到的是「随包 CLI 共用 `~/.config/opencode` 与同一插件」**；
+桌面窗口（图形壳）自己发起的会话本轮没有直接原文，不据此认定同一个配置根，已列进 `docs/TODO.md`。
 
 ## 3. 逐端真会话（deny + allow）
 
 统一夹具：`%TEMP%\rg-adapt-20261121\<agent>`，`git init` + `tracked.txt` 一次提交，取证前把内容改成
 `dirty-change` 造出 ` M tracked.txt`。判据：**deny 看到 hook 拒绝原文且 `M tracked.txt` 存活**；
 **allow 正常执行并回显 ` M tracked.txt`**。
+产物里的 `⛔` 在部分 txt 里被捕获环节替换成 `?`（内容其余为原文，已统一按 UTF-8 重存）。
 
 | Agent | 驱动命令 | deny 关键原文 | 存活 | allow |
 |---|---|---|---|---|
@@ -53,7 +59,7 @@ Desktop 形态的取证不是猜配置目录，而是拿 Desktop 随包 CLI 复�
 | Codex 0.171.0 | `codex exec -s danger-full-access` | `Command blocked by PreToolUse hook: ⛔ HOOK 已拦截危险命令…` + `hook: PreToolUse Blocked` | ` M tracked.txt` | `hook: PreToolUse Completed` + ` M tracked.txt` |
 | DSH 0.2.2-rc.5 | `dsh headless` | `Error: 高危：git 全局选项后接破坏性子命令（-C 绕过）` | ` M tracked.txt` | 回显 ` M tracked.txt`（退出码 0） |
 | agy 1.5.14 | `agy -p --dangerously-skip-permissions` | `tool call denied by pre-tool hook: RiskGuard: ⛔ …` | ` M tracked.txt` | 回显 ` M tracked.txt` |
-| Cursor agent 2026.11.19 | `cursor-agent -p --force` | agent 侧只复述 `blocked by a preToolUse hook`；同时刻 `%TEMP%\riskguard-hook-calls.log` 有 `decision=deny reason=git 不可逆操作…` | ` M tracked.txt` | 回显 ` M tracked.txt` |
+| Cursor agent 2026.11.19 | `cursor-agent -p --force` | agent 侧只复述 `blocked by a preToolUse hook`；引擎侧原文在 `%TEMP%\riskguard-hook-calls.log`（易失路径，未归档；补跑时触到用量上限 `ActionRequiredError: You've hit your usage limit`） | ` M tracked.txt` | 回显 ` M tracked.txt` |
 | Copilot CLI 1.0.114 | `copilot -p --allow-all-tools` | `Denied by preToolUse hook: RiskGuard: ⛔ HOOK 已拦截危险命令…`（会话尾 `Changes +0 -0`） | ` M tracked.txt` | 回显 ` M tracked.txt` |
 | Grok 1.0.92 | `grok --always-approve -p` | `Hook denied: RiskGuard: ⛔ …` | ` M tracked.txt` | 回显 ` M tracked.txt` |
 | Pi 1.6.0 | `pi -p` | `⛔ HOOK 已拦截危险命令…` | ` M tracked.txt` | 回显 ` M tracked.txt`（改 cwd 相对命令，见下） |
@@ -86,7 +92,7 @@ Desktop 形态的取证不是猜配置目录，而是拿 Desktop 随包 CLI 复�
 - `node --test packages/installer/test/doctor-agent-coverage.test.ts` → **7 pass / 0 fail**
 - `node scripts/check-compatibility-docs.ts` → exit 0；`scripts/check-decisions-log.ts` → exit 0；
   `scripts/generate-agent-security-matrix.ts --check` → `up to date`（当前 14 端版本字段不参与该表生成，故无 diff）
-- `& .\test-all.ps1` → exit 0（ps1 六套 + sh 四套全绿，含 hook-rules 50/50、bypass 20/20、fp 12/12、audit 59/59、redact 119/119、sh 侧 71/71 + 40/40 + 208/208 + 34/34）
+- `& .\test-all.ps1` → exit 0（ps1 六套 + sh 四套全绿；具体套件与用例数按每次运行打印为准，不在此固化）
 - 密封测试 `tasks/orchestrator/rg-wiring-check-sealed-test.ps1` → **64 pass / 0 fail**
 
 ## 6. 未闭环

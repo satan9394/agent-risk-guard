@@ -23,8 +23,9 @@
   Devin 3000.12.57→**3000.14.30821**；WorkBuddy 5.9.3 未变。**12 个可驱动 CLI 逐端重取了
   「deny + 未提交改动存活」与「allow + 真实执行」**，Devin 在新版本上仍在 `--permission-mode dangerous`
   下真执行 `git reset --hard`（hook 零调用）⇒ **维持 D2**，WorkBuddy 无 CLI ⇒ **D3 未取**（证据仍属 5.6.2）。
-  三个新 Agent 面判定：**OpenCode Desktop** 与 CLI 共用 `~/.config/opencode` 与同一插件（用 Desktop 随包
-  CLI 2.3.2 复跑同一条取证 prompt 得到同一 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`，不单独登记）；
+  三个新 Agent 面判定：**OpenCode Desktop 不单独登记**——能证到的是「Desktop **随包 CLI**（2.3.2）与
+  CLI 共用 `~/.config/opencode` 与同一插件」，同一条取证 prompt 得到同一 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`
+  （桌面窗口本身未直接取证，已列 TODO）；
   **Multica**（云端 Agent 平台）与 **Kiro**（桌面 IDE，无 CLI、无 hooks 文件）**不登记**——判据是
   「有没有 pre-execution 工具拦截点」。取证陷阱一并记进 references：omp 需先明确授权（否则模型自己拒跑，
   不是 hook 证据）、mcode 需 `--permission full`（默认 smart 会返回 `PERMISSION_CONFIRMATION_UNAVAILABLE`）、
