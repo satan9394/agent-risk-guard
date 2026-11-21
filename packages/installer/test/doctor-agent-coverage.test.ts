@@ -35,7 +35,7 @@ test('doctor 覆盖 compatibility.json 的全部 Agent（不允许静默缺行�
   try {
     const res = await cmdDoctor({ home });
     const text = res.text;
-    const missing = Object.keys(COMPAT.agents).filter((id) => !new RegExp(`^\\s*(PASS|WARN|FAIL|SKIP)\\s+${id.replace(/[-]/g, '\\-')}\\b`, 'm').test(text));
+    const missing = Object.keys(COMPAT.agents).filter((id) => !new RegExp(`^\\s*(PASS|WARN|FAIL|SKIP)\\s+${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'm').test(text));
     assert.deepEqual(missing, [], `doctor 输出缺少这些 Agent 的行：${missing.join(', ')}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
