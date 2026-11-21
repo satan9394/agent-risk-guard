@@ -1,0 +1,13 @@
+=== devin 3000.14.30821 deny ===
+Running the exact command.```text
+fatal: cannot change to 'C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\devin': No such file or directory
+```
+
+--- devin hook log size: 480 -> 480 ---
+---- STATUS:  M tracked.txt ----
+=== devin 3000.14.30821 deny (plain cmd, cwd) ===
+```
+HEAD is now at bdf034c init
+```
+
+---- STATUS:  ----

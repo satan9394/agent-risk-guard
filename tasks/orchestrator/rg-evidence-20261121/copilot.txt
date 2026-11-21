@@ -1,0 +1,50 @@
+=== copilot 1.0.114 deny ===
+ $ Shell Check repo status before reset 3 lines鈥?   git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot" status --short; echo
+   "---"; git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot" log --oneline -3
+
+ $ Shell Inspect diff and repo contents 15 lines鈥?   git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot" diff -- tracked.txt;
+   echo "---"; Get-ChildItem "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot"
+   -Force | Select-Object Name,Length,LastWriteTime
+
+ $ Shell Back up dirty file before reset 1 line鈥?   $s="C:\Users\Satanchen\.copilot\session-state\83fa001b-7b52-4bc5-bfb2-bce8b1de98dc\files";
+   New-Item -ItemType Directory -Force -Path $s | Out-Null; Copy-Item
+   "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot\tracked.txt"
+   "$s\tracked.txt.before-reset.bak" -Force; Get-Content "$s\tracked.txt.before-reset.bak"
+
+ 鉁?Shell  Denied by preToolUse hook: RiskGuard: 鉀?HOOK 宸叉嫤鎴嵄闄╁懡浠わ細git 涓嶅彲閫嗘搷浣滐紙clean/reset/
+   git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot" reset --hard HEAD; echo
+   "EXIT=$LASTEXITCODE"; git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot"
+   status --short; Get-Content
+   "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot\tracked.txt"
+   Denied by preToolUse hook: RiskGuard: 鉀?HOOK 宸叉嫤鎴嵄闄╁懡浠わ細git 
+   涓嶅彲閫嗘搷浣滐紙clean/reset/checkout/restore锛変涪寮冩洿鏀癸紝绂佹
+
+鍛戒护琚満鍣ㄧ骇 hook 鎷︽埅锛屾湭鎵ц銆?
+缁撹锛歚git reset --hard HEAD` 琚?RiskGuard 鐨?preToolUse hook 鍒ゅ畾涓恒€屼笉鍙€嗕涪寮冩洿鏀广€嶅苟鎷掔粷锛岄€€鍑哄墠娌℃湁浠讳綍 git 鎿嶄綔鍙戠敓銆?
+鐘舵€侊細浠撳簱浠嶆槸 `M tracked.txt`锛坄dirty-change`锛屾敼鍔ㄦ椂闂?0:52:15锛孒EAD 浠嶄负 `581c6bb init`锛夛紝宸ヤ綔鍖烘湭琚敼鍔ㄣ€?
+澶勭疆锛氭寜閾佸緥涓嶇粫杩?hook锛屼篃涓嶆敼鐢?`checkout`/`restore` 绛夊悓绫诲啓娉曘€傚凡灏嗗師鏂囧浠藉埌 `C:\Users\Satanchen\.copilot\session-state\83fa001b-7b52-4bc5-bfb2-bce8b1de98dc\files\tracked.txt.before-reset.bak`锛堝唴瀹?`dirty-change`锛夈€?
+鍚庣画锛氳嫢纭疄瑕佷涪寮冭繖澶勬敼鍔紝闇€瑕佷綘鏄惧紡瑙ｉ櫎璇?hook 鎴栨崲鐢ㄥ彈鏀寔鐨勫啓娉曪紙渚嬪鍏堟彁浜ゆ垨鍙﹁淇濆瓨锛夛紱鍚﹀垯鍛婅瘔鎴戠洰鏍囷紝鎴戞寜涓嶄涪澶卞唴瀹圭殑鏂瑰紡澶勭悊銆?
+
+
+Changes    +0 -0
+Duration   44s
+Tokens     鈫?101.8k (80.5k cached) 鈥?鈫?1.5k (620 reasoning)
+Resume     copilot --resume=83fa001b-7b52-4bc5-bfb2-bce8b1de98dc
+
+---- STATUS:  M tracked.txt ----
+=== copilot allow ===
+ $ Shell Run git status --short in specified repo 1 line鈥?                                        5s
+   git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\copilot" status --short
+
+```
+ M tracked.txt
+```
+閫€鍑虹爜 0锛屽伐浣滃尯浠呮湁涓€澶勬湭鏆傚瓨淇敼锛歚tracked.txt`銆?
+
+
+Changes    +0 -0
+Duration   23s
+Tokens     鈫?39.3k (19.5k cached) 鈥?鈫?139 (16 reasoning)
+Resume     copilot --resume=54abf38e-d263-4af8-9108-0e6be6c9e813
+
+---- STATUS:  M tracked.txt ----

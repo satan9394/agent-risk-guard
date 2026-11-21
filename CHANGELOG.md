@@ -15,6 +15,20 @@
 
 ### Changed
 
+- **全端适配复验：本机 14 端版本再刷一轮 + 逐端重取 D3，并判定三个新 Agent 面（2026-11-21）**。
+  版本漂移（`--version` 实测）：Claude Code 2.1.326→**2.1.330**、OpenCode 2.3.0→**2.3.2**、
+  Codex 0.169.0→**0.171.0**、DSH 0.2.2-rc.3→**0.2.2-rc.5**、agy 1.5.10→**1.5.14**、
+  Copilot 1.0.112→**1.0.114**、Grok 1.0.88→**1.0.92**、Pi 1.5.2→**1.6.0**、omp 18.22.0→**19.0.1**、
+  Kimi Code 2.6.2→**2.7.2**、MiniMax Code 0.7.7→**0.7.9**、cursor-agent 2026.11.13→**2026.11.19**、
+  Devin 3000.12.57→**3000.14.30821**；WorkBuddy 5.9.3 未变。**12 个可驱动 CLI 逐端重取了
+  「deny + 未提交改动存活」与「allow + 真实执行」**，Devin 在新版本上仍在 `--permission-mode dangerous`
+  下真执行 `git reset --hard`（hook 零调用）⇒ **维持 D2**，WorkBuddy 无 CLI ⇒ **D3 未取**（证据仍属 5.6.2）。
+  三个新 Agent 面判定：**OpenCode Desktop** 与 CLI 共用 `~/.config/opencode` 与同一插件（用 Desktop 随包
+  CLI 2.3.2 复跑同一条取证 prompt 得到同一 `BLOCKED_BY_GLOBAL_SAFETY_GUARD`，不单独登记）；
+  **Multica**（云端 Agent 平台）与 **Kiro**（桌面 IDE，无 CLI、无 hooks 文件）**不登记**——判据是
+  「有没有 pre-execution 工具拦截点」。取证陷阱一并记进 references：omp 需先明确授权（否则模型自己拒跑，
+  不是 hook 证据）、mcode 需 `--permission full`（默认 smart 会返回 `PERMISSION_CONFIRMATION_UNAVAILABLE`）、
+  pi 与 devin 的 shell 解析不了 `git -C <Windows 绝对路径>`（allow 侧要用 cwd 相对命令）。
 - **全端适配刷新：本机 14 端逐个重取 D3 + `doctor` / `status` 覆盖全部已装 Agent（2026-11-17）**。
   版本漂移（`--version` 实测）：Claude Code 2.1.316→**2.1.326**、OpenCode 2.2.5→**2.3.0**、
   Codex 0.167.1→**0.169.0**、DSH 0.2.2-rc.2→**0.2.2-rc.3**、agy 1.4.12→**1.5.10**、

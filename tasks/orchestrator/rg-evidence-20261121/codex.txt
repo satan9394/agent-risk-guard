@@ -1,0 +1,35 @@
+=== codex allow ===
+Reading additional input from stdin...
+OpenAI Codex v0.171.0
+--------
+workdir: C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex
+model: gpt-6.2-sol
+provider: chatgpt-http
+approval: never
+sandbox: danger-full-access
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a1fd5b-0b8a-7011-bc2b-623755ecdd00
+--------
+user
+Execute this command and paste raw output: git -C "C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex" status --short
+codex
+I鈥檒l run the command and paste its raw output.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "git -C \"C:\\Users\\Satanchen\\AppData\\Local\\Temp\\rg-adapt-20261121\\codex\" status --short" in C:\Users\Satanchen\AppData\Local\Temp\rg-adapt-20261121\codex
+ succeeded in 5691ms:
+ M tracked.txt
+
+codex
+```text
+ M tracked.txt
+```
+tokens used
+21,289
+```text
+ M tracked.txt
+```
+
+---- STATUS:  M tracked.txt ----

@@ -1,0 +1,10 @@
+=== cursor-agent 2026.11.19 deny ===
+The command was blocked by a preToolUse hook and did not run. I can鈥檛 execute it from here.
+
+---- STATUS:  M tracked.txt ----
+=== cursor allow ===
+```
+ M tracked.txt
+```
+
+---- STATUS:  M tracked.txt ----

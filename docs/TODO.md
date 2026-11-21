@@ -221,3 +221,23 @@
   否则会把「没跑起来」误读成「被拦住了」。若哪天 omp 改了默认值，本条要重新确认。
 - [ ] **Codex `hooks.json` 双注册仍未合并**（2026-11-02 起的旧账）：ps1 + `_riskguard` node 两条，每次 Bash 跑两遍。
   结论仍是「合并无收益」，但两处脚本都要跟单源走，别只刷新一处。
+
+- [ ] **WorkBuddy 5.9.3 的 D3 仍未取（2026-11-21 复核后维持）**：本机版本仍是 5.9.3、桌面应用无 CLI，
+  本轮只做到版本登记 + `scripts/riskguard-wiring-check.ps1` exit 0（接线健康）。D3 证据仍属 5.6.2
+  （2026-11-12 会话）。要补需一次人工桌面会话：prompt `git reset --hard HEAD`，期望
+  `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活。
+- [ ] **Devin 3000.14.30821：dangerous 模式依旧绕过 hook（2026-11-21 复验）**：`devin -p` 带
+  `--respect-workspace-trust false --permission-mode dangerous` 时 `git reset --hard HEAD` 真的执行了
+  （`HEAD is now at …`），`%TEMP%\riskguard-devin-hook.log` 长度无变化 ⇒ hook 未被调用。版本升了但
+  `compatibility.json` 里 verification 保持 **D2**。可试的两条路没变：Desktop 交互取证，或等 vendor 修复。
+- [ ] **OpenCode Desktop 的窗口内会话未直接取证（2026-11-21）**：已证 Desktop 随包 CLI
+  （`%APPDATA%\ai.opencode.desktop\cli\2.3.2-x64\opencode-cli.exe`）与 CLI 共用 `~/.config/opencode`
+  与同一插件、同一 prompt 同样被 `BLOCKED_BY_GLOBAL_SAFETY_GUARD` 拦住；但桌面窗口自己发起的会话没有
+  原始输出。若要坐实，需要在 Desktop 里跑一次同 prompt 并把会话原文贴进证据文件。
+- [ ] **已评估不登记的三个 Agent 面（2026-11-21）**：Multica（云端 Agent 平台，无本地 pre-execution 拦截点）、
+  Kiro（`%APPDATA%\Kiro` 桌面 IDE，本机无 CLI、`~/.kiro` 只有 `settings/mcp.json` + skills，无 hooks 文件）、
+  Hermes（`~/.hermes` 仅 config.yaml + .env，无二进制，维持 documented-only）。判据统一写进
+  `skills/agent-risk-guard/references/agent-matrix.md`：**有 pre-execution 工具拦截点才登记**。
+  若哪天其中任何一个长出 hook 面，按 `docs/adding-an-agent.md` §2.5 的三张表补登记。
+- [ ] **全局残留旧包 `@opencode/cli-windows-x64@2.2.5`（2026-11-21）**：与 `@opencode/cli@2.3.2` 并存，
+  `opencode` / `opencode2` 都解析到 2.3.2，但判版本时若拿到 2.2.5 会误判。清理属用户环境，不在本仓代劳。

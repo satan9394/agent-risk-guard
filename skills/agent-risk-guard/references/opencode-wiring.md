@@ -68,6 +68,25 @@ Select-String $p -Pattern 'id:\s*"agent-risk-guard"', 'async setup\(', 'ctx\.she
 Select-String $p -Pattern 'async function v1Server', 'export default \{ \.\.\.plugin, server: v1Server \}'
 ```
 
+## 三种可执行形态（2026-11-21 实测）
+
+| 形态 | 二进制 / 来源 | 版本 | 与插件的关系 |
+|---|---|---|---|
+| CLI（PATH） | `opencode`（npm 全局 `@opencode/cli`） | 2.3.2 | 读 `~/.config/opencode`，加载 `plugins/agent-risk-guard.ts` |
+| CLI（别名） | `opencode2`（同一 shim） | 2.3.2 | 同 CLI，行为一致 |
+| Desktop | `%APPDATA%\ai.opencode.desktop\cli\2.3.2-x64\opencode-cli.exe` | 2.3.2 | **共用同一 `~/.config/opencode` 与同一插件** |
+
+Desktop 形态的判据不是猜配置目录，而是用 Desktop 随包 CLI 复跑同一条取证 prompt：
+
+```powershell
+$exe = "$env:APPDATA\ai.opencode.desktop\cli\2.3.2-x64\opencode-cli.exe"
+& $exe run --standalone --auto "<prompt: git -C <repo> reset --hard HEAD>"
+```
+
+2026-11-21 结果：与 CLI 完全一致地返回 `BLOCKED_BY_GLOBAL_SAFETY_GUARD / GIT_RESET_HARD`，
+未提交改动存活 ⇒ Desktop 不必单独接线，但**桌面窗口里的会话本身没有被直接取证**（只证到同包 CLI）。
+另：全局仍残留旧包 `@opencode/cli-windows-x64@2.2.5`，判版本时以实际使用的二进制为准。
+
 ## 注意
 
 - **闸门分层（2026-11-02 在 OpenCode 2.2.5 上核实，旧文档写反过）**：V2 的失败通道里**只有 tool 域可以 fail**
