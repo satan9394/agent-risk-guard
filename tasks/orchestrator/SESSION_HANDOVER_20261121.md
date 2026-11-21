@@ -15,7 +15,7 @@ Devin **3000.14.30821**；WorkBuddy 5.9.3 未变。
 12 个可驱动 CLI 逐端重取「deny + 未提交改动存活」与「allow + 真实执行」，全部通过；
 **Devin 维持 D2**（`--permission-mode dangerous` 下 `git reset --hard` 真的执行，hook 零调用 ——
 版本升了但机制没修）；**WorkBuddy D3 未取**（无 CLI，证据仍属 5.6.2）。
-证据：`tasks/orchestrator/AGENT_ADAPT_20261121.md` + `tasks/orchestrator/rg-evidence-20261121/*.txt`（14 个文件）。
+证据：`tasks/orchestrator/AGENT_ADAPT_20261121.md` + `tasks/orchestrator/rg-evidence-20261121/*.txt`（共 15 个：14 端各一 + WorkBuddy 的 CLI 探测）。
 
 ### 1.2 新 Agent 面判定（本轮唯一新增的结论面）
 
@@ -81,5 +81,5 @@ node scripts/check-decisions-log.ts
 | 证据 | 用途 |
 |---|---|
 | `tasks/orchestrator/AGENT_ADAPT_20261121.md` | 本轮版本表、新面判定表、逐端会话原文摘录、取证陷阱、闸门结果 |
-| `tasks/orchestrator/rg-evidence-20261121/*.txt` | 14 个文件：每端 deny / allow 原始输出 + `git status --short` 存活记录 |
+| `tasks/orchestrator/rg-evidence-20261121/*.txt` | 15 个文件（14 端 + WorkBuddy 的 CLI 探测）：每端 deny / allow 原始输出 + `git status --short` 存活记录 |
 | `packages/installer/compatibility.json` | 版本与 D 级的唯一事实源 |
