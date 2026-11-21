@@ -213,9 +213,14 @@
 - [ ] **WorkBuddy 5.9.3 的 D3 待取**：桌面应用无 CLI 可驱动，本轮只做到「版本登记 + 接线巡检 + 委派
   模式 self-test PASS」。按硬约束 5，D3 证据仍属 5.6.2（2026-11-12 会话）。要升版本证据需一次人工桌面会话
   （prompt：`git reset --hard HEAD`，期望 `⛔ HOOK 已拦截…` 且 `M tracked.txt` 存活）。
+  **2026-11-21 已确认 CLI 路不通**：安装目录里带 CodeBuddy CLI
+  （`resources\app.asar.unpacked\cli\bin\codebuddy`，`--version` = 2.165.0），但 `dist/` 被打包剥离，
+  除 `--version` 外一律 `Cannot find module '../dist/codebuddy'`，`-p` 起不来。
 - [ ] **Devin（原 Windsurf）升 D3 的两条路**：① Desktop 交互模式取证；② 等 vendor 修复
   `--permission-mode dangerous` 不触发 hook（2026-11-17 复验：适配器日志零记录、命令真执行）。
   print 模式下 `smart` 会先被审批层拒绝，`dangerous` 又不跑 hook —— 目前没有第三条路。
+  2026-11-21 在 Devin 3000.14.30821 上把 `accept-edits` 也试了：同样是审批层拒绝
+  （`rejected a tool call that requires confirmation`），hook 日志零增长 ⇒ 三种模式全试过，结论不变。
 - [ ] **omp 18.22.0 的取证陷阱（已在 references 记录）**：`omp -p` 默认要审批，非交互环境直接报
   `requires approval but no interactive UI available`。复验必须带 `--auto-approve`（或 `--approval-mode=yolo`），
   否则会把「没跑起来」误读成「被拦住了」。若哪天 omp 改了默认值，本条要重新确认。
@@ -244,12 +249,12 @@
   **这条是推断，未用 T3 真会话验证**，要坐实需 `t3` 起服务后让某个 provider 跑一次 `git reset --hard`。
   判据统一写进 `skills/agent-risk-guard/references/agent-matrix.md`：**有 pre-execution 工具拦截点才登记**。
   若哪天其中任何一个长出 hook 面，按 `docs/adding-an-agent.md` §2.5 的三张表补登记。
-- [ ] **Mavis 的 coder 是内嵌 OpenCode，当前没被 RiskGuard 覆盖（2026-11-21 发现，待接线）**：
-  `~/.mavis/bin/mavis.cmd`（`ELECTRON_RUN_AS_NODE=1 …\MiniMax\MiniMax.exe …\daemon\cli.js`）驱动
-  `~/.mavis/agents/coder/`，其中 `opencode/opencode.json` 的 `plugin` 只有 `["mavis"]`、`permission`
-  是 `"*": "allow"`，配置根是它自己的目录 —— **不读 `~/.config/opencode`，所以 CLI 侧插件不生效**。
-  接线办法（未实施，本轮不改接线形态）：把 riskguard 插件加进该 `plugin` 数组或指到仓库产物；
-  接完要用 `mavis.cmd` 跑一次「deny `git reset --hard` + 未提交改动存活」取证才能报 D2/D3。
-  另注意它自带 `bin\mavis-trash`（删除改道工具）。
+- [ ] **Mavis 的 coder 是内嵌 OpenCode，当前不可驱动（2026-11-21 复核）**：
+  `~/.mavis/bin/mavis.cmd` 指向 `%LOCALAPPDATA%\Programs\MiniMax\MiniMax.exe`，**该宿主已卸载**
+  （实测 `mavis.cmd --help` = 「系统找不到指定的路径」），只剩 `~/.mavis` 数据目录。
+  若将来重装 MiniMax：注意它 coder 的配置根是 `~/.mavis/agents/coder/opencode/opencode.json`
+  （`plugin: ["mavis"]`、`permission "*": allow`），**不读 `~/.config/opencode`**，
+  需把 riskguard 插件加进该 `plugin` 数组才覆盖；接完要用 `mavis.cmd` 跑一次
+  「deny `git reset --hard` + 未提交改动存活」取证才能报 D2/D3。另注意它自带 `bin\mavis-trash`。
 - [ ] **全局残留旧包 `@opencode/cli-windows-x64@2.2.5`（2026-11-21）**：与 `@opencode/cli@2.3.2` 并存，
   `opencode` / `opencode2` 都解析到 2.3.2，但判版本时若拿到 2.2.5 会误判。清理属用户环境，不在本仓代劳。

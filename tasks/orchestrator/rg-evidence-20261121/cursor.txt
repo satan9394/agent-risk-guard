@@ -15,3 +15,8 @@ The command was blocked by a preToolUse hook and did not run. I can’t execute 
 ```
 
 ---- STATUS:  M tracked.txt ----
+
+--- %TEMP%\riskguard-hook-calls.log 该次运行的实测时间窗（00:51:43–00:51:44；日志不记 agent 名，归属靠时间窗） ---
+2026-11-21 00:51:43  [HookInvoked] decision=deny reason=git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
+2026-11-21 00:51:44  [HookInvoked] decision=deny reason=git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
+2026-11-21 00:51:44  [HookInvoked] decision=deny reason=⛔ HOOK 已拦截危险命令：git 不可逆操作（clean/reset/checkout/restore）丢弃更改，禁止
